@@ -228,11 +228,57 @@ status_timer_start_all(void)
 		status_timer_start(c);
 }
 
+/*
+ * Does this session draw the sessions row: status is on (one line) and the
+ * server has more than one session.
+ */
+static int
+status_sessions_row(struct session *s)
+{
+	struct session	*loop;
+	u_int		 n = 0;
+
+	if (options_get_number(s->options, "status") != 1)
+		return (0);
+	RB_FOREACH(loop, sessions, &sessions) {
+		if (++n > 1)
+			return (1);
+	}
+	return (0);
+}
+
+/* Lay the clients out again for the sessions row. */
+static void
+status_sessions_relayout(__unused int fd, __unused short events,
+    __unused void *arg)
+{
+	struct client	*c;
+
+	recalculate_sizes();
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (c->session != NULL)
+			server_redraw_client(c);
+	}
+}
+
+/*
+ * The number of sessions has changed, so the sessions row may come or go. This
+ * is called as a session is created or destroyed, so the layout waits for the
+ * event loop.
+ */
+void
+status_sessions_changed(void)
+{
+	event_once(-1, EV_TIMEOUT, status_sessions_relayout, NULL, NULL);
+}
+
 /* Update status cache. */
 void
 status_update_cache(struct session *s)
 {
 	s->statuslines = options_get_number(s->options, "status");
+	if (status_sessions_row(s))
+		s->statuslines = 2;
 	if (s->statuslines == 0)
 		s->statusat = -1;
 	else if (options_get_number(s->options, "status-position") == 0)
@@ -384,6 +430,8 @@ status_redraw(struct client *c)
 	struct grid_cell		 gc;
 	u_int				 lines, i, n, width = c->tty.sx;
 	int				 flags, force = 0, changed = 0, fg, bg;
+	int				 sessions_row;
+	const char			*fmt;
 	struct options_entry		*o;
 	union options_value		*ov;
 	struct format_tree		*ft;
@@ -430,6 +478,7 @@ status_redraw(struct client *c)
 
 	/* Write the status lines. */
 	o = options_get(s->options, "status-format");
+	sessions_row = status_sessions_row(s) && lines == 2;
 	if (o == NULL) {
 		for (n = 0; n < width * lines; n++)
 			screen_write_putc(&ctx, &gc, ' ');
@@ -437,15 +486,21 @@ status_redraw(struct client *c)
 		for (i = 0; i < lines; i++) {
 			screen_write_cursormove(&ctx, 0, i, 0);
 
-			ov = options_array_get(o, i);
-			if (ov == NULL) {
+			if (sessions_row && i == 0)
+				fmt = options_get_string(s->options,
+				    "status-sessions-format");
+			else {
+				ov = options_array_get(o, sessions_row ? i - 1 : i);
+				fmt = (ov == NULL ? NULL : ov->string);
+			}
+			if (fmt == NULL) {
 				for (n = 0; n < width; n++)
 					screen_write_putc(&ctx, &gc, ' ');
 				continue;
 			}
 			sle = &sl->entries[i];
 
-			expanded = format_expand_time(ft, ov->string);
+			expanded = format_expand_time(ft, fmt);
 			if (!force &&
 			    sle->expanded != NULL &&
 			    strcmp(expanded, sle->expanded) == 0) {
