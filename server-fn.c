@@ -327,7 +327,13 @@ server_destroy_pane(struct window_pane *wp, int notify)
 	/* What it wrote before exiting may not have been parsed yet. */
 	if (wp->draw_wait != NULL && wp->event != NULL)
 		input_parse_pane(wp);
-	new_window_draw_end(wp, "exited before drawing");
+	/*
+	 * A pane that stays (remain-on-exit) keeps a new-window -W waiting until
+	 * its dead message is drawn, which then switches to it.
+	 */
+	remain_on_exit = options_get_number(wp->options, "remain-on-exit");
+	if (remain_on_exit == 0)
+		new_window_draw_end(wp, "exited before drawing");
 
 	if (wp->fd != -1) {
 #ifdef HAVE_UTEMPTER
@@ -347,15 +353,16 @@ server_destroy_pane(struct window_pane *wp, int notify)
 		wp->fd = -1;
 	}
 
-	remain_on_exit = options_get_number(wp->options, "remain-on-exit");
 	if (remain_on_exit != 0 && (~wp->flags & PANE_STATUSREADY))
 		return;
 	switch (remain_on_exit) {
 	case 0:
 		break;
 	case 2:
-		if (WIFEXITED(wp->status) && WEXITSTATUS(wp->status) == 0)
+		if (WIFEXITED(wp->status) && WEXITSTATUS(wp->status) == 0) {
+			new_window_draw_end(wp, "exited before drawing");
 			break;
+		}
 		/* FALLTHROUGH */
 	case 1:
 		if (wp->flags & PANE_STATUSDRAWN)
@@ -383,6 +390,9 @@ server_destroy_pane(struct window_pane *wp, int notify)
 		wp->base.mode &= ~MODE_CURSOR;
 
 		wp->flags |= PANE_REDRAW;
+		/* An empty remain-on-exit-format may leave nothing drawn. */
+		new_window_draw_check(wp);
+		new_window_draw_end(wp, "exited before drawing");
 		return;
 	}
 
