@@ -37,8 +37,8 @@
 
 #include "compat.h"
 
-/* upgrade-server moves a running server to another build (Windows, Linux). */
-#if defined(_WIN32) || defined(__linux__)
+/* upgrade-server moves a running server to another build (Windows, Linux, macOS). */
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__)
 #define HAVE_SERVER_UPGRADE
 #endif
 #include "tmux-protocol.h"
@@ -3085,6 +3085,7 @@ extern u_int	  status_prompt_hsize[];
 void	 status_timer_start(struct client *);
 void	 status_timer_start_all(void);
 void	 status_update_cache(struct session *);
+void	 status_sessions_changed(void);
 u_int	 status_prompt_line_at(struct client *);
 int	 status_at_line(struct client *);
 u_int	 status_line_size(struct client *);

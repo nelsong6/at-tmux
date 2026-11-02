@@ -117,7 +117,8 @@ static const char *options_table_allow_passthrough_list[] = {
 	"#[pop-default]" \
 	"#[norange default]" \
 	"#[list=on align=#{status-justify}]" \
-	"#[list=left-marker]<#[list=right-marker]>#[list=on]" \
+	"#[list=left-marker]\xe2\x97\x80 #[list=right-marker] \xe2\x96\xb6" \
+	"#[list=on]" \
 	"#{W:" \
 		"#[range=window|#{window_index} " \
 			"#{E:window-status-style}" \
@@ -224,6 +225,22 @@ static const char *options_table_allow_passthrough_list[] = {
 		"#S*#{session_alert}" \
 		"#[pop-default]" \
 		"#[norange list=on default] " \
+	"}"
+#define OPTIONS_TABLE_STATUS_SESSIONS_FORMAT \
+	"#[align=centre list=on]" \
+	"#[list=left-marker]\xe2\x97\x80 #[list=right-marker] \xe2\x96\xb6" \
+	"#[list=on]" \
+	"#{S:" \
+		"#[range=session|#{session_id} fg=#8a8f98] " \
+		"#{?session_alerts,#[fg=#e05252 bold],}" \
+		"#S#[none bg=default fg=#8a8f98] " \
+		"#[norange default]" \
+		"#{?loop_last_flag,,#[fg=#8a8f98]\xe2\x80\xa2}" \
+	"," \
+		"#[range=session|#{session_id} list=focus]" \
+		"#[bg=#3e4b59 fg=#e6e1cf bold][#S]" \
+		"#[norange none bg=default]" \
+		"#{?loop_last_flag,,#[fg=#8a8f98]\xe2\x80\xa2}" \
 	"}"
 static const char *options_table_status_format_default[] = {
 	OPTIONS_TABLE_STATUS_FORMAT1,
@@ -856,6 +873,15 @@ const struct options_table_entry options_table[] = {
 		  "as 'status-left'."
 	},
 
+	{ .name = "status-sessions-format",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .default_str = OPTIONS_TABLE_STATUS_SESSIONS_FORMAT,
+	  .text = "Format of the sessions row, drawn above the first status "
+		  "line when 'status' is on and the server has more than one "
+		  "session."
+	},
+
 	{ .name = "status-interval",
 	  .type = OPTIONS_TABLE_NUMBER,
 	  .scope = OPTIONS_TABLE_SESSION,
@@ -870,7 +896,7 @@ const struct options_table_entry options_table[] = {
 	  .type = OPTIONS_TABLE_CHOICE,
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .choices = options_table_status_justify_list,
-	  .default_num = 0,
+	  .default_num = 3,
 	  .text = "Position of the window list in the status line."
 	},
 
@@ -885,7 +911,7 @@ const struct options_table_entry options_table[] = {
 	{ .name = "status-left",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SESSION,
-	  .default_str = "[#{session_name}] ",
+	  .default_str = "",
 	  .text = "Contents of the left side of the status line."
 	},
 
@@ -911,16 +937,14 @@ const struct options_table_entry options_table[] = {
 	  .type = OPTIONS_TABLE_CHOICE,
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .choices = options_table_status_position_list,
-	  .default_num = 1,
+	  .default_num = 0,
 	  .text = "Position of the status line."
 	},
 
 	{ .name = "status-right",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SESSION,
-	  .default_str = "#{?window_bigger,"
-			 "[#{window_offset_x}#,#{window_offset_y}] ,}"
-			 "\"#{=21:pane_title}\" %H:%M %d-%b-%y",
+	  .default_str = "",
 	  .text = "Contents of the right side of the status line."
 
 	},
@@ -946,7 +970,7 @@ const struct options_table_entry options_table[] = {
 	{ .name = "status-style",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SESSION,
-	  .default_str = "bg=green,fg=black",
+	  .default_str = "bg=default,fg=#8a8f98",
 	  .flags = OPTIONS_TABLE_IS_STYLE,
 	  .separator = ",",
 	  .text = "Style of the status line."
@@ -1477,7 +1501,7 @@ const struct options_table_entry options_table[] = {
 	{ .name = "window-status-activity-style",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_str = "reverse",
+	  .default_str = "bg=#bfbdb6,fg=default",
 	  .flags = OPTIONS_TABLE_IS_STYLE,
 	  .separator = ",",
 	  .text = "Style of windows in the status line with an activity alert."
@@ -1486,7 +1510,7 @@ const struct options_table_entry options_table[] = {
 	{ .name = "window-status-bell-style",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_str = "reverse",
+	  .default_str = "default",
 	  .flags = OPTIONS_TABLE_IS_STYLE,
 	  .separator = ",",
 	  .text = "Style of windows in the status line with a bell alert."
@@ -1495,7 +1519,9 @@ const struct options_table_entry options_table[] = {
 	{ .name = "window-status-current-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_str = "#I:#W#{?window_flags,#{window_flags}, }",
+	  .default_str = "#[bg=#3e4b59 fg=#e6e1cf bold]"
+			 "#{E:@claude-style}[#W]#[none bg=default]"
+			 "#{?window_zoomed_flag,#[fg=#39bae6] \xef\x81\xa5,}",
 	  .text = "Format of the current window in the status line."
 	},
 
@@ -1511,7 +1537,9 @@ const struct options_table_entry options_table[] = {
 	{ .name = "window-status-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_str = "#I:#W#{?window_flags,#{window_flags}, }",
+	  .default_str = "#{E:@claude-style} "
+			 "#{?window_bell_flag,#[fg=#e05252 bold],}"
+			 "#W#[none bg=default] ",
 	  .text = "Format of windows in the status line, except the current "
 		  "window."
 	},
@@ -1528,14 +1556,14 @@ const struct options_table_entry options_table[] = {
 	{ .name = "window-status-separator",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_str = " ",
+	  .default_str = "\xe2\x80\xa2",
 	  .text = "Separator between windows in the status line."
 	},
 
 	{ .name = "window-status-style",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_str = "default",
+	  .default_str = "bg=default,fg=#8a8f98",
 	  .flags = OPTIONS_TABLE_IS_STYLE,
 	  .separator = ",",
 	  .text = "Style of windows in the status line, except the current and "

@@ -147,7 +147,7 @@ PID2=$(server_pid)
 echo "PASS 3: waits for copy mode, upgrades again"
 
 # --- Test 4: a build that can't take over leaves the server as it was ---
-$TMUX upgrade-server /bin/false
+$TMUX upgrade-server /usr/bin/false
 wait_until status_starts "failed" || fail "no failure reported: $(upgrade_status)"
 [ "$(server_pid)" = "$PID2" ] || fail "server changed after a failed upgrade"
 $TMUX send-keys -tup:0.0 "echo ROLLBACK_MARK" Enter

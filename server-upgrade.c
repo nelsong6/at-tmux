@@ -43,7 +43,7 @@ static void	upgrade_timer_callback(int, short, void *);
 typedef HANDLE upgrade_child;
 #else
 /*
- * On Linux the new build is started from this process and inherits every
+ * On Linux and macOS the new build is started from this process and inherits every
  * descriptor handed over at the same number; these are the ones to keep open
  * across its exec.
  */

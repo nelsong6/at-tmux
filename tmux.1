@@ -1741,7 +1741,7 @@ bind-key -n C-t switch-client -Tctrl-t -H -R new-window
 bind-key -Tctrl-t C-a new-window menu
 .Ed
 .It Ic upgrade-server Ar tmux-path
-(Windows and Linux.)
+(Windows, Linux and macOS.)
 Move the server to the build at
 .Ar tmux-path
 without restarting anything in it.
@@ -3251,6 +3251,7 @@ option.
 .Op Fl e Ar environment
 .Op Fl F Ar format
 .Op Fl n Ar window-name
+.Op Fl o Ar option=value
 .Op Fl t Ar target-window
 .Op Fl W Ar target-client
 .Op Ar shell-command Op Ar argument ...
@@ -3298,6 +3299,16 @@ When the shell command completes, the window closes.
 See the
 .Ic remain-on-exit
 option to change this behaviour.
+.Pp
+.Fl o
+takes the form
+.Ql name=value
+and sets a window option on the new window before its command can end, so
+.Ql -o remain-on-exit=failed
+keeps the window of a command that fails at once; it may be specified
+multiple times.
+An option that is not a window option, or a value it does not take, is an
+error and no window is created.
 .Pp
 .Fl e
 takes the form
@@ -5064,10 +5075,21 @@ gives a status line one row in height;
 or
 .Ic 5
 more rows.
+With
+.Ic on
+and more than one session on the server, a row of the sessions from
+.Ic status-sessions-format
+is drawn above it.
 .It Ic status-format[] Ar format
 Specify the format to be used for each line of the status line.
 The default builds the top status line from the various individual status
 options below.
+.It Ic status-sessions-format Ar format
+The format of the sessions row drawn above the status line when
+.Ic status
+is
+.Ic on
+and the server has more than one session.
 .It Ic status-interval Ar interval
 Update the status line every
 .Ar interval

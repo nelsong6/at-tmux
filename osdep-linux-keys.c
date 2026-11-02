@@ -22,22 +22,22 @@
  */
 
 #include <sys/types.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
 
 #include <linux/input.h>
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <glob.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "tmux.h"
 
 #define DESKTOP_KEYBOARDS_MAX 32
-#define DESKTOP_RESCAN_SECONDS 2
 
 #define BIT_SET(bits, n) \
 	((bits)[(n) / (8 * sizeof *(bits))] & \
@@ -51,9 +51,10 @@ struct desktop_keyboard {
 };
 static struct desktop_keyboard	desktop_keyboards[DESKTOP_KEYBOARDS_MAX];
 static u_int			desktop_nkeyboards;
-static time_t			desktop_scanned;
+static int			desktop_keyboards_started;
 static int			desktop_global_started;
-static struct event		desktop_rescan_timer;
+static int			desktop_inotify_fd = -1;
+static struct event		desktop_inotify_event;
 
 /*
  * The modifier keys held, in the order the global table's keyboards reported
@@ -69,16 +70,32 @@ static u_long		desktop_global_held[
 
 static void	desktop_keyboard_read(int, short, void *);
 
-/* Is this device a keyboard: does it have Ctrl and letters? */
+/*
+ * Is this device a keyboard: does it have Ctrl and letters? Asked of sysfs, not
+ * the device, because closing an evdev device waits for an RCU grace period
+ * (tens of milliseconds) and the server would stall for each device that is
+ * not a keyboard. The capabilities are hex words, the last holding keys 0-63.
+ */
 static int
-desktop_is_keyboard(int fd)
+desktop_is_keyboard(const char *name)
 {
-	u_long	bits[KEY_MAX / (8 * sizeof (u_long)) + 1];
+	char	 path[128], line[1024], *last;
+	FILE	*f;
+	u_long	 bits;
 
-	memset(bits, 0, sizeof bits);
-	if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof bits), bits) < 0)
+	xsnprintf(path, sizeof path, "/sys/class/input/%s/device/capabilities/key",
+	    name);
+	if ((f = fopen(path, "r")) == NULL)
 		return (0);
-	return (BIT_SET(bits, KEY_LEFTCTRL) && BIT_SET(bits, KEY_A));
+	if (fgets(line, sizeof line, f) == NULL) {
+		fclose(f);
+		return (0);
+	}
+	fclose(f);
+	line[strcspn(line, "\n")] = '\0';
+	last = strrchr(line, ' ');
+	bits = strtoul(last == NULL ? line : last + 1, NULL, 16);
+	return (BIT_SET(&bits, KEY_LEFTCTRL) && BIT_SET(&bits, KEY_A));
 }
 
 /* Watch a keyboard for the global table. */
@@ -117,53 +134,109 @@ desktop_keyboard_close(u_int i)
 	memset(last, 0, sizeof *last);
 }
 
+/* The open keyboard with this path, or -1. */
+static int
+desktop_keyboard_find(const char *path)
+{
+	u_int	i;
+
+	for (i = 0; i < desktop_nkeyboards; i++) {
+		if (strcmp(desktop_keyboards[i].path, path) == 0)
+			return (i);
+	}
+	return (-1);
+}
+
 /*
- * Open keyboards not already open. Keyboards come and go, so this looks again
- * when the last look is more than a couple of seconds old.
+ * Open /dev/input/name if it is a keyboard not already open. A new device's
+ * node may not be readable until udev sets its group, so this is tried again
+ * when its attributes change.
  */
 static void
-desktop_keyboards_scan(void)
+desktop_keyboard_open(const char *name)
 {
 	struct desktop_keyboard	*kb;
-	glob_t			 g;
-	time_t			 now = time(NULL);
-	size_t			 i;
-	u_int			 j;
+	char			 path[128];
 	int			 fd;
 
-	if (desktop_scanned != 0 &&
-	    now - desktop_scanned < DESKTOP_RESCAN_SECONDS)
+	if (strncmp(name, "event", 5) != 0)
 		return;
-	desktop_scanned = now;
+	xsnprintf(path, sizeof path, "/dev/input/%s", name);
+	if (desktop_keyboard_find(path) != -1)
+		return;
+	if (desktop_nkeyboards == DESKTOP_KEYBOARDS_MAX)
+		return;
+	if (!desktop_is_keyboard(name))
+		return;
+	fd = open(path, O_RDONLY|O_NONBLOCK|O_CLOEXEC);
+	if (fd == -1)
+		return;
+	log_debug("%s: keyboard %s", __func__, path);
+	kb = &desktop_keyboards[desktop_nkeyboards++];
+	kb->path = xstrdup(path);
+	kb->fd = fd;
+	kb->event_added = 0;
+	if (desktop_global_started)
+		desktop_keyboard_watch(kb);
+}
 
-	if (glob("/dev/input/event*", 0, NULL, &g) != 0)
-		return;
-	for (i = 0; i < g.gl_pathc; i++) {
-		if (desktop_nkeyboards == DESKTOP_KEYBOARDS_MAX)
-			break;
-		for (j = 0; j < desktop_nkeyboards; j++) {
-			if (strcmp(desktop_keyboards[j].path,
-			    g.gl_pathv[i]) == 0)
-				break;
+/* Devices have come or gone in /dev/input. */
+static void
+desktop_inotify_read(int fd, __unused short events, __unused void *arg)
+{
+	char				 buf[4096]
+	    __attribute__((aligned(__alignof__(struct inotify_event))));
+	const struct inotify_event	*ie;
+	char				 path[128];
+	ssize_t				 n;
+	char				*p;
+	int				 i;
+
+	while ((n = read(fd, buf, sizeof buf)) > 0) {
+		for (p = buf; p < buf + n; p += sizeof *ie + ie->len) {
+			ie = (const struct inotify_event *)p;
+			if (ie->len == 0)
+				continue;
+			if (ie->mask & IN_DELETE) {
+				xsnprintf(path, sizeof path, "/dev/input/%s",
+				    ie->name);
+				if ((i = desktop_keyboard_find(path)) != -1)
+					desktop_keyboard_close(i);
+			} else
+				desktop_keyboard_open(ie->name);
 		}
-		if (j != desktop_nkeyboards)
-			continue;
-		fd = open(g.gl_pathv[i], O_RDONLY|O_NONBLOCK|O_CLOEXEC);
-		if (fd == -1)
-			continue;
-		if (!desktop_is_keyboard(fd)) {
-			close(fd);
-			continue;
-		}
-		log_debug("%s: keyboard %s", __func__, g.gl_pathv[i]);
-		kb = &desktop_keyboards[desktop_nkeyboards++];
-		kb->path = xstrdup(g.gl_pathv[i]);
-		kb->fd = fd;
-		kb->event_added = 0;
-		if (desktop_global_started)
-			desktop_keyboard_watch(kb);
 	}
-	globfree(&g);
+}
+
+/*
+ * Open the keyboards, once, and have the kernel say when devices come and go
+ * rather than looking again.
+ */
+static void
+desktop_keyboards_start(void)
+{
+	DIR		*d;
+	struct dirent	*de;
+
+	if (desktop_keyboards_started)
+		return;
+	desktop_keyboards_started = 1;
+
+	desktop_inotify_fd = inotify_init1(IN_NONBLOCK|IN_CLOEXEC);
+	if (desktop_inotify_fd != -1 &&
+	    inotify_add_watch(desktop_inotify_fd, "/dev/input",
+	    IN_CREATE|IN_ATTRIB|IN_DELETE) != -1) {
+		event_set(&desktop_inotify_event, desktop_inotify_fd,
+		    EV_READ|EV_PERSIST, desktop_inotify_read, NULL);
+		event_add(&desktop_inotify_event, NULL);
+	} else
+		log_debug("%s: no inotify: %s", __func__, strerror(errno));
+
+	if ((d = opendir("/dev/input")) == NULL)
+		return;
+	while ((de = readdir(d)) != NULL)
+		desktop_keyboard_open(de->d_name);
+	closedir(d);
 }
 
 /* The keys held on every keyboard together. */
@@ -174,7 +247,7 @@ desktop_keys_held(u_long *bits, size_t size)
 	u_int	i, n;
 
 	memset(bits, 0, size);
-	desktop_keyboards_scan();
+	desktop_keyboards_start();
 	for (i = 0; i < desktop_nkeyboards; /* nothing */) {
 		memset(one, 0, sizeof one);
 		if (ioctl(desktop_keyboards[i].fd, EVIOCGKEY(sizeof one),
@@ -300,16 +373,6 @@ desktop_keyboard_read(int fd, __unused short events, __unused void *arg)
 	}
 }
 
-/* Look for keyboards plugged in since the last look. */
-static void
-desktop_rescan(__unused int fd, __unused short events, __unused void *arg)
-{
-	struct timeval	tv = { .tv_sec = DESKTOP_RESCAN_SECONDS };
-
-	desktop_keyboards_scan();
-	evtimer_add(&desktop_rescan_timer, &tv);
-}
-
 /*
  * Watch the keyboards, once, when the global table first gets a key. Every
  * key is seen, so there is nothing to do for each one.
@@ -325,8 +388,6 @@ desktop_global_key_add(__unused key_code key)
 	desktop_keys_held(desktop_global_held, sizeof desktop_global_held);
 	for (i = 0; i < desktop_nkeyboards; i++)
 		desktop_keyboard_watch(&desktop_keyboards[i]);
-	evtimer_set(&desktop_rescan_timer, desktop_rescan, NULL);
-	desktop_rescan(-1, 0, NULL);
 }
 
 /* Every key is seen, so a key leaving the global table changes nothing. */

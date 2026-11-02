@@ -25,6 +25,7 @@ $TMUX2 kill-server 2>/dev/null
 $TMUX2 -f/dev/null new -d "$TMUX -f/dev/null new -- $shell"
 sleep 2
 $TMUX set -g status-style fg=default,bg=default
+$TMUX set -g status-position bottom
 
 check() {
 	v=$($TMUX display -p "$1")
