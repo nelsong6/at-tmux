@@ -151,6 +151,7 @@ session_create(const char *prefix, const char *name, const char *cwd,
 		} while (RB_FIND(sessions, &sessions, s) != NULL);
 	}
 	RB_INSERT(sessions, &sessions, s);
+	status_sessions_changed();
 
 	log_debug("new session %s $%u", s->name, s->id);
 
@@ -212,6 +213,7 @@ session_destroy(struct session *s, int notify, const char *from)
 	RB_REMOVE(sessions, &sessions, s);
 	if (RB_EMPTY(&sessions))
 		session_set_closed();
+	status_sessions_changed();
 	if (notify)
 		notify_session("session-closed", s);
 
