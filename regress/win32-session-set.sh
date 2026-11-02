@@ -43,7 +43,8 @@ $TMUX set -g @session-set-resume "$RESUME" || fail "set resume"
 
 pane_program() {
 	pid=$($TMUX display -p -t "$1" '#{pane_pid}' | tr -d '\r')
-	tasklist //FI "PID eq $pid" //NH //FO CSV | cut -d, -f1 | tr -d '"\r'
+	"$(cygpath -u "$SYSTEMROOT")/System32/tasklist.exe" //FI "PID eq $pid" //NH //FO CSV |
+	    cut -d, -f1 | tr -d '"\r'
 }
 snap_has() { grep -q -- "$1" "$SNAP" 2>/dev/null; }
 closed_lines() { [ -f "$DIR/closed-windows" ] && wc -l <"$DIR/closed-windows" | tr -d ' ' || echo 0; }
