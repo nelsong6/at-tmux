@@ -40,9 +40,9 @@ const struct cmd_entry cmd_new_window_entry = {
 	.name = "new-window",
 	.alias = "neww",
 
-	.args = { "abc:de:F:kn:PSt:W:", 0, -1, NULL },
+	.args = { "abc:de:F:kn:o:PSt:W:", 0, -1, NULL },
 	.usage = "[-abdkPS] [-c start-directory] [-e environment] [-F format] "
-		 "[-n window-name] " CMD_TARGET_WINDOW_USAGE
+		 "[-n window-name] [-o option=value] " CMD_TARGET_WINDOW_USAGE
 		 " [-W target-client] [shell-command [argument ...]]",
 
 	.target = { 't', CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX },
@@ -180,6 +180,47 @@ new_window_draw_client_lost(struct client *c)
 	}
 }
 
+/*
+ * new-window -o name=value: a window option set on the new window as it is
+ * made, before the event loop can see its program end, so remain-on-exit
+ * holds even for a program that fails at once (FZT-71, TMUX-52). Every -o is
+ * checked before the window is made, on options that are thrown away.
+ */
+static int
+cmd_new_window_options(struct args *args, struct options *oo, char **cause)
+{
+	struct args_value			*av;
+	struct options_entry			*o;
+	const struct options_table_entry	*oe;
+	char					*name, *value;
+	int					 error = 0;
+
+	for (av = args_first_value(args, 'o'); av != NULL;
+	    av = args_next_value(av)) {
+		name = xstrdup(av->string);
+		if ((value = strchr(name, '=')) == NULL) {
+			xasprintf(cause, "-o needs name=value: %s", av->string);
+			error = -1;
+		} else {
+			*value++ = '\0';
+			if (*name == '@')
+				options_set_string(oo, name, 0, "%s", value);
+			else if ((o = options_get(global_w_options, name)) == NULL ||
+			    (oe = options_table_entry(o)) == NULL ||
+			    (~oe->scope & OPTIONS_TABLE_WINDOW)) {
+				xasprintf(cause, "not a window option: %s", name);
+				error = -1;
+			} else
+				error = options_from_string(oo, oe, oe->name,
+				    value, 0, cause);
+		}
+		free(name);
+		if (error != 0)
+			return (-1);
+	}
+	return (0);
+}
+
 static enum cmd_retval
 cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 {
@@ -210,6 +251,18 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 		}
 	}
 	detached = args_has(args, 'd') || wc != NULL;
+
+	if (args_has(args, 'o')) {
+		struct options	*check = options_create(global_w_options);
+		int		 bad = cmd_new_window_options(args, check, &cause);
+
+		options_free(check);
+		if (bad) {
+			cmdq_error(item, "%s", cause);
+			free(cause);
+			return (CMD_RETURN_ERROR);
+		}
+	}
 
 	/*
 	 * If -S and -n are given and -t is not and a single window with this
@@ -284,6 +337,8 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 		environ_free(sc.environ);
 		return (CMD_RETURN_ERROR);
 	}
+	/* Checked above, so this can't fail. */
+	cmd_new_window_options(args, new_wl->window->options, &cause);
 	if (!detached || new_wl == s->curw) {
 		cmd_find_from_winlink(current, new_wl, 0);
 		server_redraw_session_group(s);
