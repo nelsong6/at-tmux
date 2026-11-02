@@ -509,6 +509,10 @@ spawn_pane(struct spawn_context *sc, char **cause)
 				server_client_remove_pane(new_wp);
 				layout_close_pane(new_wp);
 				window_remove_pane(w, new_wp);
+			} else {
+				/* A respawn freed the parser; a dead pane still needs one. */
+				new_wp->ictx = input_init(new_wp, NULL, &new_wp->palette,
+				    NULL);
 			}
 			environ_free(child);
 			return (NULL);
@@ -542,6 +546,10 @@ spawn_pane(struct spawn_context *sc, char **cause)
 			server_client_remove_pane(new_wp);
 			layout_close_pane(new_wp);
 			window_remove_pane(w, new_wp);
+		} else {
+			/* A respawn freed the parser; a dead pane still needs one. */
+			new_wp->ictx = input_init(new_wp, NULL, &new_wp->palette,
+			    NULL);
 		}
 		sigprocmask(SIG_SETMASK, &oldset, NULL);
 		environ_free(child);
