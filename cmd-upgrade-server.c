@@ -37,7 +37,7 @@ cmd_upgrade_server_exec(struct cmd *self, struct cmdq_item *item)
 	return (CMD_RETURN_NORMAL);
 #else
 	(void)self;
-	cmdq_error(item, "upgrade-server is only on Windows and Linux");
+	cmdq_error(item, "upgrade-server is only on Windows, Linux and macOS");
 	return (CMD_RETURN_ERROR);
 #endif
 }

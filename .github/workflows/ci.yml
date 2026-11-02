@@ -251,6 +251,9 @@ jobs:
       - name: Run hold tests
         run: TEST_TMUX="$PWD/tmux" sh regress/hold.sh
 
+      - name: Run upgrade tests
+        run: TEST_TMUX="$PWD/tmux" sh regress/upgrade.sh
+
       - name: Upload macOS build
         uses: actions/upload-artifact@v4
         with:
