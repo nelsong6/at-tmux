@@ -1418,6 +1418,8 @@ ss_offer_choice(__unused struct menu *menu, u_int idx, key_code key,
 	char			*previous, *commands, *error;
 
 	ss_offer_client = NULL;
+	log_debug("session-set: offer closed, item %d key %llx", (int)idx,
+	    (unsigned long long)key);
 	if (idx == UINT_MAX || (dir = ss_dir()) == NULL)
 		return;
 	previous = ss_snapshot_path(dir, "-previous");
@@ -1571,9 +1573,12 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 	py = (c->tty.sy > h ? (c->tty.sy - h) / 2 : 0);
 	if (menu_display(menu, 0, 0, NULL, px, py, c, BOX_LINES_DEFAULT, NULL,
 	    NULL, NULL, NULL, ss_offer_choice, c) != 0) {
+		log_debug("session-set: %s at %ux%u too small for the offer",
+		    c->name, c->tty.sx, c->tty.sy);
 		menu_free(menu);
 		return;
 	}
+	log_debug("session-set: offered on %s", c->name);
 	ss_offer_client = c;
 }
 

@@ -3596,6 +3596,43 @@ The
 option has the same meaning as for the
 .Ic new-window
 command.
+.It Xo Ic restore-set
+.Op Fl d
+.Ar file ...
+.Xc
+Rebuild the sessions saved in each
+.Ar file ,
+a snapshot a server with
+.Ic @session-set-dir
+set kept in
+.Pa live/
+(a relative
+.Ar file
+is looked up in that folder), beside this server's own: each session with its
+windows, panes, layouts, folders and names, its panes started as
+.Ic reopen-window
+starts them.
+A session name already in use gets
+.Ql -2
+and up.
+The files are moved to
+.Pa archive/ ,
+where the newest 50 are kept.
+Unless
+.Fl d
+is given, the client is switched to the session the first snapshot's client
+showed.
+.Pp
+A server with
+.Ic @session-set-dir
+set offers the snapshot an earlier server of its name left (after a reboot,
+a crash or
+.Ic kill-server )
+in a menu on the first client to attach: Enter rebuilds it in place of the
+session the client opened in, if that is still one shell; Escape moves it to
+.Pa archive/ .
+A snapshot of a server that ended with its last session, or that no client
+ever showed, is archived without an offer.
 .Tg rotatew
 .It Xo Ic rotate-window
 .Op Fl DUZ
