@@ -31,13 +31,20 @@ fail() {
 # A pane that stays up: cmd.exe runs it, and {id} lands in a comment.
 SYS=$(cygpath -w "$SYSTEMROOT")
 LONG="$SYS\System32\PING.EXE -n 300 127.0.0.1 >nul"
+# What restore starts is a program and its arguments, with no shell: {id} lands in
+# a PowerShell comment, and the pane's process is PowerShell itself, not cmd.exe.
+RESUME="$SYS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command \"Start-Sleep 300 # resumed {id}\""
 
 $TMUX -f"$(cygpath -m $CFG)" new -d -s main -n one || fail "start server"
 SNAP="$DIR/live/$(basename "$($TMUX display -p '#{socket_path}' | tr -d '\r')").set"
 T=$(printf '\t')
 $TMUX set -g @session-set-dir "$WDIR" || fail "set dir"
-$TMUX set -g @session-set-resume "$LONG & rem resumed {id}" || fail "set resume"
+$TMUX set -g @session-set-resume "$RESUME" || fail "set resume"
 
+pane_program() {
+	pid=$($TMUX display -p -t "$1" '#{pane_pid}' | tr -d '\r')
+	tasklist //FI "PID eq $pid" //NH //FO CSV | cut -d, -f1 | tr -d '"\r'
+}
 snap_has() { grep -q -- "$1" "$SNAP" 2>/dev/null; }
 closed_lines() { [ -f "$DIR/closed-windows" ] && wc -l <"$DIR/closed-windows" | tr -d ' ' || echo 0; }
 has_window() {
@@ -81,6 +88,8 @@ wait_until windows_are main "one two three" || fail "reopened window not at its 
     fail "reopened window's layout differs"
 $TMUX display -p -t main:two.1 '#{pane_start_command}' | grep -q 'resumed abc123' ||
     fail "Claude pane not resumed"
+[ "$(pane_program main:two.1)" = powershell.exe ] ||
+    fail "Claude pane resumed through a shell: $(pane_program main:two.1)"
 [ "$($TMUX display -p -t main:two '#{pane_index}' | tr -d '\r')" = 1 ] ||
     fail "active pane not restored"
 [ "$(closed_lines)" -eq 0 ] || fail "reopened window still recorded"
@@ -118,7 +127,7 @@ $TMUX kill-window -t main:osc
 
 # 10. A program started in a pane reaches the snapshot with no tmux command
 # after it, and its window reopens running @session-set-restart-<program>.
-$TMUX set -g @session-set-restart-PING "$LONG & rem restarted" ||
+$TMUX set -g @session-set-restart-PING "$SYS\System32\PING.EXE -n 300 -w 1234 127.0.0.1" ||
     fail "set restart"
 $TMUX new-window -d -t main: -n prog || fail "prog window"
 $TMUX send-keys -t main:prog "$LONG" Enter
@@ -129,8 +138,10 @@ $TMUX kill-window -t main:prog
 wait_until test "$(closed_lines)" -eq 1 || fail "prog window not recorded"
 $TMUX reopen-window -d || fail "reopen prog"
 wait_until has_window main prog || fail "prog window not reopened"
-$TMUX display -p -t main:prog '#{pane_start_command}' | grep -q 'restarted' ||
+$TMUX display -p -t main:prog '#{pane_start_command}' | grep -q -- '-w 1234' ||
     fail "program not restarted"
+[ "$(pane_program main:prog)" = PING.EXE ] ||
+    fail "program restarted through a shell: $(pane_program main:prog)"
 $TMUX kill-window -t main:prog
 
 # 11. At most 25 closed windows are kept.
