@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# session-set: with @session-set-dir set, the server keeps live/<socket>.json
+# session-set: with @session-set-dir set, the server keeps live/<socket>.set
 # current itself, records each destroyed window in closed-windows, and
 # reopen-window rebuilds the newest one. Nothing is recorded when the server
 # shuts down, and a server that ends with its last session is marked closed.
@@ -23,7 +23,7 @@ trap "$TMUX kill-server 2>/dev/null; rm -rf $DIR $CFG" 0 1 15
 fail() {
 	echo "FAIL: $1"
 	$TMUX lsw -a -F '#{session_name}:#{window_index} #{window_name} #{window_panes}' 2>&1
-	cat "$DIR"/live/*.json 2>&1
+	cat "$DIR"/live/*.set 2>&1
 	cat "$DIR/closed-windows" 2>&1
 	exit 1
 }
@@ -33,7 +33,8 @@ SYS=$(cygpath -w "$SYSTEMROOT")
 LONG="$SYS\System32\PING.EXE -n 300 127.0.0.1 >nul"
 
 $TMUX -f"$(cygpath -m $CFG)" new -d -s main -n one || fail "start server"
-SNAP="$DIR/live/$(basename "$($TMUX display -p '#{socket_path}' | tr -d '\r')").json"
+SNAP="$DIR/live/$(basename "$($TMUX display -p '#{socket_path}' | tr -d '\r')").set"
+T=$(printf '\t')
 $TMUX set -g @session-set-dir "$WDIR" || fail "set dir"
 $TMUX set -g @session-set-resume "$LONG & rem resumed {id}" || fail "set resume"
 
@@ -49,8 +50,8 @@ windows_are() {
 }
 
 # 1. The server writes its snapshot itself.
-wait_until snap_has '"name":"main"' || fail "no snapshot written"
-snap_has '"closedAt":null' || fail "a live snapshot is marked closed"
+wait_until snap_has "^window${T}.*${T}main${T}" || fail "no snapshot written"
+snap_has "^closed${T}0$" || fail "a live snapshot is marked closed"
 
 # 2. Nothing changes, nothing is written.
 before=$(cat "$SNAP")
@@ -64,8 +65,8 @@ $TMUX new-window -d -t main: -n three "$LONG" || fail "new-window three"
 $TMUX set -p -t main:two.1 @claude-session abc123 || fail "set claude"
 $TMUX set -p -t main:two.1 @claude-cwd 'C:\Windows' || fail "set claude cwd"
 $TMUX select-pane -t main:two.1
-wait_until snap_has '"claude":"abc123"' || fail "Claude session not in snapshot"
-snap_has '"cwd":"C:/Windows"' || fail "Claude folder not in snapshot"
+wait_until snap_has "${T}abc123${T}" || fail "Claude session not in snapshot"
+snap_has "${T}C:/Windows${T}abc123${T}" || fail "Claude folder not in snapshot"
 sizes() { $TMUX lsp -t "$1" -F '#{pane_width}x#{pane_height}' | tr -d '\r' | tr '\n' ' '; }
 layout=$(sizes main:two)
 
@@ -104,7 +105,7 @@ wait_until windows_are other "o1 three" || fail "session not made again with its
 cp "$COMSPEC" "$DIR/fzt-automate.exe"
 $TMUX new-window -d -t main: -n menu "$(cygpath -w "$DIR/fzt-automate.exe") /k" ||
     fail "menu window"
-wait_until snap_has '"command":"fzt-automate"' || fail "menu program not seen"
+wait_until snap_has "${T}fzt-automate$" || fail "menu program not seen"
 $TMUX kill-window -t main:menu
 sleep 0.5
 [ "$(closed_lines)" -eq 0 ] || fail "menu window recorded"
@@ -112,7 +113,7 @@ sleep 0.5
 # 9. A folder the pane reports (OSC 7) reaches the snapshot.
 $TMUX new-window -d -t main: -n osc "$SYS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command \"[Console]::Write([char]27+']7;file://h/C:/Users'+[char]7); Start-Sleep 300\"" ||
     fail "osc window"
-wait_until snap_has '"cwd":"C:/Users"' || fail "reported folder not in snapshot"
+wait_until snap_has "${T}C:/Users${T}" || fail "reported folder not in snapshot"
 $TMUX kill-window -t main:osc
 
 # 10. A program started in a pane reaches the snapshot with no tmux command
@@ -121,7 +122,7 @@ $TMUX set -g @session-set-restart-PING "$LONG & rem restarted" ||
     fail "set restart"
 $TMUX new-window -d -t main: -n prog || fail "prog window"
 $TMUX send-keys -t main:prog "$LONG" Enter
-wait_until snap_has '"name":"prog",[^]]*"command":"PING"' ||
+wait_until snap_has "${T}prog${T}.*${T}PING$" ||
     fail "program started in a pane not seen"
 : >"$DIR/closed-windows"
 $TMUX kill-window -t main:prog
@@ -149,18 +150,22 @@ head -1 "$DIR/closed-windows" | grep -q '	w26	' || fail "newest closed window no
 $TMUX kill-server
 wait_gone
 [ "$(closed_lines)" -eq 0 ] || fail "kill-server recorded windows"
-snap_has '"closedAt":null' || fail "killed server's snapshot marked closed"
+snap_has "^closed${T}0$" || fail "killed server's snapshot marked closed"
 
-# 13. A new server sets the earlier snapshot aside; one that ends with its last
-# session is marked closed.
-old=$(sed 's/.*"startTime":\([0-9]*\).*/\1/' "$SNAP")
+# 13. A new server archives the earlier snapshot when no client ever showed
+# it (one a client showed is offered: win32-session-offer.sh); one that ends
+# with its last session is marked closed.
+old=$(sed -n "s/^start${T}//p" "$SNAP" | tr -d '\r')
 sleep 1.1
 $TMUX -f"$(cygpath -m $CFG)" new -d -s solo "$LONG" || fail "restart server"
 $TMUX set -g @session-set-dir "$WDIR"
-wait_until test -f "${SNAP%.json}-$old.json" || fail "earlier snapshot not set aside"
-wait_until snap_has '"name":"solo"' || fail "new server's snapshot not written"
+wait_until snap_has "${T}solo${T}" || fail "new server's snapshot not written"
+test -f "$DIR/archive/$(basename "${SNAP%.set}")-$old.set" ||
+    fail "earlier snapshot no client showed not archived"
+test -f "${SNAP%.set}-previous.set" &&
+    fail "earlier snapshot no client showed offered"
 $TMUX kill-session -t solo
 wait_gone
-snap_has '"closedAt":null' && fail "server that ended with its last session not marked closed"
+snap_has "^closed${T}0$" && fail "server that ended with its last session not marked closed"
 
 exit 0
