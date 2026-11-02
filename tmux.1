@@ -3251,6 +3251,7 @@ option.
 .Op Fl e Ar environment
 .Op Fl F Ar format
 .Op Fl n Ar window-name
+.Op Fl o Ar option=value
 .Op Fl t Ar target-window
 .Op Fl W Ar target-client
 .Op Ar shell-command Op Ar argument ...
@@ -3298,6 +3299,16 @@ When the shell command completes, the window closes.
 See the
 .Ic remain-on-exit
 option to change this behaviour.
+.Pp
+.Fl o
+takes the form
+.Ql name=value
+and sets a window option on the new window before its command can end, so
+.Ql -o remain-on-exit=failed
+keeps the window of a command that fails at once; it may be specified
+multiple times.
+An option that is not a window option, or a value it does not take, is an
+error and no window is created.
 .Pp
 .Fl e
 takes the form

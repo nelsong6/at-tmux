@@ -33,7 +33,7 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
 ## Test Suite
 
-CI runs 23 test scripts from `regress/`, each through `win32-run.sh`:
+CI runs 24 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
@@ -54,6 +54,7 @@ CI runs 23 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-session-set.sh` — with `@session-set-dir` set the server writes `live/<socket>.set` itself, only when something in it changed (a pane's Claude session, a reported folder, a program started in a pane), records each window it destroys (not one moved, not the at menu's, none at `kill-server`) in `closed-windows`, at most 25, and `reopen-window` rebuilds the newest at its place with its splits, layout, active pane and Claude session or restarted program, making its session again if it has gone (13 tests)
 - `win32-session-offer.sh` — a server offers the snapshot an earlier server of its name left in a menu on the first client to attach (pseudo-console client, keys by `send-keys -K`): Enter rebuilds it in place of the fresh session, Escape archives it, a server no client showed is archived without an offer, and `restore-set` rebuilds an archived snapshot beside the sessions there
 - `win32-new-window-draw.sh` — `new-window -W` switches the client only once the new pane has drawn (not on ConPTY's setup alone), fails without switching when the program exits or the window is killed first, and a killed waiting command gives the wait up
+- `win32-new-window-options.sh` — `new-window -o name=value` sets window options on the new window before its program can end: with `remain-on-exit=failed` a program that fails at once keeps its window, output and exit status, one that succeeds closes it, a bad `-o` makes no window, and `-W` switches to the dead pane once its message is drawn (TMUX-52)
 - `win32-global-foreground.sh` — `#{global_key_terminal_foreground}` is 1 when the client's terminal (a window of a process it runs under) had the focus at a global key, else 0; `win32-foreground.ps1` presses Win+` in CI only
 - `win32-upgrade.sh` — `upgrade-server` hands a server with an attached client (unfocused, its pane asking for focus reports) to another process without restarting its panes, waits while copy mode is open, carries on when the new build fails, and keeps the global environment as it was, less its handover variable `TMUX_UPGRADE`, in it and in new panes (6 tests; runs beside `conpty.dll`)
 
