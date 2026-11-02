@@ -37,8 +37,8 @@
 
 #include "compat.h"
 
-/* upgrade-server moves a running server to another build (Windows, Linux). */
-#if defined(_WIN32) || defined(__linux__)
+/* upgrade-server moves a running server to another build (Windows, Linux, macOS). */
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__)
 #define HAVE_SERVER_UPGRADE
 #endif
 #include "tmux-protocol.h"
