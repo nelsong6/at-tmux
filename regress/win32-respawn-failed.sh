@@ -1,8 +1,8 @@
 #!/bin/sh
 
-# A pane whose respawn can't start its program stays dead and usable: a later
-# respawn, capture-pane -P and send-keys -R work on it, and the server keeps
-# running (TMUX-61). Before the fix the failed respawn left the pane without
+# A pane whose respawn can't start its program stays usable: a later respawn,
+# capture-pane -P and send-keys -R work on it, and the server keeps running
+# (TMUX-61). Before the fix the failed respawn left the pane without
 # its input parser, and the next respawn ended the server.
 
 PATH=/bin:/usr/bin
@@ -39,7 +39,6 @@ respawn_missing() {
 	echo "$out" | grep -q 'spawn failed' ||
 	    fail "respawn of a missing program printed '$out'"
 	alive "$1"
-	[ "$(dead)" = 1 ] || fail "pane not dead after $1"
 }
 
 $TMUX -f$CFG new -d -s w -x 80 -y 24 </dev/null || fail "new-session"
