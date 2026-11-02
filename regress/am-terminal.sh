@@ -17,6 +17,8 @@ $TMUX2 set -as terminal-overrides ',*:am@' || exit 1
 $TMUX2 set -g status-right 'RRR' || exit 1
 $TMUX2 set -g status-left 'LLL' || exit 1
 $TMUX2 set -g window-status-current-format 'WWW' || exit 1
+$TMUX2 set -g status-position bottom || exit 1
+$TMUX2 set -g status-justify left || exit 1
 $TMUX -f/dev/null new -x20 -y2 -d "$TMUX2 attach" || exit 1
 sleep 1
 $TMUX capturep -p|tail -1 >$TMP || exit 1

@@ -3085,6 +3085,7 @@ extern u_int	  status_prompt_hsize[];
 void	 status_timer_start(struct client *);
 void	 status_timer_start_all(void);
 void	 status_update_cache(struct session *);
+void	 status_sessions_changed(void);
 u_int	 status_prompt_line_at(struct client *);
 int	 status_at_line(struct client *);
 u_int	 status_line_size(struct client *);
