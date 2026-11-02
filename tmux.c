@@ -469,7 +469,6 @@ main(int argc, char **argv)
 	win32_crash_init();
 	win32_init_environ();
 	win32_wsa_init();
-	win32_process_init();
 	win32_tty_init_utf8();
 	setlocale(LC_ALL, "");
 	tzset();

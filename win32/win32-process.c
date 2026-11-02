@@ -17,157 +17,53 @@
 /* External: defined in win32-compat.c */
 void win32_child_exited(pid_t pid, int status);
 
-#define MAX_WATCHED 64
+void fatalx(const char *, ...);
 
+/*
+ * Each child has a thread pool wait of its own, so any number can be watched and
+ * one that has exited leaves nothing behind. The handle is the server's own copy.
+ */
 struct watched_process {
-	HANDLE   hProcess;
-	pid_t    pid;
-	int      active;
+	HANDLE	 process;
+	pid_t	 pid;
 };
 
-static struct watched_process watched[MAX_WATCHED];
-static int nwatched = 0;
-static CRITICAL_SECTION watch_lock;
-static HANDLE watcher_thread = NULL;
-static HANDLE watcher_event = NULL; /* signaled when watch list changes */
-static volatile int watcher_shutdown = 0;
-
-static DWORD WINAPI
-process_watcher_thread(LPVOID arg)
+static VOID CALLBACK
+process_exited(PTP_CALLBACK_INSTANCE instance, PVOID arg, PTP_WAIT wait,
+    TP_WAIT_RESULT result)
 {
-	HANDLE handles[MAX_WATCHED + 1];
-	DWORD count, result;
-	int i;
+	struct watched_process	*w = arg;
+	DWORD			 code = 0;
 
-	(void)arg;
+	(void)instance;
+	(void)result;
 
-	for (;;) {
-		if (watcher_shutdown)
-			break;
+	GetExitCodeProcess(w->process, &code);
+	CloseHandle(w->process);
+	win32_child_exited(w->pid, (int)(code << 8));
+	free(w);
+	CloseThreadpoolWait(wait);
 
-		EnterCriticalSection(&watch_lock);
-		count = 0;
-		handles[count++] = watcher_event; /* always first */
-		for (i = 0; i < nwatched; i++) {
-			if (watched[i].active && count < MAX_WATCHED + 1)
-				handles[count++] = watched[i].hProcess;
-		}
-		LeaveCriticalSection(&watch_lock);
-
-		result = WaitForMultipleObjects(count, handles, FALSE, 1000);
-
-		if (result == WAIT_OBJECT_0) {
-			/* Watcher event signaled: list changed, re-loop. */
-			ResetEvent(watcher_event);
-			continue;
-		}
-
-		if (result == WAIT_TIMEOUT)
-			continue;
-
-		if (result >= WAIT_OBJECT_0 + 1 &&
-		    result < WAIT_OBJECT_0 + count) {
-			/* A child process exited. */
-			DWORD idx = result - WAIT_OBJECT_0 - 1;
-			DWORD exit_code = 0;
-			pid_t pid;
-
-			EnterCriticalSection(&watch_lock);
-			/* Map back to watched array index. */
-			DWORD wi = 0;
-			for (i = 0; i < nwatched; i++) {
-				if (watched[i].active) {
-					if (wi == idx) {
-						GetExitCodeProcess(watched[i].hProcess, &exit_code);
-						pid = watched[i].pid;
-						CloseHandle(watched[i].hProcess);
-						watched[i].active = 0;
-
-						/* Compact. */
-						if (i == nwatched - 1)
-							nwatched--;
-
-						LeaveCriticalSection(&watch_lock);
-
-						/* Encode exit code like Unix: (code << 8). */
-						win32_child_exited(pid, (int)(exit_code << 8));
-
-						/* Notify signal pipe (SIGCHLD). */
-						win32_signal_notify(SIGCHLD);
-						goto next;
-					}
-					wi++;
-				}
-			}
-			LeaveCriticalSection(&watch_lock);
-		}
-next:;
-	}
-	return 0;
-}
-
-void
-win32_process_init(void)
-{
-	InitializeCriticalSection(&watch_lock);
-	watcher_event = CreateEvent(NULL, TRUE, FALSE, NULL);
-	watcher_shutdown = 0;
-	nwatched = 0;
-	watcher_thread = CreateThread(NULL, 0, process_watcher_thread, NULL, 0, NULL);
-}
-
-void
-win32_process_cleanup(void)
-{
-	int i;
-
-	watcher_shutdown = 1;
-	if (watcher_event)
-		SetEvent(watcher_event);
-	if (watcher_thread) {
-		WaitForSingleObject(watcher_thread, 5000);
-		CloseHandle(watcher_thread);
-		watcher_thread = NULL;
-	}
-	if (watcher_event) {
-		CloseHandle(watcher_event);
-		watcher_event = NULL;
-	}
-
-	EnterCriticalSection(&watch_lock);
-	for (i = 0; i < nwatched; i++) {
-		if (watched[i].active)
-			CloseHandle(watched[i].hProcess);
-	}
-	nwatched = 0;
-	LeaveCriticalSection(&watch_lock);
-	DeleteCriticalSection(&watch_lock);
+	win32_signal_notify(SIGCHLD);
 }
 
 void
 win32_process_watch(HANDLE hProcess, pid_t pid)
 {
-	HANDLE dup;
+	struct watched_process	*w;
+	PTP_WAIT		 wait;
 
-	/* Duplicate the handle so we own it. */
+	if ((w = calloc(1, sizeof *w)) == NULL)
+		fatalx("out of memory");
+	w->pid = pid;
 	if (!DuplicateHandle(GetCurrentProcess(), hProcess,
-	    GetCurrentProcess(), &dup, 0, FALSE, DUPLICATE_SAME_ACCESS))
-		return;
-
-	EnterCriticalSection(&watch_lock);
-	if (nwatched < MAX_WATCHED) {
-		watched[nwatched].hProcess = dup;
-		watched[nwatched].pid = pid;
-		watched[nwatched].active = 1;
-		nwatched++;
-	} else {
-		CloseHandle(dup);
-	}
-	LeaveCriticalSection(&watch_lock);
-
-	/* Signal the watcher thread to re-read the list. */
-	if (watcher_event)
-		SetEvent(watcher_event);
+	    GetCurrentProcess(), &w->process, 0, FALSE, DUPLICATE_SAME_ACCESS))
+		fatalx("can't watch process %ld: error %lu", (long)pid,
+		    GetLastError());
+	if ((wait = CreateThreadpoolWait(process_exited, w, NULL)) == NULL)
+		fatalx("can't watch process %ld: error %lu", (long)pid,
+		    GetLastError());
+	SetThreadpoolWait(wait, w->process, NULL);
 }
 
 /*
@@ -513,25 +409,4 @@ win32_launch_server(const char *label)
 
 	CloseHandle(pi.hThread);
 	CloseHandle(pi.hProcess);
-}
-
-void
-win32_process_unwatch(pid_t pid)
-{
-	int i;
-
-	EnterCriticalSection(&watch_lock);
-	for (i = 0; i < nwatched; i++) {
-		if (watched[i].active && watched[i].pid == pid) {
-			CloseHandle(watched[i].hProcess);
-			watched[i].active = 0;
-			if (i == nwatched - 1)
-				nwatched--;
-			break;
-		}
-	}
-	LeaveCriticalSection(&watch_lock);
-
-	if (watcher_event)
-		SetEvent(watcher_event);
 }

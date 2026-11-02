@@ -33,7 +33,7 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
 ## Test Suite
 
-CI runs 22 test scripts from `regress/`, each through `win32-run.sh`:
+CI runs 24 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
@@ -43,6 +43,7 @@ CI runs 22 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-has-session.sh` — exit code validation
 - `win32-file.sh` — `source-file`, `load-buffer` and `save-buffer` from a second client finish, keep the bytes, and fail with exit 1
 - `win32-strftime.sh` — a `%` sequence Windows' `strftime` doesn't know (`%Q`, `% -`, a trailing `%`) is printed as written and the server keeps running (it ended the server before TMUX-37), and the format is recorded once in `show-messages`
+- `win32-process-watch.sh` — the server sees every child it starts exit: 70 jobs at once, rounds of overlapping jobs that end oldest first, and a job and a pane started beside a program that keeps running (before TMUX-54 a table of 64 filled up and popups, jobs and panes stayed open after their program ended)
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)
 - `win32-attach-size.sh` — a client attaches at its console's size when the console is resized between identify and attach (runs the client in a pseudo-console via `win32-pty.ps1`)
