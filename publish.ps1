@@ -11,7 +11,7 @@ if (git log --oneline '@{u}..HEAD') { throw 'push first: the published commit ha
 
 $version = git describe --tags --always
 $commit = git rev-parse HEAD
-$repo = 'nelsong6/tmux-windows-fork'
+$repo = (git remote get-url origin) -replace '^https://github\.com/|\.git$', ''
 $workflow = 'Windows CI'
 
 # CI's build-and-test job makes the package. A squash merge of a PR whose branch was up to
