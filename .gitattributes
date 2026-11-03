@@ -1,1 +1,2 @@
 regress/conf/*.conf text eol=lf
+regress/conf-crlf.sh text eol=lf

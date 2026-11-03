@@ -77,6 +77,9 @@ struct cmd_parse_state {
 	size_t				 len;
 	size_t				 off;
 
+	int				 unget[3]; /* CRLF lookahead and one lexer pushback. */
+	u_int				 nunget;
+
 	int				 condition;
 	int				 eol;
 	int				 eof;
@@ -1179,6 +1182,8 @@ yylex_getc1(void)
 	struct cmd_parse_state	*ps = &parse_state;
 	int			 ch;
 
+	if (ps->nunget != 0)
+		return (ps->unget[--ps->nunget]);
 	if (ps->f != NULL)
 		ch = getc(ps->f);
 	else {
@@ -1195,17 +1200,18 @@ yylex_ungetc(int ch)
 {
 	struct cmd_parse_state	*ps = &parse_state;
 
-	if (ps->f != NULL)
-		ungetc(ch, ps->f);
-	else if (ps->off > 0 && ch != EOF)
-		ps->off--;
+	if (ch == EOF)
+		return;
+	if (ps->nunget == nitems(ps->unget))
+		fatalx("too many characters pushed back");
+	ps->unget[ps->nunget++] = ch;
 }
 
 static int
 yylex_getc(void)
 {
 	struct cmd_parse_state	*ps = &parse_state;
-	int			 ch;
+	int			 ch, next;
 
 	if (ps->escapes != 0) {
 		ps->escapes--;
@@ -1216,6 +1222,13 @@ yylex_getc(void)
 		if (ch == '\\') {
 			ps->escapes++;
 			continue;
+		}
+		if (ch == '\r' && (ps->escapes % 2) == 1) {
+			next = yylex_getc1();
+			if (next == '\n')
+				ch = '\n';
+			else
+				yylex_ungetc(next);
 		}
 		if (ch == '\n' && (ps->escapes % 2) == 1) {
 			ps->input->line++;

@@ -143,6 +143,7 @@ cmd_source_file_add(struct cmd_source_file_data *cdata, const char *path)
 	cdata->files[cdata->nfiles++] = xstrdup(path);
 }
 
+#ifndef _WIN32
 static char *
 cmd_source_file_quote_for_glob(const char *path)
 {
@@ -157,6 +158,7 @@ cmd_source_file_quote_for_glob(const char *path)
 	*q = '\0';
 	return (quoted);
 }
+#endif
 
 static enum cmd_retval
 cmd_source_file_exec(struct cmd *self, struct cmdq_item *item)
@@ -203,7 +205,11 @@ cmd_source_file_exec(struct cmd *self, struct cmdq_item *item)
 			cdata->flags |= CMD_PARSE_VERBOSE;
 	}
 
+#ifdef _WIN32
+	cwd = xstrdup(server_client_get_cwd(c, NULL));
+#else
 	cwd = cmd_source_file_quote_for_glob(server_client_get_cwd(c, NULL));
+#endif
 
 	for (i = 0; i < args_count(args); i++) {
 		path = args_string(args, i);
