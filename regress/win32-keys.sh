@@ -12,7 +12,8 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-TMUX="$TEST_TMUX -Ltest"
+. "$(dirname "$0")/win32-test.sh"
+TMUX="$TEST_TMUX -L$TEST_SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
 wait_gone
@@ -163,12 +164,12 @@ echo "PASS 12: Modifier combinations"
 # send-keys skips the client's key parser, so a real client runs in the
 # keys pane and the pane feeds it the bytes a console sends: DEL for
 # Backspace, ESC [3~ for Delete.
-INNER="$TEST_TMUX -Ltest-inner"
+INNER="$TEST_TMUX -L$TEST_SOCKET-inner"
 $INNER kill-server 2>/dev/null
 trap "rm -f $CFG; $TMUX kill-server 2>/dev/null; $INNER kill-server 2>/dev/null" 0 1 15
 $INNER -f "$CFG" new -d -sinner -x 80 -y 20 < /dev/null || exit 1
 $TMUX send-keys -tkeys "set TMUX=" Enter \
-    "\"$(cygpath -w "$TEST_TMUX")\" -f \"$(cygpath -w "$CFG")\" -Ltest-inner attach -tinner" Enter
+    "\"$(cygpath -w "$TEST_TMUX")\" -f \"$(cygpath -w "$CFG")\" -L$TEST_SOCKET-inner attach -tinner" Enter
 wait_until [ "$($INNER list-clients 2>/dev/null)" != "" ] ||
 	fail "inner client never attached"
 $TMUX send-keys -tkeys C-b :

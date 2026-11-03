@@ -10,7 +10,8 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-SOCKET=fzt64test-foreground
+. "$(dirname "$0")/win32-test.sh"
+SOCKET=$TEST_SOCKET
 TMUX="$TEST_TMUX -L$SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null

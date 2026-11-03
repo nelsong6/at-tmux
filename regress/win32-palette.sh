@@ -9,7 +9,8 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-TMUX="$TEST_TMUX -Ltest"
+. "$(dirname "$0")/win32-test.sh"
+TMUX="$TEST_TMUX -L$TEST_SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
 wait_gone
@@ -40,7 +41,7 @@ $TMUX new-window -d -n second || exit 1
 
 "$PS" -NoProfile -ExecutionPolicy Bypass \
     -File "$(cygpath -w "$(dirname "$0")/win32-pty.ps1")" \
-    -Command "\"$(cygpath -wa "$TEST_TMUX")\" -Ltest attach" \
+    -Command "\"$(cygpath -wa "$TEST_TMUX")\" -L$TEST_SOCKET attach" \
     -Cols 100 -Rows 30 -ResizeFile "$(cygpath -w "$OUT/resize")" &
 HOST=$!
 attached() {

@@ -10,8 +10,9 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-TMUX="$TEST_TMUX -Ltest"
-OUTER="$TEST_TMUX -Ltestouter"
+. "$(dirname "$0")/win32-test.sh"
+TMUX="$TEST_TMUX -L$TEST_SOCKET"
+OUTER="$TEST_TMUX -L$TEST_SOCKET-outer"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
 $OUTER kill-server 2>/dev/null
@@ -36,7 +37,7 @@ PRINT="[Console]::Write($E + '#6' + ('W' * 30) + $NL + $E + '#3' + ('T' * 10) + 
 $TMUX -f "$CFG" new -d -x40 -y10 \
     "while (-not (Test-Path '$(cygpath -m "$OUT/go")')) { Start-Sleep -Milliseconds 50 }; $PRINT; Start-Sleep 60" \
     </dev/null || exit 1
-$OUTER -f "$CFG" new -d -x40 -y10 "& '$(cygpath -ma "$TEST_TMUX")' -Ltest attach" \
+$OUTER -f "$CFG" new -d -x40 -y10 "& '$(cygpath -ma "$TEST_TMUX")' -L$TEST_SOCKET attach" \
     </dev/null || exit 1
 
 attached() {

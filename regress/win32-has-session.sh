@@ -7,7 +7,8 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-TMUX="$TEST_TMUX -Ltest"
+. "$(dirname "$0")/win32-test.sh"
+TMUX="$TEST_TMUX -L$TEST_SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
 wait_gone

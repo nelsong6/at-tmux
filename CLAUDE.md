@@ -33,11 +33,12 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
 ## Test Suite
 
-CI runs 27 test scripts from `regress/`, each through `win32-run.sh`:
+CI runs 28 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
 - `win32-conf-syntax.sh` — config file parsing (21 files)
+- `win32-pty-close.sh` — closing four consoles producing output leaves the server responsive and releases its workers before freeing them (tested with both Windows' console and packaged ConPTY)
 - `win32-keys.sh` — key handling (13 tests, tests effects not raw codes)
 - `win32-csi-u.sh` — a key in the kitty keyboard protocol's short form (`ESC [ 27 u`) is read as that key, not as `M-[` and typed text (client in a pane of a second server)
 - `win32-has-session.sh` — exit code validation
@@ -54,6 +55,7 @@ CI runs 27 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-keep-alive.sh` — a session with `keep-alive-window` set opens that window when its last one goes by kill-window, the shell exiting or move-window, and still ends by kill-session or when the replacement's program exits within a second
 - `win32-reorder-session.sh` — `reorder-session` moves a session to the front, the back, one place either way, or before or after a named session in the sessions row (the `S:` loop's index order); a bad place changes nothing, and a session made afterwards goes at the end
 - `win32-set-status.sh` — `set-window-status` and `set-session-status` set a window's Claude state (the window option `@claude`, its tab color) by hand: `working` and `waiting` set it, `done` unsets it, anything else is refused; the session form sets every window in its session and no other (TMUX-67)
+- `win32-caller.sh` — a program in a background pane can target its own window with `{caller}`, and `play-sound` rejects a missing file
 - `win32-session-set.sh` — with `@session-set-dir` set the server writes `live/<socket>.set` itself, only when something in it changed (a pane's Claude session, a reported folder, a program started in a pane), records each window it destroys (not one moved, not the at menu's, none at `kill-server`) in `closed-windows`, at most 25, and `reopen-window` rebuilds the newest at its place with its splits, layout, active pane, zoom and Claude session or restarted program, making its session again if it has gone (13 tests)
 - `win32-session-offer.sh` — a server offers the snapshot an earlier server of its name left in a menu on the first client to attach (pseudo-console client, keys by `send-keys -K`): Enter rebuilds it in place of the fresh session (sessions in the sessions row's order, as made or as reorder-session left it, not by name; a zoomed window zoomed with its layout; each session's current and last window), Escape archives it, a server no client showed is archived without an offer, and `restore-set` rebuilds an archived snapshot beside the sessions there
 - `win32-new-window-draw.sh` — `new-window -W` switches the client only once the new pane has drawn (not on ConPTY's setup alone), fails without switching when the program exits or the window is killed first, and a killed waiting command gives the wait up
@@ -66,6 +68,8 @@ CI's `macos` job builds with tmux's own Unix build (`sh autogen.sh && ./configur
 CI's `linux` job does the same on Ubuntu (apt's autoconf, automake, pkg-config, bison, libevent, ncurses and utf8proc) for Nelson's Linux machine, with the same two tests and `regress/upgrade.sh` (`upgrade-server` on Linux: the new build is started from the old server and inherits every pty and socket at the same descriptor number, so nothing restarts). `adopt-pane` takes a pane's pty from another server (`pidfd_getfd`), for moving a server that has no `upgrade-server` onto the fork (profile 2's `bin/tmux-move-server`). The Linux keyboard is `osdep-linux-keys.c`: it reads the keyboards' evdev devices, so it needs the user in the `input` group and works under X11 and Wayland alike; the build is the `tmux-linux` artifact.
 
 `win32-run.sh TEST` fails a test that leaves anything running from the `build` folder 10 s after it ends, naming each process (an error annotation in CI), then ends those; it refuses to start a test while one is already running and ends nothing then (TMUX-35). A test kills every server it starts in its exit trap.
+
+`win32-test.sh` gives each invocation a private `TEST_SOCKET`; secondary servers append a suffix to it. The runner stops a test after `TEST_TIMEOUT` seconds (300 by default), then performs its usual process cleanup. Config parsing also limits each client to `WAIT_TIMEOUT` seconds and reports the fixture being parsed.
 
 They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after 10 s), not fixed sleeps. Match a command's output with `^`: the typed command line holds the same text.
 

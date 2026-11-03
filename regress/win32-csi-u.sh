@@ -11,8 +11,9 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-TMUX="$TEST_TMUX -Ltest"
-OUTER="$TEST_TMUX -Ltestouter"
+. "$(dirname "$0")/win32-test.sh"
+TMUX="$TEST_TMUX -L$TEST_SOCKET"
+OUTER="$TEST_TMUX -L$TEST_SOCKET-outer"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
 $OUTER kill-server 2>/dev/null
@@ -41,7 +42,7 @@ EOF
 
 $TMUX -f "$CFG" new -d -x40 -y10 "Start-Sleep 60" </dev/null || exit 1
 $OUTER -f "$CFG" new -d -x40 -y10 -e TERM=xterm-256color \
-    "& '$(cygpath -ma "$TEST_TMUX")' -Ltest attach" </dev/null || exit 1
+    "& '$(cygpath -ma "$TEST_TMUX")' -L$TEST_SOCKET attach" </dev/null || exit 1
 
 attached() {
 	[ -n "$($TMUX list-clients 2>/dev/null)" ]
