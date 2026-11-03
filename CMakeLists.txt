@@ -125,6 +125,7 @@ set(TMUX_SOURCES
     cmd-swap-pane.c
     cmd-swap-window.c
     cmd-switch-client.c
+    cmd-toggle-status-bars.c
     cmd-unbind-key.c
     cmd-upgrade-server.c
     cmd-wait-for.c
