@@ -1081,7 +1081,7 @@ tty_window_bigger(struct tty *tty)
 	struct client	*c = tty->client;
 	struct window	*w = c->session->curw->window;
 
-	return (tty->sx < w->sx || tty->sy - status_line_size(c) < w->sy);
+	return (tty->sx < w->sx || tty->sy - status_reserved_size(c) < w->sy);
 }
 
 /* What offset should this window be drawn at? */
@@ -1105,7 +1105,7 @@ tty_window_offset1(struct tty *tty, u_int *ox, u_int *oy, u_int *sx, u_int *sy)
 	struct window_pane	*wp = server_client_get_pane(c);
 	u_int			 cx, cy, lines;
 
-	lines = status_line_size(c);
+	lines = status_reserved_size(c);
 
 	if (tty->sx >= w->sx && tty->sy - lines >= w->sy) {
 		*ox = 0;

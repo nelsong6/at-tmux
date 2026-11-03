@@ -408,6 +408,10 @@ key_string_lookup_key(key_code key, int with_flags)
 		s = "MouseMovePane";
 		goto append;
 	}
+	if (key == KEYC_MOUSEMOVE_FOOTER) {
+		s = "MouseMoveFooter";
+		goto append;
+	}
 	if (key == KEYC_MOUSEMOVE_STATUS) {
 		s = "MouseMoveStatus";
 		goto append;

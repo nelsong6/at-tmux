@@ -585,6 +585,7 @@ screen_redraw_update(struct screen_redraw_ctx *ctx, uint64_t flags)
 		redraw = status_prompt_redraw(c);
 	else
 		redraw = status_redraw(c);
+	redraw |= status_footer_redraw(c);
 	if (!redraw && (~flags & CLIENT_REDRAWSTATUSALWAYS))
 		flags &= ~CLIENT_REDRAWSTATUS;
 
@@ -624,6 +625,7 @@ screen_redraw_set_context(struct client *c, struct screen_redraw_ctx *ctx)
 	if (lines != 0 && options_get_number(oo, "status-position") == 0)
 		ctx->statustop = 1;
 	ctx->statuslines = lines;
+	ctx->footerlines = status_footer_size(c);
 
 	ctx->pane_status = options_get_number(wo, "pane-border-status");
 	ctx->pane_lines = options_get_number(wo, "pane-border-lines");
@@ -670,7 +672,7 @@ screen_redraw_screen(struct client *c)
 		screen_redraw_draw_panes(&ctx);
 		screen_redraw_draw_pane_scrollbars(&ctx);
 	}
-	if (ctx.statuslines != 0 &&
+	if ((ctx.statuslines != 0 || ctx.footerlines != 0) &&
 	    (flags & (CLIENT_REDRAWSTATUS|CLIENT_REDRAWSTATUSALWAYS))) {
 		log_debug("%s: redrawing status", c->name);
 		screen_redraw_draw_status(&ctx);
@@ -893,7 +895,7 @@ screen_redraw_draw_borders(struct screen_redraw_ctx *ctx)
 	TAILQ_FOREACH(wp, &w->panes, entry)
 		wp->border_gc_set = 0;
 
-	for (j = 0; j < c->tty.sy - ctx->statuslines; j++) {
+	for (j = 0; j < c->tty.sy - ctx->statuslines - ctx->footerlines; j++) {
 		for (i = 0; i < c->tty.sx; i++)
 			screen_redraw_draw_borders_cell(ctx, i, j);
 	}
@@ -930,11 +932,14 @@ screen_redraw_draw_status(struct screen_redraw_ctx *ctx)
 	if (ctx->statustop)
 		y = 0;
 	else
-		y = c->tty.sy - ctx->statuslines;
+		y = c->tty.sy - ctx->statuslines - ctx->footerlines;
 	for (i = 0; i < ctx->statuslines; i++) {
 		tty_draw_line(tty, s, 0, i, UINT_MAX, 0, y + i,
 		    &grid_default_cell, NULL);
 	}
+	if (ctx->footerlines != 0)
+		tty_draw_line(tty, &c->status.footer, 0, 0, c->tty.sx, 0,
+		    c->tty.sy - 1, &grid_default_cell, NULL);
 }
 
 /* Draw one pane. */

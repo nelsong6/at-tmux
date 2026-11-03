@@ -1390,6 +1390,12 @@ format_cb_mouse_status_range(struct format_tree *ft)
 	if (ft->c == NULL || (~ft->c->tty.flags & TTY_STARTED))
 		return (NULL);
 
+	if (status_footer_size(ft->c) && ft->m.y == ft->c->tty.sy - 1) {
+		sr = status_footer_get_range(ft->c, ft->m.x);
+		if (sr != NULL && sr->type == STYLE_RANGE_USER)
+			return (xstrdup(sr->string));
+		return (NULL);
+	}
 	if (ft->m.statusat == 0 && ft->m.y < ft->m.statuslines) {
 		x = ft->m.x;
 		y = ft->m.y;

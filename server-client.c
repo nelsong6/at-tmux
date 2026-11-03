@@ -825,7 +825,7 @@ server_client_check_mouse(struct client *c, struct key_event *event)
 	struct winlink		*fwl;
 	struct window_pane	*wp, *fwp;
 	u_int			 x, y, b, sx, sy, px, py, sl_mpos = 0;
-	int			 ignore = 0;
+	int			 ignore = 0, footer = 0;
 	key_code		 key;
 	struct timeval		 tv;
 	struct style_range	*sr;
@@ -919,7 +919,10 @@ have_event:
 	/* Is this on the status line? */
 	m->statusat = status_at_line(c);
 	m->statuslines = status_line_size(c);
-	if (m->statusat != -1 &&
+	if (status_footer_size(c) && y == c->tty.sy - 1) {
+		footer = 1;
+		where = STATUS_DEFAULT;
+	} else if (m->statusat != -1 &&
 	    y >= (u_int)m->statusat &&
 	    y < m->statusat + m->statuslines) {
 		sr = status_get_range(c, x, y - m->statusat);
@@ -2404,6 +2407,8 @@ have_event:
 		return (KEYC_UNKNOWN);
 
 out:
+	if (footer && key >= KEYC_MOUSEMOVE_PANE && key < KEYC_BSPACE)
+		key += KEYC_MOUSEDOWN1_FOOTER - KEYC_MOUSEDOWN1_STATUS_DEFAULT;
 	/* Apply modifiers if any. */
 	if (b & MOUSE_MASK_META)
 		key |= KEYC_META;
@@ -3129,7 +3134,7 @@ server_client_reset_state(struct client *c)
 		if (n == 0)
 			cy = status_prompt_line_at(c);
 		else {
-			n = status_line_size(c) - status_prompt_line_at(c);
+			n = status_reserved_size(c) - status_prompt_line_at(c);
 			if (n <= tty->sy)
 				cy = tty->sy - n;
 			else

@@ -207,7 +207,8 @@ struct winlink;
 	KEYC_ ## name ## _SCROLLBAR_UP,	    \
 	KEYC_ ## name ## _SCROLLBAR_SLIDER, \
 	KEYC_ ## name ## _SCROLLBAR_DOWN,   \
-	KEYC_ ## name ## _BORDER
+	KEYC_ ## name ## _BORDER,          \
+	KEYC_ ## name ## _FOOTER
 #define KEYC_MOUSE_STRING(name, s)				      \
 	{ #s "Pane", KEYC_ ## name ## _PANE },			      \
 	{ #s "Status", KEYC_ ## name ## _STATUS },		      \
@@ -217,7 +218,8 @@ struct winlink;
 	{ #s "ScrollbarUp", KEYC_ ## name ## _SCROLLBAR_UP },         \
 	{ #s "ScrollbarSlider", KEYC_ ## name ## _SCROLLBAR_SLIDER }, \
 	{ #s "ScrollbarDown", KEYC_ ## name ## _SCROLLBAR_DOWN },     \
-	{ #s "Border", KEYC_ ## name ## _BORDER }
+	{ #s "Border", KEYC_ ## name ## _BORDER },                 \
+	{ #s "Footer", KEYC_ ## name ## _FOOTER }
 
 /*
  * A single key. This can be ASCII or Unicode or one of the keys between
@@ -1068,6 +1070,7 @@ struct screen_redraw_ctx {
 	struct client	*c;
 
 	u_int		 statuslines;
+	u_int		 footerlines;
 	int		 statustop;
 
 	int		 pane_status;
@@ -1916,6 +1919,9 @@ struct status_line {
 
 	struct grid_cell	 style;
 	struct status_line_entry entries[STATUS_LINES_LIMIT];
+	struct screen		 footer;
+	struct grid_cell	 footer_style;
+	struct status_line_entry footer_entry;
 };
 
 /* Prompt type. */
@@ -3090,6 +3096,10 @@ void	 status_sessions_changed(void);
 u_int	 status_prompt_line_at(struct client *);
 int	 status_at_line(struct client *);
 u_int	 status_line_size(struct client *);
+u_int	 status_footer_size(struct client *);
+u_int	 status_reserved_size(struct client *);
+int	 status_footer_redraw(struct client *);
+struct style_range *status_footer_get_range(struct client *, u_int);
 struct style_range *status_get_range(struct client *, u_int, u_int);
 void	 status_init(struct client *);
 void	 status_free(struct client *);
