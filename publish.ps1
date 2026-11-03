@@ -25,7 +25,11 @@ $release = $null
 foreach ($attempt in 1..120) {
     $release = Invoke-RestMethod "$api/releases?limit=50" -Headers $headers |
         Where-Object { $_.target_commitish -eq $commit } | Select-Object -First 1
-    if ($release) { break }
+    if ($release) {
+        $names = @($release.assets.name)
+        $zipName = "tmux-windows-$($release.tag_name).zip"
+        if ($zipName -in $names -and "$zipName.sha256" -in $names) { break }
+    }
     $state = (Invoke-RestMethod "$api/commits/$commit/status" -Headers $headers).state
     if ($state -in 'failure', 'error') { throw "CI failed for $commit`: $server/$repo/actions" }
     Start-Sleep -Seconds 30
