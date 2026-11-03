@@ -4393,6 +4393,36 @@ includes hooks (omitted by default).
 .Fl A
 includes options inherited from a parent set of options, such options are
 marked with an asterisk.
+.It Xo Ic set-session-status
+.Op Fl t Ar target-session
+.Ar working | waiting | done
+.Xc
+Set the Claude state of every window in
+.Ar target-session
+by hand, as
+.Ic set-window-status
+does for one.
+.It Xo Ic set-window-status
+.Op Fl t Ar target-window
+.Ar working | waiting | done
+.Xc
+Set the Claude state of
+.Ar target-window
+by hand:
+.Ar working
+or
+.Ar waiting
+sets the window option
+.Ic @claude
+and
+.Ar done
+unsets it.
+Claude Code's hooks set the same option, and the default
+.Ic window-status-format
+and
+.Ic window-status-current-format
+colour the window by it through
+.Ic @claude-style .
 .El
 .Pp
 Available server options are:

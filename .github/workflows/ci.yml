@@ -146,6 +146,11 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-keep-alive.sh
 
+      - name: Run set-status tests
+        shell: bash
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-set-status.sh
+
       - name: Run caller and play-sound tests
         shell: bash
         run: |

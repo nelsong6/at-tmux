@@ -114,6 +114,7 @@ set(TMUX_SOURCES
     cmd-set-buffer.c
     cmd-set-environment.c
     cmd-set-option.c
+    cmd-set-status.c
     cmd-show-environment.c
     cmd-show-messages.c
     cmd-show-options.c
