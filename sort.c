@@ -142,7 +142,10 @@ sort_session_cmp(const void *a0, const void *b0)
 
 	switch (sort_crit->order) {
 	case SORT_INDEX:
-		result = sa->id - sb->id;
+		if (sa->order != sb->order)
+			result = (sa->order < sb->order) ? -1 : 1;
+		else if (sa->id != sb->id)
+			result = (sa->id < sb->id) ? -1 : 1;
 		break;
 	case SORT_CREATION:
 		if (timercmp(&sa->creation_time, &sb->creation_time, >)) {

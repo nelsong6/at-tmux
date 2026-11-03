@@ -937,6 +937,7 @@ upgrade_save_session(struct evbuffer *evb, struct session *s)
 	upw_u32(o, n);
 	TAILQ_FOREACH(wl, &s->lastw, sentry)
 		upw_u32(o, wl->idx);
+	upw_u32(o, s->order);
 	upw_obj(evb, o);
 	evbuffer_free(o);
 }
@@ -1021,6 +1022,17 @@ upgrade_restore_session(struct upgrade_reader *r)
 			wl->flags |= WINLINK_VISITED;
 		}
 	}
+
+	/*
+	 * The session's place in the sessions row comes last. A build without it
+	 * kept sessions in id order, so its sessions keep that.
+	 */
+	if (o.left >= sizeof (uint32_t))
+		s->order = upr_u32(&o);
+	else
+		s->order = id;
+	if (s->order >= next_session_order)
+		next_session_order = s->order + 1;
 	if (o.error || s->curw == NULL)
 		r->error = 1;
 }
