@@ -44,10 +44,11 @@
  *
  * A snapshot is lines of tab-separated fields (ss_field escapes them): a
  * version line, then start, pid, seen, closed, attached and socket, then one
- * line per window: "window", whether it is its session's current window, its
- * size, and the line that brings the window back. That last line is kept on
- * the window too: when a window is destroyed (killed, or its last pane exited,
- * but not moved) it goes on top of closed-windows in the same folder, and
+ * line per window, sessions in the order they were made (the sessions row's
+ * order): "window", its place in its session (SS_CURRENT, SS_LAST), its size,
+ * and the line that brings the window back. That last line is kept on the
+ * window too: when a window is destroyed (killed, or its last pane exited, but
+ * not moved) it goes on top of closed-windows in the same folder, and
  * reopen-window takes it off again. Nothing is recorded while the server
  * itself shuts down.
  *
@@ -68,6 +69,12 @@
 #define SESSION_SET_CLOSED_MAX 25
 #define SESSION_SET_ARCHIVE_MAX 50
 #define SESSION_SET_VERSION "tmux-session-set 1"
+
+/* A window's place in its session, and its flags in the reopen line. */
+#define SS_CURRENT 0x1
+#define SS_LAST 0x2
+#define SS_AUTONAME 0x1
+#define SS_ZOOMED 0x2
 
 static struct event	 ss_timer;
 static int		 ss_pending;
@@ -368,22 +375,31 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 	struct evbuffer		*line;
 	char			*layout, *cwd, *command;
 	u_int			 i, active = 0;
-	int			 autoname, only_menu = 1;
+	int			 place = 0, flags = 0, only_menu = 1;
 
 	free(w->session_set_line);
 	w->session_set_line = NULL;
 	if (strncmp(s->name, "restoring-", 10) == 0)
 		return;
 
-	autoname = options_get_number(w->options, "automatic-rename");
-	layout = layout_dump(w->layout_root);
+	if (options_get_number(w->options, "automatic-rename"))
+		flags |= SS_AUTONAME;
+	if (w->saved_layout_root != NULL) {
+		flags |= SS_ZOOMED;
+		layout = layout_dump(w->saved_layout_root);
+	} else
+		layout = layout_dump(w->layout_root);
+	if (wl == s->curw)
+		place = SS_CURRENT;
+	else if (wl == TAILQ_FIRST(&s->lastw))
+		place = SS_LAST;
 
 	line = evbuffer_new();
 	if (line == NULL)
 		fatalx("out of memory");
 	ss_field(line, s->name);
 	ss_field(line, s->cwd);
-	evbuffer_add_printf(line, "\t%u\t%d", position, autoname);
+	evbuffer_add_printf(line, "\t%u\t%d", position, flags);
 	ss_field(line, w->name);
 	ss_field(line, layout);
 	i = 0;
@@ -405,8 +421,7 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 		free(cwd);
 	}
 
-	evbuffer_add_printf(evb, "window\t%d\t%u\t%u", wl == s->curw, w->sx,
-	    w->sy);
+	evbuffer_add_printf(evb, "window\t%d\t%u\t%u", place, w->sx, w->sy);
 	evbuffer_add(evb, EVBUFFER_DATA(line), EVBUFFER_LENGTH(line));
 	evbuffer_add(evb, "\n", 1);
 
@@ -424,19 +439,21 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 static char *
 ss_sessions(void)
 {
+	struct sort_criteria	 sc = { .order = SORT_INDEX };
 	struct evbuffer		*evb;
-	struct session		*s;
+	struct session		**l;
 	struct winlink		*wl;
-	u_int			 position;
+	u_int			 i, n, position;
 	char			*out;
 
 	evb = evbuffer_new();
 	if (evb == NULL)
 		fatalx("out of memory");
-	RB_FOREACH(s, sessions, &sessions) {
+	l = sort_get_sessions(&n, &sc);
+	for (i = 0; i < n; i++) {
 		position = 0;
-		RB_FOREACH(wl, winlinks, &s->windows)
-			ss_window(evb, s, wl, ++position);
+		RB_FOREACH(wl, winlinks, &l[i]->windows)
+			ss_window(evb, l[i], wl, ++position);
 	}
 
 	out = xmalloc(EVBUFFER_LENGTH(evb) + 1);
@@ -503,9 +520,10 @@ static char	**ss_split(const char *, u_int *);
 
 /*
  * Read a snapshot: NULL if the file is missing or is not one. A window line
- * holds "window", current, width and height, then the reopen line's fields:
- * session, its folder, position, automatic-rename, name, layout, active pane,
- * and folder, Claude session and program for each pane.
+ * holds "window", its place (SS_CURRENT, SS_LAST), width and height, then the
+ * reopen line's fields: session, its folder, position, flags (SS_AUTONAME,
+ * SS_ZOOMED), name, layout (unzoomed), active pane, and folder, Claude session
+ * and program for each pane.
  */
 static struct ss_snap *
 ss_snap_read(const char *path)
@@ -1007,7 +1025,7 @@ session_set_reopen(int show, char **cause)
 	struct winlink	*wl, *before = NULL, *first_wl = NULL;
 	struct evbuffer	*evb;
 	u_int		 n, i, position, panes, at;
-	int		 autoname;
+	int		 flags;
 
 	if ((dir = ss_dir()) == NULL) {
 		*cause = xstrdup("@session-set-dir is not set");
@@ -1032,7 +1050,7 @@ session_set_reopen(int show, char **cause)
 	}
 	free(path);
 
-	/* closedAt session path position autoname name layout active panes... */
+	/* closedAt session path position flags name layout active panes... */
 	f = ss_split(data, &n);
 	free(data);
 	if (n < 11 || (n - 8) % 3 != 0) {
@@ -1043,7 +1061,7 @@ session_set_reopen(int show, char **cause)
 		return (NULL);
 	}
 	position = strtoul(f[3], NULL, 10);
-	autoname = atoi(f[4]);
+	flags = atoi(f[4]);
 	at = strtoul(f[7], NULL, 10);
 	panes = (n - 8) / 3;
 
@@ -1103,7 +1121,7 @@ session_set_reopen(int show, char **cause)
 	argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = target;
 	argv[3] = f[6];
 	ss_add_command(evb, argv, 4);
-	if (!autoname) {
+	if (~flags & SS_AUTONAME) {
 		argv[0] = "rename-window"; argv[1] = "-t"; argv[2] = target;
 		argv[3] = f[5];
 		ss_add_command(evb, argv, 4);
@@ -1112,6 +1130,11 @@ session_set_reopen(int show, char **cause)
 	    options_get_number(global_w_options, "pane-base-index"));
 	argv[0] = "select-pane"; argv[1] = "-t"; argv[2] = idx;
 	ss_add_command(evb, argv, 3);
+	if (flags & SS_ZOOMED) {
+		argv[0] = "resize-pane"; argv[1] = "-Z"; argv[2] = "-t";
+		argv[3] = idx;
+		ss_add_command(evb, argv, 4);
+	}
 	free(idx);
 	if (placeholder != NULL) {
 		argv[0] = "kill-window"; argv[1] = "-t"; argv[2] = placeholder;
@@ -1186,7 +1209,7 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
 	const char	*argv[12];
 	struct ss_line	*w;
 	char		*target, *idx, *start;
-	u_int		 i, p, panes, k = 0, active = 0, first = 1;
+	u_int		 i, p, panes, k = 0, active = 0, last = 0, first = 1;
 	long long	 base;
 
 	base = options_get_number(global_s_options, "base-index");
@@ -1209,8 +1232,10 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
 
 		/* Each window after the last, so they keep their order. */
 		k++;
-		if (atoi(w->f[1]))
+		if (atoi(w->f[1]) & SS_CURRENT)
 			active = k;
+		else if (atoi(w->f[1]) & SS_LAST)
+			last = k;
 		panes = (w->n - 11) / 3;
 		start = ss_start_command(w->f[12], w->f[13]);
 		argv[0] = "new-window"; argv[1] = "-a"; argv[2] = "-t";
@@ -1230,7 +1255,7 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
 		argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = target;
 		argv[3] = w->f[9];
 		ss_add_command(evb, argv, 4);
-		if (!atoi(w->f[7])) {
+		if (~atoi(w->f[7]) & SS_AUTONAME) {
 			argv[0] = "rename-window"; argv[1] = "-t";
 			argv[2] = target; argv[3] = w->f[8];
 			ss_add_command(evb, argv, 4);
@@ -1238,6 +1263,19 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
 		xasprintf(&idx, "=%s:.%lld", name, strtoll(w->f[10], NULL, 10) +
 		    options_get_number(global_w_options, "pane-base-index"));
 		argv[0] = "select-pane"; argv[1] = "-t"; argv[2] = idx;
+		ss_add_command(evb, argv, 3);
+		if (atoi(w->f[7]) & SS_ZOOMED) {
+			argv[0] = "resize-pane"; argv[1] = "-Z"; argv[2] = "-t";
+			argv[3] = idx;
+			ss_add_command(evb, argv, 4);
+		}
+		free(idx);
+	}
+
+	/* The window shown before the current one, so last-window goes back. */
+	if (last != 0) {
+		xasprintf(&idx, "=%s:%lld", name, base + last);
+		argv[0] = "select-window"; argv[1] = "-t"; argv[2] = idx;
 		ss_add_command(evb, argv, 3);
 		free(idx);
 	}

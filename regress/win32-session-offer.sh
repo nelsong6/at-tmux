@@ -85,21 +85,29 @@ windows_are() {
 snap() { echo "$OUT/live/$($TMUX display -p '#{b:socket_path}' | tr -d '\r').set"; }
 snap_has() { grep -q -- "$2" "$1" 2>/dev/null; }
 
-# 1. A set to come back: two sessions, a split window with a Claude pane, the
-# second window current, shown by a client.
+# 1. A set to come back: three sessions made in an order their names don't
+# sort in, a split window with a Claude pane, zoomed, the second window current
+# and the first the one shown before it, shown by a client.
 $TMUX -f "$CONF" new -d -s main -n one "$LONG" || fail "start first server"
 $TMUX new-window -d -t main: -n two "$LONG" || fail "new-window two"
 $TMUX split-window -d -t main:two "$LONG" || fail "split two"
+$TMUX new-window -d -t main: -n three "$LONG" || fail "new-window three"
 $TMUX set -p -t main:two.1 @claude-session abc123 || fail "set claude"
 $TMUX select-pane -t main:two.1
 $TMUX select-window -t main:two
 $TMUX new -d -s other -n o1 "$LONG" || fail "new session other"
+$TMUX new -d -s alpha -n a1 "$LONG" || fail "new session alpha"
 SNAP=$(snap)
 PREVIOUS="${SNAP%.set}-previous.set"
 attach
 $TMUX switch-client -c "$CLIENT" -t main
+sizes() { $TMUX lsp -t "$1" -F '#{pane_width}x#{pane_height}' | tr -d '\r' | tr '\n' ' '; }
+layout=$(sizes main:two)
+$TMUX resize-pane -Z -t main:two.1 || fail "zoom"
 wait_until snap_has "$SNAP" "^attached${T}main$" || fail "shown session not saved"
 wait_until snap_has "$SNAP" "${T}abc123${T}" || fail "Claude pane not saved"
+row=$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')
+[ "$row" = "main other alpha " ] || fail "sessions row not in the order made ($row)"
 first=$(sed -n "s/^start${T}//p" "$SNAP" | tr -d '\r')
 stop
 
@@ -108,8 +116,10 @@ stop
 $TMUX -f "$CONF" new -d -s primary || fail "start second server"
 wait_until test -f "$PREVIOUS" || fail "earlier snapshot not set aside"
 attach
-press_until Enter sessions_are "main other" || fail "Enter did not restore"
-windows_are main "one two" || fail "restored windows differ"
+press_until Enter sessions_are "alpha main other" || fail "Enter did not restore"
+windows_are main "one two three" || fail "restored windows differ"
+[ "$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')" = "$row" ] ||
+    fail "sessions not back in the order they were made"
 [ "$($TMUX display -p -t main:two '#{window_panes}' | tr -d '\r')" = 2 ] ||
     fail "restored window lacks its split"
 $TMUX display -p -t main:two.1 '#{pane_start_command}' | grep -q 'resumed abc123' ||
@@ -118,6 +128,12 @@ $TMUX display -p -t main:two.1 '#{pane_start_command}' | grep -q 'resumed abc123
     fail "active pane not restored"
 [ "$($TMUX display -p -t main: '#{window_name}' | tr -d '\r')" = two ] ||
     fail "current window not restored"
+[ "$($TMUX display -p -t main:two '#{window_zoomed_flag}' | tr -d '\r')" = 1 ] ||
+    fail "zoomed window not zoomed"
+$TMUX resize-pane -Z -t main:two.1 || fail "unzoom"
+[ "$(sizes main:two)" = "$layout" ] || fail "zoomed window's layout differs"
+$TMUX lsw -t =main -F '#{window_last_flag}#{window_name}' | tr -d '\r' |
+    grep -qx 1one || fail "last window not restored"
 [ "$($TMUX display -p -c "$CLIENT" '#{client_session}' | tr -d '\r')" = main ] ||
     fail "client not shown the session it showed"
 test -f "$PREVIOUS" && fail "restored set still offered"
@@ -151,10 +167,11 @@ snap_has "$PREVIOUS" "^start${T}$third$" ||
 # name already taken getting -2, and keeps it archived.
 $TMUX restore-set -d "archive/$(basename "${SNAP%.set}")-$first.set" ||
     fail "restore-set"
-wait_until sessions_are "main other primary" || fail "restore-set made no set"
+wait_until sessions_are "alpha main other primary" ||
+    fail "restore-set made no set"
 $TMUX restore-set -d "archive/$(basename "${SNAP%.set}")-$first.set" ||
     fail "restore-set again"
-wait_until windows_are main-2 "one two" || fail "taken name not numbered"
+wait_until windows_are main-2 "one two three" || fail "taken name not numbered"
 $TMUX restore-set -d "$(cygpath -m "$OUT/test.conf")" 2>/dev/null &&
     fail "restore-set took a file that is not a snapshot"
 
