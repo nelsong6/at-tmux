@@ -48,6 +48,9 @@ check_options() {
 	option_is @even 'two\'
 	option_is @next next
 	option_is @hidden ''
+	option_is @condition if
+	option_is @condition-elif elif
+	option_is @condition-else else
 }
 
 check_bare() {
@@ -70,6 +73,23 @@ set -g @even two\\
 set -g @next next
 # This comment continues\
 set -g @hidden should-not-be-set
+%if 1
+set -g @condition if
+%else
+set -g @condition wrong
+%endif
+%if 0
+set -g @condition-elif wrong
+%elif 1
+set -g @condition-elif elif
+%else
+set -g @condition-elif wrong
+%endif
+%if 0
+set -g @condition-else wrong
+%else
+set -g @condition-else else
+%endif
 EOF
 awk '{ printf "%s\r\n", $0 }' "$OUT/lf.conf" >"$OUT/crlf.conf"
 
@@ -109,4 +129,10 @@ case "$ERR" in
 	*bad.conf:3:*) ;;
 	*) fail "wrong physical line in error: $ERR" ;;
 esac
+
+for fixture in regress/conf/*.conf; do
+	awk '{ sub(/\r$/, ""); printf "%s\r\n", $0 }' "$fixture" >"$OUT/corpus.conf"
+	$TMUX source-file -n "$(file_path "$OUT/corpus.conf")" ||
+	    fail "CRLF copy of $(basename "$fixture")"
+done
 echo "ALL CONFIG LINE ENDING TESTS PASSED"

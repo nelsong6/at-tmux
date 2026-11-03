@@ -1250,13 +1250,21 @@ yylex_get_word(int ch)
 {
 	char	*buf;
 	size_t	 len;
+	int	 next;
 
 	len = 0;
 	buf = xmalloc(1);
 
-	do
+	do {
 		yylex_append1(&buf, &len, ch);
-	while ((ch = yylex_getc()) != EOF && strchr(" \t\n", ch) == NULL);
+		ch = yylex_getc();
+		if (ch == '\r') {
+			next = yylex_getc();
+			yylex_ungetc(next);
+			if (next == '\n')
+				break;
+		}
+	} while (ch != EOF && strchr(" \t\n", ch) == NULL);
 	yylex_ungetc(ch);
 
 	buf[len] = '\0';
