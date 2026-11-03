@@ -10,7 +10,8 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-TMUX="$TEST_TMUX -Lctrltest"
+. "$(dirname "$0")/win32-test.sh"
+TMUX="$TEST_TMUX -L$TEST_SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
 wait_gone
@@ -139,7 +140,7 @@ echo "PASS 10: switch-client -H -R"
 # client ignores them. The press is simulated only in CI, which has a desktop
 # of its own; on a developer's PC it would land on theirs. ---
 : >$CTL
-IDLE="$TEST_TMUX -Lctrltest-idle"
+IDLE="$TEST_TMUX -L$TEST_SOCKET-idle"
 trap "rm -f $OUT $CTL; $TMUX kill-server 2>/dev/null; $IDLE kill-server 2>/dev/null" 0 1 15
 $IDLE $FNULL new -d -sidle < /dev/null || fail "global: idle server"
 $IDLE bind -T global 'W-`' set -g @global pressed

@@ -9,9 +9,10 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-TMUX="$TEST_TMUX -Lupgtest"
+. "$(dirname "$0")/win32-test.sh"
+TMUX="$TEST_TMUX -L$TEST_SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
-OUTER="$TEST_TMUX -Lupgouter"
+OUTER="$TEST_TMUX -L$TEST_SOCKET-outer"
 $TMUX kill-server 2>/dev/null
 $OUTER kill-server 2>/dev/null
 wait_gone
@@ -96,7 +97,7 @@ $OUTER -f "$CFG" new -d -sout -x 100 -y 32 < /dev/null || exit 1
 $OUTER set -g status off
 wait_until outer_has '>' || { fail "outer shell never drew a prompt"; exit 1; }
 $OUTER send-keys -tout "set TMUX=" Enter \
-    "\"$EXE\" -Lupgtest attach -tup" Enter
+    "\"$EXE\" -L$TEST_SOCKET attach -tup" Enter
 wait_until client_count_is 1 || { fail "client never attached"; exit 1; }
 wait_until outer_has BEFORE_MARK || fail "client never drew the pane"
 

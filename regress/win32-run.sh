@@ -41,8 +41,11 @@ if [ -n "$left" ]; then
 	exit 1
 fi
 
-bash "$dir/$1"
+timeout --foreground --kill-after=5 "${TEST_TIMEOUT:-300}" bash "$dir/$1"
 status=$?
+if [ $status -eq 124 ] || [ $status -eq 137 ]; then
+	report "$1 exceeded ${TEST_TIMEOUT:-300}s" "test was stopped"
+fi
 
 left=$(running 10 end)
 if [ -n "$left" ]; then

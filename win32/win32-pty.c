@@ -100,9 +100,8 @@ pty_bridge_thread(LPVOID arg)
 			break;
 	}
 
-	/* Signal EOF by closing the socket. */
-	closesocket(pty->bridge_peer);
-	pty->bridge_peer = INVALID_SOCKET;
+	/* Signal EOF; the owner closes the socket after both workers finish. */
+	shutdown(pty->bridge_peer, SD_SEND);
 	return 0;
 }
 
@@ -335,6 +334,19 @@ win32_pty_hangup(struct win32_pty *pty)
 	pty->hPC = NULL;
 }
 
+/* Cancel pipe I/O and join before closing handles or freeing the PTY. */
+static void
+pty_join_thread(HANDLE thread)
+{
+	if (thread == NULL)
+		return;
+	while (WaitForSingleObject(thread, 0) == WAIT_TIMEOUT) {
+		CancelSynchronousIo(thread);
+		WaitForSingleObject(thread, 10);
+	}
+	CloseHandle(thread);
+}
+
 void
 win32_pty_close(struct win32_pty *pty)
 {
@@ -342,23 +354,20 @@ win32_pty_close(struct win32_pty *pty)
 		return;
 
 	pty->closing = 1;
+	if (pty->sock != INVALID_SOCKET)
+		shutdown(pty->sock, SD_BOTH);
+	if (pty->bridge_peer != INVALID_SOCKET)
+		shutdown(pty->bridge_peer, SD_BOTH);
+	pty_join_thread(pty->input_thread);
+	pty_join_thread(pty->bridge_thread);
 
-	if (pty->hPC != NULL)
-		pty_api()->destroy(pty->hPC);
+	/* Close the pipes before the console: it may wait for output to drain. */
 	if (pty->hPipeIn != NULL)
 		CloseHandle(pty->hPipeIn);
 	if (pty->hPipeOut != NULL)
 		CloseHandle(pty->hPipeOut);
-
-	/* Wait for bridge threads. */
-	if (pty->bridge_thread != NULL) {
-		WaitForSingleObject(pty->bridge_thread, 2000);
-		CloseHandle(pty->bridge_thread);
-	}
-	if (pty->input_thread != NULL) {
-		WaitForSingleObject(pty->input_thread, 2000);
-		CloseHandle(pty->input_thread);
-	}
+	if (pty->hPC != NULL)
+		pty_api()->destroy(pty->hPC);
 
 	if (pty->hProcess != NULL) {
 		TerminateProcess(pty->hProcess, 1);
@@ -454,7 +463,7 @@ win32_pty_stop(struct win32_pty *pty, struct evbuffer *out)
 	/*
 	 * The output bridge is cancelled out of its read; it may be blocked
 	 * sending instead, so keep reading the socket until it has gone and
-	 * closed its end.
+	 * shut down its sending side.
 	 */
 	pty->closing = 1;
 	while (pty->bridge_thread != NULL) {
@@ -476,6 +485,8 @@ win32_pty_stop(struct win32_pty *pty, struct evbuffer *out)
 	}
 	closesocket(pty->sock);
 	pty->sock = INVALID_SOCKET;
+	closesocket(pty->bridge_peer);
+	pty->bridge_peer = INVALID_SOCKET;
 }
 
 /* Restart the bridges after win32_pty_stop. Returns the new socket. */

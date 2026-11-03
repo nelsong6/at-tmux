@@ -73,6 +73,12 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-conf-syntax.sh
 
+      - name: Run console shutdown tests
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-pty-close.sh
+
       - name: Run key handling tests
         shell: bash
         timeout-minutes: 5
@@ -203,6 +209,7 @@ jobs:
         run: |
           mkdir -p build/upgrade
           cp build/Debug/tmux.exe conpty/runtimes/win-x64/native/conpty.dll conpty/build/native/runtimes/x64/OpenConsole.exe build/upgrade/
+          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pty-close.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade.sh
 
       - name: Upload build artifacts

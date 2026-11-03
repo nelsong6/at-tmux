@@ -10,7 +10,8 @@ PATH=/bin:/usr/bin
 TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
-TMUX="$TEST_TMUX -Ltest"
+. "$(dirname "$0")/win32-test.sh"
+TMUX="$TEST_TMUX -L$TEST_SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
 wait_gone
@@ -23,7 +24,7 @@ $TMUX -fNUL new -d -x100 -y30 </dev/null || exit 1
 PS="$(cygpath "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
 "$PS" -NoProfile -ExecutionPolicy Bypass \
     -File "$(cygpath -w "$(dirname "$0")/win32-pty.ps1")" \
-    -Command "\"$(cygpath -wa "$TEST_TMUX")\" -Ltest set -g @identified 1 ; run -d 3 ; attach" \
+    -Command "\"$(cygpath -wa "$TEST_TMUX")\" -L$TEST_SOCKET set -g @identified 1 ; run -d 3 ; attach" \
     -Cols 89 -Rows 24 -ResizeFile "$(cygpath -w "$OUT/resize")" &
 HOST=$!
 
