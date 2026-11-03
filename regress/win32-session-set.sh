@@ -70,13 +70,17 @@ snap_has "${T}C:/Windows${T}abc123${T}" || fail "Claude folder not in snapshot"
 sizes() { $TMUX lsp -t "$1" -F '#{pane_width}x#{pane_height}' | tr -d '\r' | tr '\n' ' '; }
 layout=$(sizes main:two)
 
-# 4. Killed, recorded, reopened at its place.
+# 4. Killed while zoomed, recorded, reopened at its place, zoomed.
+$TMUX resize-pane -Z -t main:two.1 || fail "zoom"
 $TMUX kill-window -t main:two || fail "kill-window"
 wait_until test "$(closed_lines)" -eq 1 || fail "killed window not recorded"
 $TMUX reopen-window -d || fail "reopen-window"
 wait_until windows_are main "one two three" || fail "reopened window not at its place"
 [ "$($TMUX display -p -t main:two '#{window_panes}' | tr -d '\r')" = 2 ] ||
     fail "reopened window lacks its split"
+[ "$($TMUX display -p -t main:two '#{window_zoomed_flag}' | tr -d '\r')" = 1 ] ||
+    fail "reopened window not zoomed"
+$TMUX resize-pane -Z -t main:two.1 || fail "unzoom"
 [ "$(sizes main:two)" = "$layout" ] ||
     fail "reopened window's layout differs"
 $TMUX display -p -t main:two.1 '#{pane_start_command}' | grep -q 'resumed abc123' ||
