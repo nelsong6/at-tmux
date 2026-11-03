@@ -32,6 +32,7 @@
 
 struct sessions		sessions;
 u_int			next_session_id;
+u_int			next_session_order;
 struct session_groups	session_groups = RB_INITIALIZER(&session_groups);
 
 static void	session_free(int, short, void *);
@@ -130,6 +131,7 @@ session_create(const char *prefix, const char *name, const char *cwd,
 	s->options = oo;
 
 	status_update_cache(s);
+	s->order = next_session_order++;
 
 	s->tio = NULL;
 	if (tio != NULL) {

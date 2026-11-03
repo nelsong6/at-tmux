@@ -1544,6 +1544,36 @@ option.
 .D1 Pq alias: Ic rename
 Rename the session to
 .Ar new-name .
+.It Xo Ic reorder-session
+.Op Fl ab
+.Op Fl s Ar src-session
+.Op Fl t Ar dst-session
+.Op Ar place
+.Xc
+.D1 Pq alias: Ic reorders
+Move a session to another place in the sessions row.
+.Ar place
+is
+.Ql front ,
+.Ql back ,
+.Ql forward
+(one place toward the front) or
+.Ql backward
+(one place toward the back).
+Without
+.Ar place ,
+.Fl t
+names a session to put it before, or after with
+.Fl a .
+The order is also the order of
+.Ic switch-client
+.Fl n
+and
+.Fl p ,
+.Ic choose-tree
+and the
+.Ql S:
+format loop sorted by index.
 .It Xo Ic server-access
 .Op Fl adlrw
 .Op Ar user

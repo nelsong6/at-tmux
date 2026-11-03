@@ -33,7 +33,7 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
 ## Test Suite
 
-CI runs 25 test scripts from `regress/`, each through `win32-run.sh`:
+CI runs 26 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
@@ -52,12 +52,13 @@ CI runs 25 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-linesize.sh` — a double-width or double-height line (DECDWL, DECDHL) wraps at half the pane's width and DECSWL restores it, in the pane and as the client draws it (outer-server pattern as above). That the terminal shows the rows at double size is checked by eye in Windows Terminal (`window-shot`), since no capture reports a row's size
 - `win32-palette.sh` — `display-palette`'s rows and what a pick runs; `win32-palette-pick.ps1` stands in for fzt, and keys reach the pseudo-console client with `send-keys -K`
 - `win32-keep-alive.sh` — a session with `keep-alive-window` set opens that window when its last one goes by kill-window, the shell exiting or move-window, and still ends by kill-session or when the replacement's program exits within a second
+- `win32-reorder-session.sh` — `reorder-session` moves a session to the front, the back, one place either way, or before or after a named session in the sessions row (the `S:` loop's index order); a bad place changes nothing, and a session made afterwards goes at the end
 - `win32-session-set.sh` — with `@session-set-dir` set the server writes `live/<socket>.set` itself, only when something in it changed (a pane's Claude session, a reported folder, a program started in a pane), records each window it destroys (not one moved, not the at menu's, none at `kill-server`) in `closed-windows`, at most 25, and `reopen-window` rebuilds the newest at its place with its splits, layout, active pane and Claude session or restarted program, making its session again if it has gone (13 tests)
 - `win32-session-offer.sh` — a server offers the snapshot an earlier server of its name left in a menu on the first client to attach (pseudo-console client, keys by `send-keys -K`): Enter rebuilds it in place of the fresh session, Escape archives it, a server no client showed is archived without an offer, and `restore-set` rebuilds an archived snapshot beside the sessions there
 - `win32-new-window-draw.sh` — `new-window -W` switches the client only once the new pane has drawn (not on ConPTY's setup alone), fails without switching when the program exits or the window is killed first, and a killed waiting command gives the wait up
 - `win32-new-window-options.sh` — `new-window -o name=value` sets window options on the new window before its program can end: with `remain-on-exit=failed` a program that fails at once keeps its window, output and exit status, one that succeeds closes it, a bad `-o` makes no window, and `-W` switches to the dead pane once its message is drawn (TMUX-52)
 - `win32-global-foreground.sh` — `#{global_key_terminal_foreground}` is 1 when the client's terminal (a window of a process it runs under) had the focus at a global key, else 0; `win32-foreground.ps1` presses Win+` in CI only
-- `win32-upgrade.sh` — `upgrade-server` hands a server with an attached client (unfocused, its pane asking for focus reports) to another process without restarting its panes, waits while copy mode is open, carries on when the new build fails, and keeps the global environment as it was, less its handover variable `TMUX_UPGRADE`, in it and in new panes (6 tests; runs beside `conpty.dll`)
+- `win32-upgrade.sh` — `upgrade-server` hands a server with an attached client (unfocused, its pane asking for focus reports) to another process without restarting its panes, waits while copy mode is open, carries on when the new build fails, keeps the sessions row's order, and keeps the global environment as it was, less its handover variable `TMUX_UPGRADE`, in it and in new panes (6 tests; runs beside `conpty.dll`)
 
 CI's `macos` job builds with tmux's own Unix build (`sh autogen.sh && ./configure --enable-utf8proc && make`, Homebrew's autoconf, automake, pkgconf, libevent and utf8proc) for the work Mac, and runs `regress/palette.sh` (the palette tests, client attached from a pane of a second server, `palette-pick.sh` for fzt), `regress/hold.sh` (`switch-client -H`/`-R`) and `regress/upgrade.sh` (`upgrade-server`, as on Linux). The macOS keyboard (held modifiers, the global table as registered hotkeys) is `osdep-darwin-keys.c`; the build is the `tmux-macos` artifact.
 
