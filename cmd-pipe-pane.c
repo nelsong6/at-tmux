@@ -136,8 +136,14 @@ cmd_pipe_pane_exec(struct cmd *self, struct cmdq_item *item)
 	 */
 	{
 		pid_t child_pid;
+		struct environ *env;
+		char *envblock;
 
-		child_pid = win32_process_spawn(cmd, NULL, pipe_fd[1]);
+		env = environ_for_session(s, 0);
+		envblock = environ_to_win32_block(env);
+		child_pid = win32_process_spawn(cmd, NULL, envblock, pipe_fd[1]);
+		free(envblock);
+		environ_free(env);
 		if (child_pid == -1) {
 			cmdq_error(item, "spawn error");
 			closesocket((SOCKET)pipe_fd[0]);

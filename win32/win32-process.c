@@ -180,10 +180,11 @@ win32_write_close(int fd, const void *data, size_t len)
  * Spawn a non-PTY process with its stdin, stdout and stderr connected to the
  * given socket. The socket then belongs to the bridge, which closes it when
  * the child is done; the caller must not close it. Returns the child PID on
- * success, -1 on failure (the caller still owns the socket).
+ * success, -1 on failure (the caller still owns the socket). env is the child's
+ * Unicode environment block, as used by the PTY launcher.
  */
 pid_t
-win32_process_spawn(const char *cmd, const char *cwd, int outfd)
+win32_process_spawn(const char *cmd, const char *cwd, char *env, int outfd)
 {
 	STARTUPINFOEXA si;
 	PROCESS_INFORMATION pi;
@@ -231,7 +232,8 @@ win32_process_spawn(const char *cmd, const char *cwd, int outfd)
 	cmddup = _strdup(cmd);
 	if (ok) {
 		ok = CreateProcessA(NULL, cmddup, NULL, NULL, TRUE,
-		    CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, NULL,
+		    CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT |
+		    CREATE_UNICODE_ENVIRONMENT, env,
 		    (cwd != NULL && *cwd != '\0') ? cwd : NULL,
 		    &si.StartupInfo, &pi);
 	}

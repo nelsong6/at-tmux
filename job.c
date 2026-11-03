@@ -169,7 +169,9 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 			    win32_shell_command_flag(shell), cmd);
 		else
 			cmdline = win32_argv_to_cmdline(argc, argv);
-		pid = win32_process_spawn(cmdline, cwd, out[1]);
+		envblock = environ_to_win32_block(env);
+		pid = win32_process_spawn(cmdline, cwd, envblock, out[1]);
+		free(envblock);
 		free(cmdline);
 		if (pid == -1) {
 			closesocket((SOCKET)out[0]);
