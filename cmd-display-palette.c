@@ -967,8 +967,14 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	palette_add_aliases(p);
 	palette_add_bindings(p);
 
+	/*
+	 * A picker that fails (not 0, nor 130 for a cancel) leaves the popup
+	 * open on what it printed until a key, so the failure is seen, not a
+	 * flash (FZT-75).
+	 */
 	args_to_vector(args, &argc, &argv);
-	if (popup_display(POPUP_CLOSEEXIT, BOX_LINES_DEFAULT, item,
+	if (popup_display(POPUP_CLOSEEXITCANCEL|POPUP_CLOSEANYKEY,
+	    BOX_LINES_DEFAULT, item,
 	    (tty->sx - w) / 2, (tty->sy - h) / 2, w, h, NULL, NULL, argc, argv,
 	    server_client_get_cwd(tc, target->s), NULL, tc, target->s, NULL,
 	    NULL, cmd_display_palette_close, p, in[0], out[1]) != 0) {

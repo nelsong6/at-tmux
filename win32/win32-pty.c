@@ -209,6 +209,19 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 			goto fail;
 		inherit[ninherit++] = si.StartupInfo.hStdOutput;
 	}
+	/*
+	 * Given a pipe, a handle left INVALID_HANDLE_VALUE stays invalid in the
+	 * child, and a program that needs it fails: fzt-automate's C library
+	 * panics with no stderr (FZT-75). NULL has Windows give it the pseudo
+	 * console, as Unix tmux leaves a popup program's stderr on its terminal.
+	 */
+	if (ninherit != 0) {
+		if (si.StartupInfo.hStdInput == INVALID_HANDLE_VALUE)
+			si.StartupInfo.hStdInput = NULL;
+		if (si.StartupInfo.hStdOutput == INVALID_HANDLE_VALUE)
+			si.StartupInfo.hStdOutput = NULL;
+		si.StartupInfo.hStdError = NULL;
+	}
 	if (ninherit != 0)
 		attrs++;
 
