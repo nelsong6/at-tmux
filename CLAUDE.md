@@ -43,7 +43,7 @@ CI runs 26 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-has-session.sh` — exit code validation
 - `win32-file.sh` — `source-file`, `load-buffer` and `save-buffer` from a second client finish, keep the bytes, and fail with exit 1
 - `win32-strftime.sh` — a `%` sequence Windows' `strftime` doesn't know (`%Q`, `% -`, a trailing `%`) is printed as written and the server keeps running (it ended the server before TMUX-37), and the format is recorded once in `show-messages`
-- `win32-respawn-failed.sh` — a pane whose respawn can't start its program stays usable: another respawn, `capture-pane -P` and `send-keys -R` work on it and the server keeps running (before TMUX-61 the next respawn ended the server)
+- `win32-respawn-failed.sh` — a pane whose respawn can't start its program reads as one whose program printed why and exited 1: the reason above the "Pane is dead (status 1, …)" line, `#{pane_dead}` 1, `pane-died` run, and `remain-on-exit` keeping or closing it (before TMUX-62 a second failure left it blank and not dead); and it stays usable: another respawn, `capture-pane -P` and `send-keys -R` work on it and the server keeps running (before TMUX-61 the next respawn ended the server)
 - `win32-process-watch.sh` — the server sees every child it starts exit: 70 jobs at once, rounds of overlapping jobs that end oldest first, and a job and a pane started beside a program that keeps running (before TMUX-54 a table of 64 filled up and popups, jobs and panes stayed open after their program ended)
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)

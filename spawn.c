@@ -75,7 +75,68 @@ environ_to_win32_block(struct environ *env)
 
 	return ((char *)block);
 }
+
+/* Why a program couldn't start, from the error CreateProcess or ConPTY left. */
+static char *
+spawn_win32_error(const char *program)
+{
+	DWORD	 error = GetLastError();
+	char	 msg[512], *cause;
+	size_t	 len;
+
+	if (FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM|
+	    FORMAT_MESSAGE_IGNORE_INSERTS, NULL, error, 0, msg, sizeof msg,
+	    NULL) == 0)
+		snprintf(msg, sizeof msg, "error %lu", error);
+	len = strlen(msg);
+	while (len > 0 && strchr(" \r\n.", msg[len - 1]) != NULL)
+		msg[--len] = '\0';
+	xasprintf(&cause, "can't start %s: %s", program, msg);
+	return (cause);
+}
 #endif
+
+static void
+spawn_pane_died(__unused int fd, __unused short events, void *arg)
+{
+	struct window_pane	*wp;
+
+	wp = window_pane_find_by_id((u_int)(uintptr_t)arg);
+	if (wp != NULL && wp->fd == -1 && (wp->flags & PANE_EXITED))
+		server_destroy_pane(wp, 1);
+}
+
+/*
+ * A respawn whose program couldn't start leaves the pane as if the program had
+ * printed why and exited 1 at once, as a failed exec does on Unix.
+ */
+static void
+spawn_respawn_failed(struct window_pane *wp, const char *cause)
+{
+	struct screen_write_ctx	ctx;
+
+	wp->fd = -1;
+	/* The old program's exit, still to come, is not this pane's. */
+	wp->pid = -1;
+	/* A respawn freed the parser; a dead pane still needs one. */
+	wp->ictx = input_init(wp, NULL, &wp->palette, NULL);
+
+	/* At the bottom, so remain-on-exit's line scrolls it up, not away. */
+	screen_write_start_pane(&ctx, wp, &wp->base);
+	screen_write_cursormove(&ctx, 0, screen_size_y(&wp->base) - 1, 0);
+	screen_write_puts(&ctx, &grid_default_cell, "%s", cause);
+	screen_write_stop(&ctx);
+
+	wp->status = 1 << 8;
+	wp->flags |= PANE_STATUSREADY|PANE_EXITED;
+
+	/*
+	 * Later, as a real exit is: without remain-on-exit the pane closes, and
+	 * the respawn's caller still holds it.
+	 */
+	event_once(-1, EV_TIMEOUT, spawn_pane_died, (void *)(uintptr_t)wp->id,
+	    NULL);
+}
 
 /*
  * Set up the environment and create a new window and pane or a new pane.
@@ -499,21 +560,20 @@ spawn_pane(struct spawn_context *sc, char **cause)
 		pty = win32_pty_spawn(cmdline, actual_cwd, envblock,
 		    (int)ws.ws_col, (int)ws.ws_row,
 		    &new_wp->pid, -1, -1);
+		if (pty == NULL)
+			*cause = spawn_win32_error(new_wp->argc > 1 ?
+			    new_wp->argv[0] : shell);
 		free(envblock);
 		free(cmdline);
 
 		if (pty == NULL) {
-			xasprintf(cause, "spawn failed");
 			new_wp->fd = -1;
 			if (~sc->flags & SPAWN_RESPAWN) {
 				server_client_remove_pane(new_wp);
 				layout_close_pane(new_wp);
 				window_remove_pane(w, new_wp);
-			} else {
-				/* A respawn freed the parser; a dead pane still needs one. */
-				new_wp->ictx = input_init(new_wp, NULL, &new_wp->palette,
-				    NULL);
-			}
+			} else
+				spawn_respawn_failed(new_wp, *cause);
 			environ_free(child);
 			return (NULL);
 		}
@@ -546,11 +606,8 @@ spawn_pane(struct spawn_context *sc, char **cause)
 			server_client_remove_pane(new_wp);
 			layout_close_pane(new_wp);
 			window_remove_pane(w, new_wp);
-		} else {
-			/* A respawn freed the parser; a dead pane still needs one. */
-			new_wp->ictx = input_init(new_wp, NULL, &new_wp->palette,
-			    NULL);
-		}
+		} else
+			spawn_respawn_failed(new_wp, *cause);
 		sigprocmask(SIG_SETMASK, &oldset, NULL);
 		environ_free(child);
 		return (NULL);

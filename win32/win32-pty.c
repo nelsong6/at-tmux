@@ -128,7 +128,8 @@ pty_input_thread(LPVOID arg)
 /*
  * Spawn cmd in a new pseudo console. A standard handle is the console's own
  * unless infd or outfd (a CRT descriptor, -1 for none) is given for it; only
- * those are inherited.
+ * those are inherited. On failure it returns NULL with the reason in
+ * GetLastError().
  */
 struct win32_pty *
 win32_pty_spawn(const char *cmd, const char *cwd, char *env,
@@ -143,7 +144,7 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	PROCESS_INFORMATION pi;
 	SIZE_T attrSize = 0;
 	HANDLE inherit[2];
-	DWORD attrs = 1, ninherit = 0;
+	DWORD attrs = 1, ninherit = 0, error;
 	int sv[2];
 	wchar_t wcmd[32768];
 	wchar_t wcwd[MAX_PATH];
@@ -165,8 +166,10 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	size.X = (SHORT)cols;
 	size.Y = (SHORT)rows;
 	hr = pty_api()->create(size, pipeIn_read, pipeOut_write, 0, &pty->hPC);
-	if (FAILED(hr))
+	if (FAILED(hr)) {
+		SetLastError(HRESULT_CODE(hr));
 		goto fail;
+	}
 
 	/* Close the sides of the pipes that ConPTY now owns. */
 	CloseHandle(pipeIn_read);
@@ -273,6 +276,7 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	return (pty);
 
 fail:
+	error = GetLastError();
 	while (ninherit != 0)
 		CloseHandle(inherit[--ninherit]);
 	if (pipeIn_read) CloseHandle(pipeIn_read);
@@ -285,6 +289,7 @@ fail:
 	if (pty->sock != INVALID_SOCKET) closesocket(pty->sock);
 	if (pty->bridge_peer != INVALID_SOCKET) closesocket(pty->bridge_peer);
 	free(pty);
+	SetLastError(error);
 	return (NULL);
 }
 
