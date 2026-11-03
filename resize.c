@@ -184,7 +184,7 @@ clients_calculate_size(int type, int current, struct client *c,
 			cy = cw->sy;
 		} else {
 			cx = loop->tty.sx;
-			cy = loop->tty.sy - status_reserved_size(loop);
+			cy = loop->tty.sy - status_reserved_size_for_window(loop, w);
 		}
 
 		/*

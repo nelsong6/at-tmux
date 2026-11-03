@@ -5174,6 +5174,14 @@ Mouse bindings use the Footer suffix, for example
 .Ic MouseDown1Footer ;
 .Ql #{mouse_status_range}
 reports its user range.
+.It Ic status-footer-condition Ar format
+Show the footer only when
+.Ar format
+expands to a value other than empty or zero for the current pane.
+The default is 1.
+A hidden footer does not reserve a row, and changing panes or windows updates
+the available height.
+Shell jobs are not run in this condition.
 .It Ic status-footer-style Ar style
 Set the base style of the independent bottom row.
 .It Ic status-format[] Ar format

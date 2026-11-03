@@ -318,20 +318,54 @@ status_line_size(struct client *c)
 }
 
 /* Keep at least one pane row; the footer is independent of the main bars. */
-u_int
-status_footer_size(struct client *c)
+static u_int
+status_footer_size_for_window(struct client *c, struct window *w)
 {
+	struct format_tree	*ft;
+	struct window_pane	*wp;
+	struct winlink		*wl;
+	const char		*condition;
+	char			*expanded;
+	u_int			 visible;
+
 	if (c->session == NULL ||
 	    (c->flags & (CLIENT_STATUSOFF|CLIENT_CONTROL)) ||
 	    c->tty.sy <= status_line_size(c) + 1)
 		return (0);
-	return (*options_get_string(c->session->options, "status-footer") != '\0');
+	if (*options_get_string(c->session->options, "status-footer") == '\0')
+		return (0);
+	condition = options_get_string(c->session->options, "status-footer-condition");
+	if (strcmp(condition, "1") == 0)
+		return (1);
+	if (w == NULL)
+		w = c->session->curw->window;
+	wp = w == c->session->curw->window ? server_client_get_pane(c) : w->active;
+	wl = winlink_find_by_window(&c->session->windows, w);
+	ft = format_create(c, NULL, FORMAT_NONE, FORMAT_NOJOBS);
+	format_defaults(ft, c, c->session, wl, wp);
+	expanded = format_expand(ft, condition);
+	visible = format_true(expanded);
+	free(expanded);
+	format_free(ft);
+	return (visible);
+}
+
+u_int
+status_footer_size(struct client *c)
+{
+	return (status_footer_size_for_window(c, NULL));
 }
 
 u_int
 status_reserved_size(struct client *c)
 {
 	return (status_line_size(c) + status_footer_size(c));
+}
+
+u_int
+status_reserved_size_for_window(struct client *c, struct window *w)
+{
+	return (status_line_size(c) + status_footer_size_for_window(c, w));
 }
 
 struct style_range *
@@ -474,7 +508,7 @@ status_footer_redraw(struct client *c)
 	if (c->flags & CLIENT_STATUSFORCE)
 		flags |= FORMAT_FORCE;
 	ft = format_create(c, NULL, FORMAT_NONE, flags);
-	format_defaults(ft, c, NULL, NULL, NULL);
+	format_defaults(ft, c, NULL, NULL, server_client_get_pane(c));
 	style_apply(&gc, c->session->options, "status-footer-style", ft);
 	expanded = format_expand_time(ft,
 	    options_get_string(c->session->options, "status-footer"));

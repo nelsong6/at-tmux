@@ -3328,6 +3328,11 @@ server_client_check_redraw(struct client *c)
 
 	if (c->flags & (CLIENT_CONTROL|CLIENT_SUSPENDED))
 		return;
+	if (c->status.footer_size != status_footer_size(c)) {
+		c->status.footer_size = status_footer_size(c);
+		recalculate_sizes_now(1);
+		server_redraw_client(c);
+	}
 	if (c->flags & CLIENT_ALLREDRAWFLAGS) {
 		log_debug("%s: redraw%s%s%s%s%s%s", c->name,
 		    (c->flags & CLIENT_REDRAWWINDOW) ? " window" : "",

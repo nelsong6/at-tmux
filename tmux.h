@@ -1922,6 +1922,7 @@ struct status_line {
 	struct screen		 footer;
 	struct grid_cell	 footer_style;
 	struct status_line_entry footer_entry;
+	u_int			 footer_size;
 };
 
 /* Prompt type. */
@@ -3097,6 +3098,7 @@ u_int	 status_prompt_line_at(struct client *);
 int	 status_at_line(struct client *);
 u_int	 status_line_size(struct client *);
 u_int	 status_footer_size(struct client *);
+u_int	 status_reserved_size_for_window(struct client *, struct window *);
 u_int	 status_reserved_size(struct client *);
 int	 status_footer_redraw(struct client *);
 struct style_range *status_footer_get_range(struct client *, u_int);

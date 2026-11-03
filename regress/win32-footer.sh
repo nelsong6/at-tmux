@@ -36,6 +36,24 @@ check_rows() {
 }
 wait_until check_rows || { echo 'bars are not at opposite edges'; exit 1; }
 [ "$($TMUX display -p '#{pane_height}' | tr -d '\r')" = 22 ] || exit 1
+# Conditional visibility returns the row when switching windows and panes.
+$TMUX set -g status-footer-condition '#{@show-footer}'
+full_height() { [ "$($TMUX display -p '#{pane_height}' | tr -d '\r')" = 23 ] && ! drawn BOTTOM_; }
+wait_until full_height || { echo 'hidden footer still reserves a row'; exit 1; }
+$TMUX set -p @show-footer 1
+wait_until check_rows || exit 1
+$TMUX new-window -d -n app
+$TMUX select-window -t footer:app
+wait_until full_height || exit 1
+$TMUX select-window -t footer:0
+wait_until check_rows || exit 1
+split=$($TMUX split-window -h -d -P -F '#{pane_id}' | tr -d '\r')
+$TMUX select-pane -t "$split"
+wait_until full_height || { echo 'selecting a plain pane kept the footer'; exit 1; }
+$TMUX select-pane -t %0
+wait_until check_rows || exit 1
+$TMUX kill-pane -t "$split"
+$TMUX kill-window -t footer:app
 # Mouse stays separate from the pre-existing status bindings.
 $OUTER send-keys -H 1b 5b 3c 30 3b 32 3b 32 34 4d 1b 5b 3c 30 3b 32 3b 32 34 6d
 clicked() { [ "$($TMUX show -gqv @footer-click | tr -d '\r')" = links ]; }
