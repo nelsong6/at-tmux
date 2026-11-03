@@ -323,6 +323,16 @@ const struct options_table_entry options_table[] = {
 		  "Each entry is an alias and a command separated by '='."
 	},
 
+	{ .name = "command-alias-note",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_SERVER,
+	  .flags = OPTIONS_TABLE_IS_ARRAY,
+	  .default_str = "",
+	  .separator = ",",
+	  .text = "Array of descriptions for command aliases. "
+		  "Each entry is an alias and its description separated by '='."
+	},
+
 	{ .name = "codepoint-widths",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SERVER,

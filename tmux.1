@@ -4490,6 +4490,17 @@ Note that aliases are expanded when a command is parsed rather than when it is
 executed, so binding an alias with
 .Ic bind-key
 will bind the expanded form.
+.It Xo Ic command-alias-note[]
+.Ar name=description
+.Xc
+Descriptions for the aliases in
+.Ic command-alias :
+.Ic display-palette
+shows
+.Ar description
+for the alias
+.Ar name
+in place of the command it runs.
 .It Ic codepoint-widths[] Ar string
 An array option allowing widths of Unicode codepoints to be overridden.
 Note the new width applies to all clients.

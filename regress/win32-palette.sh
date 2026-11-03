@@ -28,6 +28,8 @@ bind -N 'Rename the window' n command-prompt -I'#W' { rename-window -- '%%' }
 bind -n M-w display-menu Split s { split-window } '' "#{?#{==:1,0},Never,}" x { kill-server } Last l { last-window }
 set -g @go-menu 'display-menu -T go "#{session_name}" g "select-window -t first"'
 set -s command-alias[100] 'go-to=run-shell -C "#{E:@go-menu}"'
+set -s command-alias-note[100] 'go-to=Go to a window = first'
+set -s command-alias-note[101] 'nothing-by-this-name=Never shown'
 set -g @no-menu 'display-menu -T none #{?#{==:1,0},"Never" n "kill-server",}'
 set -s command-alias[101] 'go-nowhere=run-shell -C "#{E:@no-menu}"'
 set -s command-alias[102] 'clock-mode=display-message clock'
@@ -103,7 +105,10 @@ row '^0	choose-tree	' || fail_row "no choose-tree row" choose-tree
 row '^2	1: second	1 panes	' || fail_row "no window under a session" second
 # An alias that runs a menu through run-shell -C, as send-to-session does: its format
 # is expanded and its menu is a folder (building it once crashed the server).
-row '^0	go-to	alias for run-shell' || fail_row "no run-shell -C alias row" go-to
+# Its note (command-alias-note) is its description, taken whole after the
+# first '='; an alias with none is described by what it runs.
+row '^0	go-to	Go to a window = first	' || fail_row "no run-shell -C alias row with its note" go-to
+row 'Never shown' && fail_row "a note for no alias was shown" 'Never shown'
 row '^1	0		' || fail_row "no item in the run-shell -C menu" "^1	0"
 row "^0	go-nowhere	alias for run-shell.*		[0-9]*	run shell miscellaneous\$" ||
     fail_row "no row for a run-shell -C menu with nothing in it" go-nowhere
