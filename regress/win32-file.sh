@@ -47,6 +47,27 @@ run load-buffer -b in $OUT/in.bin || fail "load-buffer"
 run save-buffer -b in $OUT/out.bin || fail "save-buffer"
 cmp -s $OUT/in.bin $OUT/out.bin || fail "save-buffer changed the bytes"
 
+# A command client's cwd and relative path are literal Windows paths, even
+# when the server was started in a different directory.
+EXE=$(cygpath -ma "$TEST_TMUX")
+mkdir -p "$OUT/cwd with-[brackets].d/inner dir" || fail "relative directory"
+printf 'set -g @relative "loaded relative"\n' \
+    >"$OUT/cwd with-[brackets].d/inner dir/relative.conf"
+(
+	cd "$OUT/cwd with-[brackets].d" || exit 1
+	MSYS2_ARG_CONV_EXCL='*' timeout 10 "$EXE" "-L$TEST_SOCKET" \
+	    source-file "inner dir/relative.conf"
+) || fail "relative source-file from a cwd with punctuation"
+[ "$($TMUX show -gv @relative | tr -d '\r')" = "loaded relative" ] ||
+    fail "relative file was not executed"
+(
+	cd "$OUT/cwd with-[brackets].d" || exit 1
+	MSYS2_ARG_CONV_EXCL='*' timeout 10 "$EXE" "-L$TEST_SOCKET" \
+	    source-file "inner dir/missing.conf"
+) 2>/dev/null
+_rc=$?
+[ $_rc -eq 1 ] || fail "missing relative file exited $_rc instead of 1"
+
 $TMUX kill-server 2>/dev/null
 
 echo "ALL FILE TESTS PASSED"

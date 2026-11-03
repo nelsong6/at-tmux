@@ -73,6 +73,11 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-conf-syntax.sh
 
+      - name: Run config line ending tests
+        shell: bash
+        timeout-minutes: 5
+        run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh conf-crlf.sh
+
       - name: Run console shutdown tests
         shell: bash
         timeout-minutes: 5
@@ -273,6 +278,10 @@ jobs:
           ./configure --enable-utf8proc
           make -j"$(sysctl -n hw.ncpu)"
 
+      - name: Run config line ending tests
+        timeout-minutes: 5
+        run: TEST_TMUX="$PWD/tmux" sh regress/conf-crlf.sh
+
       - name: Run palette tests
         run: TEST_TMUX="$PWD/tmux" sh regress/palette.sh
 
@@ -305,6 +314,10 @@ jobs:
           sh autogen.sh
           ./configure --enable-utf8proc
           make -j"$(nproc)"
+
+      - name: Run config line ending tests
+        timeout-minutes: 5
+        run: TEST_TMUX="$PWD/tmux" sh regress/conf-crlf.sh
 
       - name: Run palette tests
         run: TEST_TMUX="$PWD/tmux" sh regress/palette.sh
