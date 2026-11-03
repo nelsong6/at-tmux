@@ -373,6 +373,35 @@ jobs:
           "$hash  $zip" | Set-Content -Encoding utf8 "$zip.sha256"
           Write-Host "Packaged $zip; SHA256 $hash; signer $($signature.SignerCertificate.Thumbprint)"
 
+      # A describe-shaped name resolves as a revision even without a tag ref.
+      # Create the exact ref explicitly, then verify the server advertises it.
+      # PRs exercise local tag creation; only master pushes publish the ref.
+      - name: Create and verify release tag
+        env:
+          PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        run: |
+          $sha = git rev-parse HEAD
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $tagRef = "refs/tags/$env:VERSION"
+          git show-ref --verify --quiet $tagRef
+          if ($LASTEXITCODE -eq 1) {
+            git tag $env:VERSION $sha
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } elseif ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $target = git rev-parse "$tagRef^{}"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ($target -ne $sha) { throw "$tagRef points to $target instead of $sha" }
+          if ($env:PUBLISH -eq 'true') {
+            git push origin $tagRef
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            $remote = git ls-remote origin $tagRef
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            $object = git rev-parse $tagRef
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            if ((($remote -split '\s+')[0]) -ne $object) { throw "$tagRef was not published" }
+          }
+          Write-Host "$tagRef points to $sha (publish=$env:PUBLISH)"
+
       - name: Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         env:
