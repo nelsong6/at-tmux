@@ -1655,6 +1655,15 @@ grid_upgrade_save(struct evbuffer *evb, struct grid *gd,
 			upw_u32(lo, gee->us);
 			upw_link(lo, hl, gee->link);
 		}
+		/*
+		 * Erased cells may carry background colours beyond cellused.
+		 * Append them after the original line record so older readers can
+		 * still consume the original fields, and preserve cellused for
+		 * copying and reflow.
+		 */
+		if (gl->cellsize > gl->cellused)
+			upw_data(lo, gl->celldata + gl->cellused,
+			    (gl->cellsize - gl->cellused) * sizeof *gl->celldata);
 		upw_obj(o, lo);
 		evbuffer_free(lo);
 	}
@@ -1730,7 +1739,20 @@ grid_upgrade_restore(struct upgrade_reader *r, struct hyperlinks *hl)
 			gee->us = upr_u32(&lo);
 			gee->link = upr_link(&lo, hl);
 		}
-		for (i = 0; !lo.error && i < gl->cellused; i++) {
+		/* Older senders have no allocated cells after the text. */
+		if (!lo.error && lo.left != 0) {
+			data = upr_data(&lo, &size);
+			if (size % sizeof *gl->celldata != 0 ||
+			    size / sizeof *gl->celldata > UINT_MAX - gl->cellused)
+				lo.error = 1;
+			else if (!lo.error && size != 0) {
+				gl->cellsize += size / sizeof *gl->celldata;
+				gl->celldata = xreallocarray(gl->celldata,
+				    gl->cellsize, sizeof *gl->celldata);
+				memcpy(gl->celldata + gl->cellused, data, size);
+			}
+		}
+		for (i = 0; !lo.error && i < gl->cellsize; i++) {
 			if ((gl->celldata[i].flags & GRID_FLAG_EXTENDED) &&
 			    gl->celldata[i].offset >= gl->extdsize)
 				lo.error = 1;

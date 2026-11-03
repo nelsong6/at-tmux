@@ -20,7 +20,9 @@ wait_gone
 CFG=$(mktemp)
 printf "set -g default-shell '%s'\nset -g focus-events on\n" "$COMSPEC" >$CFG
 OUT=$(mktemp)
-trap "rm -f $CFG $OUT; $TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null" 0 1 15
+BG_BEFORE=$(mktemp)
+BG_AFTER=$(mktemp)
+trap "rm -f $CFG $OUT $BG_BEFORE $BG_AFTER; $TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null" 0 1 15
 FAIL=0
 EXE=$(cygpath -w "$TEST_TMUX")
 
@@ -114,12 +116,21 @@ PID0=$(server_pid)
 pane_pids >$OUT
 PANES0=$(cat $OUT)
 
+# A coloured text row with an erased tail, and an entirely erased coloured
+# row. Those backgrounds live beyond cellused and must survive the handover.
+$TMUX send-keys -tup:second \
+    'prompt $E[H$E[2J$E[48;2;41;41;41m$E[2KCOLORED$E[3;1H$E[48;2;18;35;52m$E[2K$E[4;1H$E[0m$G' Enter
+wait_for up:second '^COLORED' || fail "coloured screen never drew"
+$TMUX capture-pane -tup:second -peN >$BG_BEFORE
+
 # --- Test 1: upgrade keeps processes, screens, state and the client ---
 $TMUX upgrade-server "$EXE" || fail "upgrade-server refused"
 wait_until pid_changed_from "$PID0" || fail "server did not change: $(upgrade_status)"
 PID1=$(server_pid)
 [ "$(pane_pids)" = "$PANES0" ] || fail "pane processes changed: $(pane_pids)"
 pane_has up:0.0 "^BEFORE_MARK" || fail "pane screen lost"
+$TMUX capture-pane -tup:second -peN >$BG_AFTER
+cmp -s $BG_BEFORE $BG_AFTER || fail "coloured erased cells lost during upgrade"
 [ "$($TMUX show -gv @upgrade-test | tr -d '\r')" = kept ] || fail "option lost"
 [ "$($TMUX show-buffer -b upbuf | tr -d '\r')" = "buffer kept" ] || fail "buffer lost"
 $TMUX list-keys -T root F12 | grep -q f12-bound || fail "key binding lost"
