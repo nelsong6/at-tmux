@@ -655,6 +655,27 @@ palette_node_text(struct palette *p, const char *name, const char *desc,
 	cmd_list_free(cmdlist);
 }
 
+/* A single required argument with fixed alternatives is a choice. */
+static int
+palette_choices(struct palette *p, const char *name, const char *desc,
+    const char *required)
+{
+	char	*choices, *next, *choice, *command;
+
+	if (strchr(required, '|') == NULL || strchr(required, ' ') != NULL)
+		return (0);
+
+	palette_add(p, 0, name, desc, NULL);
+	next = choices = xstrdup(required);
+	while ((choice = strsep(&next, "|")) != NULL) {
+		xasprintf(&command, "%s %s", name, choice);
+		palette_add_command(p, 1, choice, "", command);
+		free(command);
+	}
+	free(choices);
+	return (1);
+}
+
 static void
 palette_add_commands(struct palette *p)
 {
@@ -678,6 +699,11 @@ palette_add_commands(struct palette *p)
 		if (required == NULL) {
 			palette_node_text(p, name, palette_description(*loop),
 			    name, name);
+			continue;
+		}
+		if (palette_choices(p, name, palette_description(*loop),
+		    required)) {
+			free(required);
 			continue;
 		}
 

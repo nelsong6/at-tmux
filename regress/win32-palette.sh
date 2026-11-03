@@ -120,6 +120,38 @@ row "^0	go-nowhere	alias for run-shell.*		[0-9]*	run shell miscellaneous\$" ||
     row '^0	clock-mode	alias for display-message clock	' ||
     fail_row "clock-mode is not one alias row" clock-mode
 
+# Fixed alternatives are picked without typing an argument. Session picks
+# affect both windows here, window picks only the current one, and neither
+# changes another session.
+status_session=$($TMUX display -p -c "$CLIENT" '#{client_session}' | tr -d '\r')
+$TMUX new -d -s status-other </dev/null || exit 1
+$TMUX set-session-status -t status-other waiting || exit 1
+statuses_are() {
+	[ "$($TMUX list-windows -t "$1" -F '#{?@claude,#{@claude},done}' |
+	    tr -d '\r' | tr '\n' ' ')" = "$2 " ]
+}
+for state in working waiting done; do
+	palette "pick=$state" under=set-session-status
+	row '^0	set-session-status	[^	]*		[0-9]*	' ||
+	    fail_row "set-session-status still asks for text" set-session-status
+	row "^1	$state			[0-9]*	$" ||
+	    fail_row "no $state choice" "$state"
+	wait_until statuses_are "$status_session" "$state $state" ||
+	    { echo "session choice $state did not set both windows"; exit 1; }
+	statuses_are status-other waiting ||
+	    { echo "session choice changed another session"; exit 1; }
+done
+for state in working waiting done; do
+	palette "pick=$state" under=set-window-status
+	row '^0	set-window-status	[^	]*		[0-9]*	' ||
+	    fail_row "set-window-status still asks for text" set-window-status
+	wait_until statuses_are "$status_session" "$state done" ||
+	    { echo "window choice $state did not set only its window"; exit 1; }
+	statuses_are status-other waiting ||
+	    { echo "window choice changed another session"; exit 1; }
+done
+$TMUX kill-session -t status-other || exit 1
+
 . "$(dirname "$0")/status-bars.sh"
 
 # A pick that asks for text runs its template with the text, quotes and

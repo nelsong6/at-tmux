@@ -1,5 +1,9 @@
 # Claude Code Project Notes — tmux-windows
 
+Read [AGENTS.md](AGENTS.md) for the required live-terminal preparation and manual
+testing handoff. Interactive changes must be ready in the existing terminal
+before reporting completion.
+
 ## MSYS2 / Git Bash Shell Quirks
 
 ### Ending test servers
