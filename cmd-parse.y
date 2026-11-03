@@ -1245,12 +1245,25 @@ yylex_getc(void)
 	}
 }
 
+static int
+yylex_is_eol(int ch)
+{
+	int	 next;
+
+	if (ch == EOF || ch == '\n')
+		return (1);
+	if (ch != '\r')
+		return (0);
+	next = yylex_getc();
+	yylex_ungetc(next);
+	return (next == '\n');
+}
+
 static char *
 yylex_get_word(int ch)
 {
 	char	*buf;
 	size_t	 len;
-	int	 next;
 
 	len = 0;
 	buf = xmalloc(1);
@@ -1258,13 +1271,7 @@ yylex_get_word(int ch)
 	do {
 		yylex_append1(&buf, &len, ch);
 		ch = yylex_getc();
-		if (ch == '\r') {
-			next = yylex_getc();
-			yylex_ungetc(next);
-			if (next == '\n')
-				break;
-		}
-	} while (ch != EOF && strchr(" \t\n", ch) == NULL);
+	} while (!yylex_is_eol(ch) && strchr(" \t", ch) == NULL);
 	yylex_ungetc(ch);
 
 	buf[len] = '\0';
@@ -1615,7 +1622,7 @@ yylex_token_tilde(char **buf, size_t *len)
 
 	for (;;) {
 		ch = yylex_getc();
-		if (ch == EOF || strchr("/ \t\n\"'", ch) != NULL) {
+		if (yylex_is_eol(ch) || strchr("/ \t\"'", ch) != NULL) {
 			yylex_ungetc(ch);
 			break;
 		}

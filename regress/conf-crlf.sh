@@ -51,6 +51,10 @@ check_options() {
 	option_is @condition if
 	option_is @condition-elif elif
 	option_is @condition-else else
+	[ "$($TMUX display -p '#{==:#{@home},#{@home-expected}}' | tr -d '\r')" = 1 ] ||
+	    fail "home shorthand at end of line changed"
+	[ "$($TMUX display -p '#{==:#{@home-sub},#{@home-sub-expected}}' | tr -d '\r')" = 1 ] ||
+	    fail "home shorthand with a subdirectory changed"
 }
 
 check_bare() {
@@ -73,6 +77,10 @@ set -g @even two\\
 set -g @next next
 # This comment continues\
 set -g @hidden should-not-be-set
+set -g @home ~
+set -g @home-expected "$HOME"
+set -g @home-sub ~/sub
+set -g @home-sub-expected "$HOME/sub"
 %if 1
 set -g @condition if
 %else
