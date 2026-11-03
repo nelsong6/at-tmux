@@ -33,7 +33,8 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
 ## Test Suite
 
-CI runs 28 test scripts from `regress/`, each through `win32-run.sh`:
+CI runs these test scripts from `regress/`, each through `win32-run.sh`:
+- `win32-message-log.sh` — failed launches keep their caller errors and make no pane, failed program exits are recorded, and error history survives server shutdown, rotates and expires old files (TMUX-41)
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)

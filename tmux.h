@@ -3745,6 +3745,7 @@ int	log_get_level(void);
 void	log_open(const char *);
 void	log_toggle(const char *);
 void	log_close(void);
+int	log_message(const char *);
 void printflike(1, 2) log_debug(const char *, ...);
 __dead void printflike(1, 2) fatal(const char *, ...);
 __dead void printflike(1, 2) fatalx(const char *, ...);
