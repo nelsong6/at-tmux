@@ -107,6 +107,8 @@ row "^0	go-nowhere	alias for run-shell.*		[0-9]*	run shell miscellaneous\$" ||
     row '^0	clock-mode	alias for display-message clock	' ||
     fail_row "clock-mode is not one alias row" clock-mode
 
+. "$(dirname "$0")/status-bars.sh"
+
 # A pick that asks for text runs its template with the text, quotes and
 # non-ASCII intact.
 palette 'pick=Rename the window' 'text=pal "q" é'

@@ -883,6 +883,14 @@ const struct options_table_entry options_table[] = {
 		  "as 'status-left'."
 	},
 
+	{ .name = "status-session-bar",
+	  .type = OPTIONS_TABLE_FLAG,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .default_num = 1,
+	  .text = "Show the session bar when 'status' is on and there is more "
+		  "than one session."
+	},
+
 	{ .name = "status-sessions-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SESSION,
@@ -984,6 +992,13 @@ const struct options_table_entry options_table[] = {
 	  .flags = OPTIONS_TABLE_IS_STYLE,
 	  .separator = ",",
 	  .text = "Style of the status line."
+	},
+
+	{ .name = "status-window-bar",
+	  .type = OPTIONS_TABLE_FLAG,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .default_num = 1,
+	  .text = "Show the window bar when 'status' is on."
 	},
 
 	{ .name = "pane-status-current-style",

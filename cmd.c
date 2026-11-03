@@ -128,6 +128,9 @@ extern const struct cmd_entry cmd_suspend_client_entry;
 extern const struct cmd_entry cmd_swap_pane_entry;
 extern const struct cmd_entry cmd_swap_window_entry;
 extern const struct cmd_entry cmd_switch_client_entry;
+extern const struct cmd_entry cmd_toggle_session_bar_entry;
+extern const struct cmd_entry cmd_toggle_status_bars_entry;
+extern const struct cmd_entry cmd_toggle_window_bar_entry;
 extern const struct cmd_entry cmd_unbind_key_entry;
 extern const struct cmd_entry cmd_unlink_window_entry;
 extern const struct cmd_entry cmd_upgrade_server_entry;
@@ -229,6 +232,9 @@ const struct cmd_entry *cmd_table[] = {
 	&cmd_swap_pane_entry,
 	&cmd_swap_window_entry,
 	&cmd_switch_client_entry,
+	&cmd_toggle_session_bar_entry,
+	&cmd_toggle_status_bars_entry,
+	&cmd_toggle_window_bar_entry,
 	&cmd_unbind_key_entry,
 	&cmd_unlink_window_entry,
 	&cmd_upgrade_server_entry,
