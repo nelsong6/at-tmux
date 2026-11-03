@@ -5166,6 +5166,27 @@ is drawn above it.
 Specify the format to be used for each line of the status line.
 The default builds the top status line from the various individual status
 options below.
+.It Xo Ic status-session-bar
+.Op Ic on | off
+.Xc
+Show the session bar when
+.Ic status
+is
+.Ic on
+and the server has more than one session.
+The default is on.
+.It Xo Ic status-window-bar
+.Op Ic on | off
+.Xc
+Show the window bar when
+.Ic status
+is
+.Ic on .
+The default is on.
+These options do not affect custom status lines selected with
+.Ic status 2
+through
+.Ic status 5 .
 .It Ic status-sessions-format Ar format
 The format of the sessions row drawn above the status line when
 .Ic status
@@ -7097,6 +7118,27 @@ session option.
 .Pp
 Commands related to the status line are as follows:
 .Bl -tag -width Ds
+.It Xo Ic toggle-status-bars
+.Op Fl t Ar target-session
+.Xc
+Hide both the window and session status bars, or show both if neither is visible.
+This affects only the target session.
+.It Xo Ic toggle-window-bar
+.Op Fl t Ar target-session
+.Xc
+Show or hide the window status bar in the target session.
+The session bar is left as it is.
+If status is off, only the window bar is shown.
+.It Xo Ic toggle-session-bar
+.Op Fl t Ar target-session
+.Xc
+Show or hide the session status bar in the target session.
+The window bar is left as it is.
+If status is off, only the session bar is enabled.
+The session bar appears when there is more than one session on the server.
+These commands select the standard bars
+.Pq Ic status on
+in place of any custom multiline status.
 .Tg clearphist
 .It Xo Ic clear-prompt-history
 .Op Fl T Ar prompt-type

@@ -152,6 +152,8 @@ for state in working waiting done; do
 done
 $TMUX kill-session -t status-other || exit 1
 
+. "$(dirname "$0")/status-bars.sh"
+
 # A pick that asks for text runs its template with the text, quotes and
 # non-ASCII intact.
 palette 'pick=Rename the window' 'text=pal "q" é'

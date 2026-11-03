@@ -229,8 +229,8 @@ status_timer_start_all(void)
 }
 
 /*
- * Does this session draw the sessions row: status is on (one line) and the
- * server has more than one session.
+ * Does this session draw the sessions row: status and the session bar are
+ * on, and the server has more than one session.
  */
 static int
 status_sessions_row(struct session *s)
@@ -238,7 +238,8 @@ status_sessions_row(struct session *s)
 	struct session	*loop;
 	u_int		 n = 0;
 
-	if (options_get_number(s->options, "status") != 1)
+	if (options_get_number(s->options, "status") != 1 ||
+	    !options_get_number(s->options, "status-session-bar"))
 		return (0);
 	RB_FOREACH(loop, sessions, &sessions) {
 		if (++n > 1)
@@ -277,8 +278,10 @@ void
 status_update_cache(struct session *s)
 {
 	s->statuslines = options_get_number(s->options, "status");
-	if (status_sessions_row(s))
-		s->statuslines = 2;
+	if (s->statuslines == 1) {
+		s->statuslines = options_get_number(s->options,
+		    "status-window-bar") + status_sessions_row(s);
+	}
 	if (s->statuslines == 0)
 		s->statusat = -1;
 	else if (options_get_number(s->options, "status-position") == 0)
@@ -478,7 +481,7 @@ status_redraw(struct client *c)
 
 	/* Write the status lines. */
 	o = options_get(s->options, "status-format");
-	sessions_row = status_sessions_row(s) && lines == 2;
+	sessions_row = status_sessions_row(s);
 	if (o == NULL) {
 		for (n = 0; n < width * lines; n++)
 			screen_write_putc(&ctx, &gc, ' ');
