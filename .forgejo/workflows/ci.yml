@@ -240,7 +240,7 @@ jobs:
       # Defender quarantined an unsigned build as Program:Win32/Contebrew.A!ml
       # and passed the same build signed (TMUX-30). The certificate is at
       # Terminal's, which every home PC trusts.
-      - name: Sign tmux.exe
+      - name: Sign the Windows package
         env:
           PFX: ${{ secrets.AT_TERMINAL_PFX }}
           PFX_PASSWORD: ${{ secrets.AT_TERMINAL_PFX_PASSWORD }}
@@ -249,7 +249,7 @@ jobs:
           $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1
           [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:PFX))
           try {
-            & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD package/tmux.exe
+            & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD package/tmux.exe package/conpty.dll package/OpenConsole.exe
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           } finally { Remove-Item cert.pfx }
 
@@ -338,6 +338,8 @@ jobs:
   # Package on Windows also on PRs; only publication is restricted to master.
   release:
     needs: [build-and-test, linux, macos]
+    outputs:
+      release-tag: ${{ steps.release.outputs.tag || 'validation-only' }}
     runs-on: windows-latest
     defaults:
       run:
@@ -403,6 +405,7 @@ jobs:
           Write-Host "$tagRef points to $sha (publish=$env:PUBLISH)"
 
       - name: Release
+        id: release
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -413,7 +416,7 @@ jobs:
           $release = Invoke-RestMethod "$api/releases/tags/$env:VERSION" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
           if ($code -eq 404) {
             $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-            $body = @{ tag_name = $env:VERSION; target_commitish = $env:GITHUB_SHA; name = $env:VERSION; body = "Commit $env:GITHUB_SHA`n`nSHA256 of ${zip}: $hash" } | ConvertTo-Json
+            $body = @{ tag_name = $env:VERSION; target_commitish = $env:GITHUB_SHA; name = $env:VERSION; body = "Commit $env:GITHUB_SHA`n`nSHA256 of ${zip}: $hash"; draft = $true } | ConvertTo-Json
             $release = Invoke-RestMethod -Method Post "$api/releases" -Headers $headers -ContentType application/json -Body $body
           } elseif ($code -ne 200) { throw "reading release $env:VERSION returned $code" }
           foreach ($f in $zip, "$zip.sha256") {
@@ -425,3 +428,11 @@ jobs:
             }
           }
           Write-Host "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/$env:VERSION"
+          "tag=$env:VERSION" | Add-Content $env:GITHUB_OUTPUT
+
+  home-sync:
+    needs: release
+    uses: romaine-life/pipeline-templates/.forgejo/workflows/home-sync.yml@main
+    secrets: inherit
+    with:
+      release-tag: ${{ needs.release.outputs.release-tag != 'validation-only' && needs.release.outputs.release-tag || '' }}
