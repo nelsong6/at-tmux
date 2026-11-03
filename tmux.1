@@ -7291,6 +7291,9 @@ A command whose name an alias also takes is left out: the alias is what the
 name runs.
 A binding that opens a menu or a session, window or buffer chooser is a
 folder of what it offers, at the next depth.
+A command taking a single required argument with fixed alternatives, such as
+.Ic set-session-status ,
+offers those alternatives as choices at the next depth.
 A row with a hint asks for text, such as the name for
 .Ic rename-window ,
 and the hint says what it is.
