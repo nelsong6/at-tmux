@@ -881,6 +881,7 @@ cmdq_error(struct cmdq_item *item, const char *fmt, ...)
 	log_debug("%s: %s", __func__, msg);
 
 	if (c == NULL) {
+		server_add_message("command error: %s", msg);
 		cmd_get_source(cmd, &file, &line);
 		cfg_add_cause("%s:%u: %s", file, line, msg);
 	} else if (c->session == NULL || (c->flags & CLIENT_CONTROL)) {

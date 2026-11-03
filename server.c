@@ -738,6 +738,14 @@ server_child_exited(pid_t pid, int status)
 			if (wp->pid == pid) {
 				wp->status = status;
 				wp->flags |= PANE_STATUSREADY;
+				if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+					server_add_message("pane %%%u (%s in %s) exited with status %d",
+					    wp->id, wp->argc > 1 ? wp->argv[0] : wp->shell,
+					    wp->cwd, WEXITSTATUS(status));
+				else if (WIFSIGNALED(status))
+					server_add_message("pane %%%u (%s in %s) ended by signal %d",
+					    wp->id, wp->argc > 1 ? wp->argv[0] : wp->shell,
+					    wp->cwd, WTERMSIG(status));
 
 				log_debug("%%%u exited", wp->id);
 				wp->flags |= PANE_EXITED;
@@ -776,16 +784,31 @@ server_child_stopped(pid_t pid, int status)
 void
 server_add_message(const char *fmt, ...)
 {
+	static int		 log_failed;
 	struct message_entry	*msg, *msg1;
 	char			*s;
 	va_list			 ap;
 	u_int			 limit;
+	int			 saved_errno = errno;
 
 	va_start(ap, fmt);
 	xvasprintf(&s, fmt, ap);
 	va_end(ap);
 
 	log_debug("message: %s", s);
+	if (log_message(s) != 0) {
+		/* Keep a failed log write visible in show-messages. */
+		if (!log_failed) {
+			char *failure;
+
+			xasprintf(&failure, "%s (can't save message log: %s)",
+			    s, strerror(errno));
+			free(s);
+			s = failure;
+		}
+		log_failed = 1;
+	} else
+		log_failed = 0;
 
 	msg = xcalloc(1, sizeof *msg);
 	gettimeofday(&msg->msg_time, NULL);
@@ -801,4 +824,5 @@ server_add_message(const char *fmt, ...)
 		TAILQ_REMOVE(&message_log, msg, entry);
 		free(msg);
 	}
+	errno = saved_errno;
 }
