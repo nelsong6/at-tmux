@@ -1456,6 +1456,7 @@ RB_HEAD(session_groups, session_group);
 
 struct session {
 	u_int		 id;
+	u_int		 order;	/* place in the sessions row */
 
 	char		*name;
 	const char	*cwd;
@@ -3640,6 +3641,7 @@ void	 session_set_offer_soon(void);
 extern struct sessions sessions;
 extern struct session_groups session_groups;
 extern u_int next_session_id;
+extern u_int next_session_order;
 int	session_cmp(struct session *, struct session *);
 RB_PROTOTYPE(sessions, session, entry, session_cmp);
 int	session_group_cmp(struct session_group *, struct session_group *s2);

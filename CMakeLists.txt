@@ -96,6 +96,7 @@ set(TMUX_SOURCES
     cmd-queue.c
     cmd-refresh-client.c
     cmd-rename-session.c
+    cmd-reorder-session.c
     cmd-rename-window.c
     cmd-reopen-window.c
     cmd-restore-set.c

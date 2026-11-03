@@ -81,6 +81,10 @@ $TMUX bind -T root F12 display -p f12-bound
 $TMUX bind -T root F11 clock-mode -t up:0.0
 $TMUX set -s command-alias[100] 'clock-mode=run-shell -C "display -p alias"'
 $TMUX set-buffer -b upbuf "buffer kept"
+# Sessions in an order other than the one they were made in.
+$TMUX new -d -sup2 < /dev/null
+$TMUX new -d -sup3 < /dev/null
+$TMUX reorder-session -s up3 front
 # As a server upgraded by an affected build carries it in its state.
 $TMUX setenv -g TMUX_UPGRADE 1,2
 # A variable removed from the global environment, and one added to it.
@@ -124,10 +128,16 @@ $TMUX list-keys -T root F11 | grep -q "clock-mode -t up:0.0" ||
 [ "$($TMUX display -tup:1 -p '#{window_name}' | tr -d '\r')" = second ] ||
 	fail "window name lost"
 client_count_is 1 || fail "client lost"
+[ "$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')" = "up3 up up2 " ] ||
+	fail "sessions row order lost"
+$TMUX new -d -sup4 < /dev/null
+[ "$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')" = "up3 up up2 up4 " ] ||
+	fail "a session made after the upgrade is not last"
+$TMUX kill-session -t =up4
 client_unfocused || fail "the upgrade changed the client's focus"
 $OUTER send-keys -tout -H 1b 5b 49
 wait_until client_focused || fail "focus-in lost after the upgrade"
-echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys and client, with focus reports on"
+echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys, session order and client, with focus reports on"
 
 # --- Test 1b: the environment is the one before, less TMUX_UPGRADE ---
 $TMUX show-environment -g TMUX_UPGRADE >/dev/null 2>&1 &&
