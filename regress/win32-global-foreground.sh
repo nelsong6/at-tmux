@@ -3,8 +3,8 @@
 # A global key's binding gets #{global_key_terminal_foreground}: 1 when the
 # window in the foreground belongs to a process the client runs under (its
 # terminal), else 0. The keys are simulated (win32-foreground.ps1), so they
-# are pressed only in CI, which has a desktop of its own; on a developer's PC
-# they would land on theirs.
+# are pressed only on a CI runner with a desktop of its own (ci_desktop); on a
+# developer's PC they would land on theirs.
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -33,7 +33,7 @@ $TMUX bind -T global 'W-`' set -gF @fg '#{global_key_terminal_foreground}' ||
 [ -z "$($TMUX display -p '#{global_key_terminal_foreground}' | tr -d '\r')" ] ||
     fail "format set outside a global key"
 
-if [ -n "$CI" ]; then
+if ci_desktop; then
 	PS="$(cygpath "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
 	: >$OUT.raw
 	"$PS" -NoProfile -ExecutionPolicy Bypass \
@@ -62,7 +62,7 @@ if [ -n "$CI" ]; then
 	fi
 	[ $FAIL -eq 0 ] && echo "PASS: global_key_terminal_foreground"
 else
-	echo "PASS: global_key_terminal_foreground (bound; press simulated only in CI)"
+	echo "PASS: global_key_terminal_foreground (bound; press simulated only on a CI desktop)"
 fi
 
 $TMUX kill-server 2>/dev/null

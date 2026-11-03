@@ -112,7 +112,7 @@ $TMUX kill-window -t w:user
 # pane and the client is switched to it. ---
 (sleep 300 >/dev/null 2>&1 & echo $! >$SLEEPER; wait) |
     $TMUX -C attach -t w >$CTL 2>&1 &
-wait_until [ -n "$($TMUX list-clients -F '#{client_name}' 2>/dev/null)" ] ||
+wait_until has_clients $TMUX ||
     { fail "6: no client"; exit 1; }
 C=$($TMUX list-clients -F '#{client_name}' | tr -d '\r')
 $TMUX new-window -a -t w:home -n quiet -o remain-on-exit=failed -W "$C" \

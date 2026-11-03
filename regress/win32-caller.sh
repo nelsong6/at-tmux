@@ -27,6 +27,10 @@ opt() {
 	$TMUX show -wqv -t "$1" "$2" 2>/dev/null | tr -d '\r'
 }
 
+opt_is() {
+	[ "$(opt "$1" "$2")" = "$3" ]
+}
+
 WTMUX=$(cygpath -w "$(readlink -f "$TEST_TMUX")")
 
 $TMUX $FNULL new -d -s p -n front </dev/null || fail "start server"
@@ -35,14 +39,14 @@ $TMUX set -g remain-on-exit on || fail "remain-on-exit"
 # A program in a background window sets an option on its own window.
 $TMUX new-window -d -t p: -n back "$WTMUX" set -w -t '{caller}' @hook yes ||
     fail "new-window"
-wait_until [ "$(opt p:back @hook)" = yes ] ||
+wait_until opt_is p:back @hook yes ||
     fail "{caller}: the background window has no @hook"
 [ -z "$(opt p:front @hook)" ] || fail "{caller}: the current window got @hook"
 
 # Without a target the same command still means the current window.
 $TMUX new-window -d -t p: -n back2 "$WTMUX" set -w @plain yes ||
     fail "new-window back2"
-wait_until [ "$(opt p:front @plain)" = yes ] ||
+wait_until opt_is p:front @plain yes ||
     fail "no target: the current window has no @plain"
 
 # Outside any pane there is no caller.

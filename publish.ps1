@@ -1,44 +1,51 @@
-# Publish this fork's CI build as `tmux` to \\NelsonNAS\tools (Nelson's home
+# Publish this fork's release as `tmux` to \\NelsonNAS\tools (Nelson's home
 # setup; see shell-config-profile-home claude\topics\home-tools.md).
-# The version is `git describe` (e.g. v3.6a-win32.7-5-g75474886), so only
-# committed, pushed code is published.
+# CI on Forgejo releases every master commit whose run passed, tagged
+# `git describe` (e.g. v3.6a-win32.7-55-g529c862f), so only committed, pushed
+# code is published.
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 if (git status --porcelain) { throw 'commit first: a published version has to match a commit' }
 git fetch -q origin
-if (git log --oneline '@{u}..HEAD') { throw 'push first: the published commit has to be on GitHub' }
+if (git log --oneline '@{u}..HEAD') { throw 'push first: the published commit has to be on Forgejo' }
 
-$version = git describe --tags --always
 $commit = git rev-parse HEAD
-$repo = (git remote get-url origin) -replace '^https://github\.com/|\.git$', ''
-$workflow = 'Windows CI'
+$server = 'https://forgejo.romaine.life'
+$repo = (git remote get-url origin) -replace "^$([regex]::Escape($server))/|\.git$", ''
+$cred = "protocol=https`nhost=forgejo.romaine.life`n`n" | git credential fill
+$token = ($cred | Where-Object { $_ -like 'password=*' }) -replace '^password=', ''
+if (-not $token) { throw 'git has no credential for forgejo.romaine.life' }
+$headers = @{ Authorization = "token $token" }
+$api = "$server/api/v1/repos/$repo"
 
-# CI's build-and-test job makes the package. A squash merge of a PR whose branch was up to
-# date (master requires it) has the PR's last commit's tree, so that PR run already built
-# this commit and there's no need to wait for the run on master.
-$run = $null
-$head = gh api "repos/$repo/commits/$commit/pulls" --jq '.[0].head.sha'
-if ($head -and (gh api "repos/$repo/git/commits/$head" --jq .tree.sha) -eq (git rev-parse "$commit^{tree}")) {
-    $run = gh run list -R $repo -w $workflow -c $head -e pull_request --json databaseId --jq '.[0].databaseId'
+# The release CI makes for this commit; it exists once the whole run (macOS
+# included) has passed.
+$release = $null
+foreach ($attempt in 1..120) {
+    $release = Invoke-RestMethod "$api/releases?limit=50" -Headers $headers |
+        Where-Object { $_.target_commitish -eq $commit } | Select-Object -First 1
+    if ($release) { break }
+    $state = (Invoke-RestMethod "$api/commits/$commit/status" -Headers $headers).state
+    if ($state -in 'failure', 'error') { throw "CI failed for $commit`: $server/$repo/actions" }
+    Start-Sleep -Seconds 30
 }
-foreach ($attempt in 1..30) {
-    if ($run) { break }
-    $run = gh run list -R $repo -w $workflow -c $commit -e push --json databaseId --jq '.[0].databaseId'
-    if ($run) { break }
-    Start-Sleep -Seconds 10
-}
-if (-not $run) { throw "no CI run for $commit on $repo" }
-gh run watch $run -R $repo --exit-status --interval 30
-if ($LASTEXITCODE -ne 0) { throw "CI failed: https://github.com/$repo/actions/runs/$run" }
+if (-not $release) { throw "no release for $commit after an hour: $server/$repo/actions" }
+$version = $release.tag_name
 
 $dir = Join-Path ([IO.Path]::GetTempPath()) "tmux-$version"
-Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
-gh run download $run -R $repo -n tmux-windows -D $dir
-if ($LASTEXITCODE -ne 0) { throw 'downloading tmux-windows failed' }
+Remove-Item $dir, "$dir.zip", "$dir.zip.sha256" -Recurse -Force -ErrorAction SilentlyContinue
+$zip = $release.assets | Where-Object name -eq "tmux-windows-$version.zip"
+$sum = $release.assets | Where-Object name -eq "tmux-windows-$version.zip.sha256"
+if (-not $zip -or -not $sum) { throw "release $version is missing its assets: $server/$repo/releases/tag/$version" }
+Invoke-WebRequest $zip.browser_download_url -Headers $headers -OutFile "$dir.zip"
+Invoke-WebRequest $sum.browser_download_url -Headers $headers -OutFile "$dir.zip.sha256"
+$expected = ((Get-Content "$dir.zip.sha256" -Raw) -split '\s+')[0]
+if ((Get-FileHash "$dir.zip" -Algorithm SHA256).Hash -ne $expected) { throw "tmux-windows-$version.zip does not match its SHA256" }
+Expand-Archive "$dir.zip" $dir
 
 publish-tool -Name tmux -Version $version -Path $dir `
-    -Entry tmux.exe -Repo "https://github.com/$repo" -Commit $commit
+    -Entry tmux.exe -Repo "$server/$repo" -Commit $commit
 
 # Every open tab moves onto the release in place, and takes the config again, which
 # a new build can make valid: the home profile's sync-servers.ps1, which home-sync
@@ -49,6 +56,9 @@ foreach ($attempt in 1..24) {
     if (Test-Path $local) { break }
     Start-Sleep -Seconds 5
 }
-foreach ($s in & \\NelsonNAS\files\shell-config-profile-home\tmux\sync-servers.ps1) {
-    Write-Host "$($s.Server): $($s.Build); config $($s.Config)"
+$sync = '\\NelsonNAS\files\shell-config-profile-home\tmux\sync-servers.ps1'
+if (Test-Path $sync) {
+    foreach ($s in & $sync) {
+        Write-Host "$($s.Server): $($s.Build); config $($s.Config)"
+    }
 }

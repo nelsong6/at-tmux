@@ -45,6 +45,12 @@ wait_gone() {
 	wait_until server_gone
 }
 
+# Pass the server command as arguments, so every attempt queries it anew.
+# A substitution in `wait_until [ "$(...)" ... ]` would run only once.
+has_clients() {
+	[ -n "$("$@" list-clients 2>/dev/null)" ]
+}
+
 # wait_panes TARGET COUNT: TARGET has COUNT panes.
 pane_count_is() {
 	[ "$($TMUX list-panes -t"$1" 2>/dev/null | wc -l)" -eq "$2" ]

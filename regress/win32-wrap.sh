@@ -27,9 +27,10 @@ set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.
 set -g status off
 EOF
 
-# 40 columns, then more: the pane wraps it, as a program's long line.
+# 40 columns, then more: the pane wraps it, as a program's long line. It
+# starts on a cleared screen, clear of anything the shell's profile printed.
 $TMUX -f "$CFG" new -d -x40 -y10 \
-    "while (-not (Test-Path '$(cygpath -m "$OUT/go")')) { Start-Sleep -Milliseconds 50 }; [Console]::Write(('A' * 39) + 'Z' + 'wrapped'); Start-Sleep 60" \
+    "while (-not (Test-Path '$(cygpath -m "$OUT/go")')) { Start-Sleep -Milliseconds 50 }; [Console]::Write([string][char]27 + '[H' + [char]27 + '[2J' + ('A' * 39) + 'Z' + 'wrapped'); Start-Sleep 60" \
     </dev/null || exit 1
 $OUTER -f "$CFG" new -d -x40 -y10 "& '$(cygpath -ma "$TEST_TMUX")' -L$TEST_SOCKET attach" \
     </dev/null || exit 1

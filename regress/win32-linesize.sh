@@ -31,9 +31,10 @@ EOF
 # Row 2: double height (top half), 10 cells.
 # Row 3: double width set and reset (DECSWL), 30 cells on one row.
 # Row 4: normal, 30 cells on one row.
+# On a cleared screen, clear of anything the shell's profile printed.
 E='[string][char]27'
 NL='[Environment]::NewLine'
-PRINT="[Console]::Write($E + '#6' + ('W' * 30) + $NL + $E + '#3' + ('T' * 10) + $NL + $E + '#6' + $E + '#5' + ('S' * 30) + $NL + ('N' * 30))"
+PRINT="[Console]::Write($E + '[H' + $E + '[2J' + $E + '#6' + ('W' * 30) + $NL + $E + '#3' + ('T' * 10) + $NL + $E + '#6' + $E + '#5' + ('S' * 30) + $NL + ('N' * 30))"
 $TMUX -f "$CFG" new -d -x40 -y10 \
     "while (-not (Test-Path '$(cygpath -m "$OUT/go")')) { Start-Sleep -Milliseconds 50 }; $PRINT; Start-Sleep 60" \
     </dev/null || exit 1

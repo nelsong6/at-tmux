@@ -247,12 +247,12 @@ so the server is only resident while sessions are active.
 ## Build System
 
 The project uses CMake with MSVC. Requires [vcpkg](https://vcpkg.io/) for
-libevent:
+libevent, which `vcpkg.json` names, so configuring installs it into
+`build/vcpkg_installed` (manifest mode):
 
 ```powershell
-vcpkg install libevent:x64-windows-static
 cmake -S . -B build -G "Visual Studio 17 2022" `
-  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
   -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build build --config Release
 ```
@@ -261,9 +261,23 @@ The resulting `tmux.exe` is a single statically-linked binary in
 `build/Release/`. For debug builds, use `--config Debug` (output in
 `build/Debug/`). Copy `tmux.exe` to a directory in `%PATH%`.
 
-CI builds run automatically on every push via GitHub Actions
-(`.github/workflows/ci.yml`). Tagged releases (`v*`) produce downloadable
-zip artifacts.
+CI runs on Forgejo Actions (`.forgejo/workflows/ci.yml`) for every pull
+request and every push to master; the macOS build runs on GitHub
+(`.github/workflows/macos.yml`) from Forgejo's push mirror. Every master commit
+whose CI passes becomes a Forgejo release, tagged `git describe`, with
+`tmux-windows-<tag>.zip` and its `.sha256`.
+
+After merging, update the default-branch checkout and publish its signed
+Forgejo release to the home tools share:
+
+```powershell
+git switch master
+git pull --ff-only origin master
+pwsh -NoProfile -File .\publish.ps1
+```
+
+`publish-tool` must be on PATH. The script checks the release's SHA256 and
+runs the home profile's `tmux/sync-servers.ps1` afterwards if it exists.
 
 ## Debugging
 

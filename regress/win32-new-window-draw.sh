@@ -71,7 +71,7 @@ $TMUX set -g remain-on-exit off
 # input is open.
 (sleep 300 >/dev/null 2>&1 & echo $! >$SLEEPER; wait) |
     $TMUX -C attach -t w >$CTL 2>&1 &
-wait_until [ -n "$(client_window)" ] || { fail "no client"; exit 1; }
+wait_until has_clients $TMUX || { fail "no client"; exit 1; }
 C=$($TMUX list-clients -F '#{client_name}' | tr -d '\r')
 client_on home || fail "client starts on $(client_window)"
 

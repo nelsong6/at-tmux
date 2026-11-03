@@ -137,8 +137,8 @@ echo "PASS 10: switch-client -H -R"
 
 # --- Test 11: the global table takes W- keys and runs them for the attached
 # client when they are pressed anywhere on the desktop; a server with no
-# client ignores them. The press is simulated only in CI, which has a desktop
-# of its own; on a developer's PC it would land on theirs. ---
+# client ignores them. The press is simulated only on a CI runner with a
+# desktop of its own (ci_desktop); on a developer's PC it would land on theirs. ---
 : >$CTL
 IDLE="$TEST_TMUX -L$TEST_SOCKET-idle"
 trap "rm -f $OUT $CTL; $TMUX kill-server 2>/dev/null; $IDLE kill-server 2>/dev/null" 0 1 15
@@ -147,10 +147,13 @@ $IDLE bind -T global 'W-`' set -g @global pressed
 $TMUX bind -T global 'W-`' set -g @global pressed
 $TMUX list-keys -T global | tr -d '\r' | grep -q 'global *W-` ' || \
 	fail "global: W-\` not listed: $($TMUX list-keys -T global)"
-if [ -n "$CI" ]; then
+if ci_desktop; then
+	global_pressed() {
+		[ -n "$($TMUX show -gv @global 2>/dev/null)" ]
+	}
 	(
 		echo "display -p 'attached'"
-		wait_until [ -n "$($TMUX show -gv @global 2>/dev/null)" ]
+		wait_until global_pressed
 		echo "display -p 'global=#{@global}'"
 		wait_until ctl_has '^global='
 	) | $TMUX -C attach -tctrl >$CTL 2>&1 &
@@ -167,7 +170,7 @@ if [ -n "$CI" ]; then
 	wait
 	echo "PASS 11: global key table"
 else
-	echo "PASS 11: global key table (listed; press simulated only in CI)"
+	echo "PASS 11: global key table (listed; press simulated only on a CI desktop)"
 fi
 $IDLE kill-server 2>/dev/null
 

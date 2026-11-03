@@ -47,13 +47,22 @@ $TMUX -fNUL new -d </dev/null || fail "new-session"
 PING='%SystemRoot%\System32\ping.exe 127.0.0.1 >NUL -n'
 
 # 1. Seventy jobs running at once (more than one wait call can hold) are each
-# seen to exit.
+# seen to exit. Hold each on its own lock until all have started: timed ping
+# jobs can end before a loaded runner has launched all seventy processes.
+EXE=$(cygpath -ma "$TEST_TMUX")
 i=0
 while [ $i -lt 70 ]; do
-	$TMUX run-shell -b "$PING 4" || fail "run-shell -b $i"
+	$TMUX wait-for -L "process-watch-$i" || fail "lock $i"
+	$TMUX run-shell -b "\"$EXE\" -L$TEST_SOCKET wait-for -L process-watch-$i" ||
+	    fail "run-shell -b $i"
 	i=$((i + 1))
 done
-[ "$(jobs_left)" -ge 60 ] || fail "only $(jobs_left) of 70 jobs running at once"
+[ "$(jobs_left)" -eq 70 ] || fail "only $(jobs_left) of 70 jobs running at once"
+i=0
+while [ $i -lt 70 ]; do
+	$TMUX wait-for -U "process-watch-$i" || fail "unlock $i"
+	i=$((i + 1))
+done
 WAIT_TIMEOUT=30 wait_until no_jobs || fail "$(jobs_left) of 70 jobs never seen to exit"
 run_returns || fail "run-shell after 70 jobs"
 

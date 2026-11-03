@@ -170,7 +170,7 @@ trap "rm -f $CFG; $TMUX kill-server 2>/dev/null; $INNER kill-server 2>/dev/null"
 $INNER -f "$CFG" new -d -sinner -x 80 -y 20 < /dev/null || exit 1
 $TMUX send-keys -tkeys "set TMUX=" Enter \
     "\"$(cygpath -w "$TEST_TMUX")\" -f \"$(cygpath -w "$CFG")\" -L$TEST_SOCKET-inner attach -tinner" Enter
-wait_until [ "$($INNER list-clients 2>/dev/null)" != "" ] ||
+wait_until has_clients $INNER ||
 	fail "inner client never attached"
 $TMUX send-keys -tkeys C-b :
 wait_for keys "^: *$" || fail "prompt never opened"
