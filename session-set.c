@@ -345,10 +345,13 @@ session_set_output(void)
 static char *
 ss_pane_cwd(struct session *s, struct winlink *wl, struct window_pane *wp)
 {
-	const char	*claude_cwd;
+	const char	*claude_cwd, *codex_cwd;
 	char		*cwd, *p;
 
-	if (ss_pane_option(wp, "@claude-session") != NULL &&
+	if (ss_pane_option(wp, "@codex-session") != NULL &&
+	    (codex_cwd = ss_pane_option(wp, "@codex-cwd")) != NULL)
+		cwd = xstrdup(codex_cwd);
+	else if (ss_pane_option(wp, "@claude-session") != NULL &&
 	    (claude_cwd = ss_pane_option(wp, "@claude-cwd")) != NULL)
 		cwd = xstrdup(claude_cwd);
 	else
@@ -374,6 +377,8 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 	struct window_pane	*wp;
 	struct evbuffer		*line;
 	char			*layout, *cwd, *command;
+	char			*codex;
+	const char		*id;
 	u_int			 i, active = 0;
 	int			 place = 0, flags = 0, only_menu = 1;
 
@@ -415,7 +420,14 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 		if (command == NULL || strcmp(command, "fzt-automate") != 0)
 			only_menu = 0;
 		ss_field(line, cwd);
-		ss_field(line, ss_pane_option(wp, "@claude-session"));
+		/* Keep the v1 snapshot shape and old Claude IDs intact. A tagged
+		 * Codex ID selects its own resume command when reopened/restored. */
+		codex = NULL;
+		if ((id = ss_pane_option(wp, "@codex-session")) != NULL)
+			xasprintf(&codex, "codex:%s", id);
+		ss_field(line, codex != NULL ? codex :
+		    ss_pane_option(wp, "@claude-session"));
+		free(codex);
 		ss_field(line, command);
 		free(command);
 		free(cwd);
@@ -982,14 +994,20 @@ ss_start_command(const char *claude, const char *command)
 {
 	struct options_entry	*o;
 	const char		*template, *at;
+	const char		*option;
 	char			*name, *out;
 
 	if (claude != NULL && *claude != '\0') {
-		if (options_get_only(global_s_options, "@session-set-resume") ==
+		option = "@session-set-resume";
+		if (strncmp(claude, "codex:", 6) == 0) {
+			option = "@session-set-resume-codex";
+			claude += 6;
+		}
+		if (options_get_only(global_s_options, option) ==
 		    NULL)
 			return (NULL);
 		template = options_get_string(global_s_options,
-		    "@session-set-resume");
+		    option);
 		if ((at = strstr(template, "{id}")) == NULL)
 			return (xstrdup(template));
 		xasprintf(&out, "%.*s%s%s", (int)(at - template), template,

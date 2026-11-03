@@ -93,6 +93,20 @@ $TMUX display -p -t main:two.1 '#{pane_start_command}' | grep -q 'resumed abc123
 # 5. Nothing left to reopen.
 $TMUX reopen-window -d 2>/dev/null && fail "reopen-window with nothing closed succeeded"
 
+# Codex uses its own folder and resume template; legacy Claude IDs stay intact.
+$TMUX set -g @session-set-resume-codex "$LONG & rem codex-resumed {id}" || fail "set Codex resume"
+$TMUX new-window -d -t main: -n codex "$LONG" || fail "Codex window"
+$TMUX set -p -t main:codex @codex-session codex123 || fail "set Codex session"
+$TMUX set -p -t main:codex @codex-cwd 'C:\Windows' || fail "set Codex cwd"
+wait_until snap_has "${T}C:/Windows${T}codex:codex123${T}" || fail "Codex identity missing from snapshot"
+$TMUX kill-window -t main:codex || fail "close Codex window"
+$TMUX reopen-window -d || fail "reopen Codex window"
+$TMUX display -p -t main:codex '#{pane_start_command}' | grep -q 'codex-resumed codex123' || fail "Codex window resumed as wrong agent"
+# This fixture is finished; disabling snapshots keeps it out of the next cases.
+$TMUX set -gu @session-set-dir
+$TMUX kill-window -t main:codex
+$TMUX set -g @session-set-dir "$WDIR"
+
 # 6. A moved window is not closed.
 $TMUX new -d -s other -n o1 "$LONG" || fail "new session other"
 $TMUX move-window -s main:three -t other: || fail "move-window"
