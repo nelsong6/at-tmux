@@ -9,7 +9,7 @@ TERM=screen
 TMUX="$TEST_TMUX -L$TEST_SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
 OUT=$(mktemp -d)
-export TMUX_MESSAGE_LOG_DIR=$(cygpath -w "$OUT")
+export TMUX_ERROR_LOG_DIR=$(cygpath -w "$OUT")
 CFG="$OUT/config"
 printf "set -g default-shell '%s'\n" "$COMSPEC" >"$CFG"
 cleanup() {
@@ -24,8 +24,6 @@ touch -t 200001010000 "$OUT/tmux-999999.log" "$OUT/unrelated.log"
 $TMUX -f"$CFG" new-session -d -s w -n home || fail "start server"
 PID=$($TMUX display -p '#{pid}' | tr -d '\r')
 LOG="$OUT/tmux-$PID.log"
-[ ! -e "$OUT/tmux-999999.log" ] || fail "expired log remains"
-[ -e "$OUT/unrelated.log" ] || fail "unrelated file removed"
 
 for command in new-window split-window; do
 	case "$command" in
@@ -37,6 +35,8 @@ new-window) set -- -a -t w:home -o remain-on-exit=failed ;;
 	fi
 	grep -q "can't start tmux41-no-such-program.exe" "$OUT/reply" || fail "$command lost the caller's error: $(cat "$OUT/reply")"
 done
+[ ! -e "$OUT/tmux-999999.log" ] || fail "expired log remains"
+[ -e "$OUT/unrelated.log" ] || fail "unrelated file removed"
 grep -q "create window failed: can't start tmux41-no-such-program.exe" "$LOG" || fail "new-window failure not logged"
 grep -q "create pane failed: can't start tmux41-no-such-program.exe" "$LOG" || fail "split failure not logged"
 [ "$($TMUX list-windows -t w | wc -l)" -eq 1 ] || fail "failed window remains"
@@ -48,11 +48,13 @@ has_exit() { grep -q 'exited with status 7' "$LOG"; }
 wait_until has_exit || fail "program's failed exit not logged"
 
 head -c 1048576 /dev/zero >"$LOG"
-$TMUX display-message -p rotation-marker >/dev/null || fail "write after log fills"
+if $TMUX set-option -g tmux41-rotation-marker on >"$OUT/reply" 2>&1; then
+	fail "unknown option was accepted"
+fi
 [ -f "$LOG.1" ] || fail "full log was not rotated"
-grep -q rotation-marker "$LOG" || fail "new entry missing after rotation"
+grep -q tmux41-rotation-marker "$LOG" || fail "new entry missing after rotation"
 
 $TMUX kill-server || fail "stop server"
 wait_gone || fail "server did not stop"
-grep -q rotation-marker "$LOG" || fail "history lost when server ended"
+grep -q tmux41-rotation-marker "$LOG" || fail "history lost when server ended"
 echo 'PASS: launch failures and failed exits persist; caller behavior, rotation and retention hold'

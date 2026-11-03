@@ -879,6 +879,12 @@ cmdq_error(struct cmdq_item *item, const char *fmt, ...)
 	va_end(ap);
 
 	log_debug("%s: %s", __func__, msg);
+	if (log_message(msg) != 0) {
+		tmp = msg;
+		xasprintf(&msg, "%s (can't save error log: %s)",
+		    tmp, strerror(errno));
+		free(tmp);
+	}
 
 	if (c == NULL) {
 		server_add_message("command error: %s", msg);

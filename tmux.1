@@ -1622,13 +1622,13 @@ Show server messages or information.
 Messages are stored, up to a maximum of the limit set by the
 .Ar message-limit
 server option.
-Messages are also saved without enabling debug logging in
-.Pa ~/.tmux/messages/tmux-PID.log ,
+Command errors and failed pane exits are saved without enabling debug logging in
+.Pa ~/.tmux/errors/tmux-PID.log ,
 with the server socket and a UTC timestamp on each line.
 Each server process keeps two rolling files of at most 1 MiB each;
-files older than 30 days are removed when a process first writes a message.
+files older than 30 days are removed when a process first records an error.
 The
-.Ev TMUX_MESSAGE_LOG_DIR
+.Ev TMUX_ERROR_LOG_DIR
 environment variable selects another directory.
 Failed pane exits are recorded even when the pane closes.
 .Fl J

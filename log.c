@@ -46,7 +46,7 @@ log_prune_messages(const char *dir)
 {
 	struct stat	 sb;
 	char		*path;
-	const char	*name;
+	const char	*name, *suffix;
 	time_t		 cutoff = time(NULL) - MESSAGE_LOG_DAYS * 86400;
 #ifdef _WIN32
 	WIN32_FIND_DATAA data;
@@ -68,8 +68,11 @@ log_prune_messages(const char *dir)
 	while ((entry = readdir(d)) != NULL) {
 		name = entry->d_name;
 #endif
-		if (strncmp(name, "tmux-", 5) != 0 ||
-		    (strstr(name, ".log") == NULL))
+		if (strncmp(name, "tmux-", 5) != 0)
+			continue;
+		suffix = name + 5 + strspn(name + 5, "0123456789");
+		if (suffix == name + 5 ||
+		    (strcmp(suffix, ".log") != 0 && strcmp(suffix, ".log.1") != 0))
 			continue;
 		xasprintf(&path, "%s/%s", dir, name);
 		if (stat(path, &sb) == 0 && S_ISREG(sb.st_mode) &&
@@ -85,7 +88,7 @@ log_prune_messages(const char *dir)
 #endif
 }
 
-/* Always on; independent of the verbose debug log. */
+/* Command errors and failed exits, independent of the verbose debug log. */
 int
 log_message(const char *message)
 {
@@ -106,7 +109,7 @@ log_message(const char *message)
 		return (-1);
 	}
 
-	dir = getenv("TMUX_MESSAGE_LOG_DIR");
+	dir = getenv("TMUX_ERROR_LOG_DIR");
 	if (dir == NULL || *dir == '\0') {
 		if ((home = find_home()) == NULL) {
 			errno = ENOENT;
@@ -119,7 +122,7 @@ log_message(const char *message)
 		mkdir(owned, S_IRWXU);
 #endif
 		free(owned);
-		xasprintf(&owned, "%s/.tmux/messages", home);
+		xasprintf(&owned, "%s/.tmux/errors", home);
 		dir = owned;
 	}
 #ifdef _WIN32
