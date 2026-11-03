@@ -147,6 +147,7 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	int sv[2];
 	wchar_t wcmd[32768];
 	wchar_t wcwd[MAX_PATH];
+	wchar_t *application = NULL;
 
 	pty = calloc(1, sizeof *pty);
 	if (pty == NULL)
@@ -251,12 +252,16 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 		DWORD flags = EXTENDED_STARTUPINFO_PRESENT;
 		if (env != NULL)
 			flags |= CREATE_UNICODE_ENVIRONMENT;
-		if (!CreateProcessW(NULL, wcmd, NULL, NULL, ninherit != 0,
+		if (!win32_child_application(wcmd, env, &application))
+			goto fail;
+		if (!CreateProcessW(application, wcmd, NULL, NULL, ninherit != 0,
 		    flags, env,
 		    (cwd != NULL && *cwd != '\0') ? wcwd : NULL,
 		    &si.StartupInfo, &pi))
 			goto fail;
 	}
+	free(application);
+	application = NULL;
 	while (ninherit != 0)
 		CloseHandle(inherit[--ninherit]);
 
@@ -289,6 +294,7 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 
 fail:
 	error = GetLastError();
+	free(application);
 	while (ninherit != 0)
 		CloseHandle(inherit[--ninherit]);
 	if (pipeIn_read) CloseHandle(pipeIn_read);

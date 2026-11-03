@@ -8,14 +8,110 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "win32-platform.h"
+#include <shellapi.h>
 #include <dbghelp.h>
 
 #pragma comment(lib, "dbghelp.lib")
 
 /* External: defined in win32-compat.c */
 void win32_child_exited(pid_t pid, int status);
+
+/* CreateProcess searches the parent's PATH even with a supplied environment.
+ * Resolve an unqualified program against the child's PATH before starting it.
+ * Explicit paths retain CreateProcess's existing command-line parsing. */
+int
+win32_child_application(const wchar_t *cmd, const char *env,
+    wchar_t **application)
+{
+	wchar_t **argv, *path, *found, *inherited = NULL;
+	const wchar_t *entry, *child_path = L"";
+	wchar_t module[MAX_PATH], cwd[MAX_PATH], system[MAX_PATH], windows[MAX_PATH];
+	size_t length;
+	DWORD needed, error;
+	int argc;
+
+	*application = NULL;
+	argv = CommandLineToArgvW(cmd, &argc);
+	if (argv == NULL)
+		return (0);
+	if (argc == 0 || wcspbrk(argv[0], L"/\\:") != NULL) {
+		LocalFree(argv);
+		return (1);
+	}
+	if (env != NULL) {
+		for (entry = (const wchar_t *)env; *entry != L'\0';
+		    entry += wcslen(entry) + 1) {
+			if (_wcsnicmp(entry, L"PATH=", 5) == 0) {
+				child_path = entry + 5;
+				break;
+			}
+		}
+	} else {
+		needed = GetEnvironmentVariableW(L"PATH", NULL, 0);
+		if (needed != 0) {
+			inherited = calloc(needed, sizeof *inherited);
+			if (inherited == NULL)
+				goto memory;
+			GetEnvironmentVariableW(L"PATH", inherited, needed);
+			child_path = inherited;
+		}
+	}
+	module[0] = cwd[0] = system[0] = windows[0] = L'\0';
+	needed = GetModuleFileNameW(NULL, module, MAX_PATH);
+	if (needed != 0 && needed < MAX_PATH) {
+		wchar_t *last = wcsrchr(module, L'\\');
+		if (last != NULL)
+			*last = L'\0';
+	} else
+		module[0] = L'\0';
+	if (GetCurrentDirectoryW(MAX_PATH, cwd) >= MAX_PATH)
+		cwd[0] = L'\0';
+	if (GetSystemDirectoryW(system, MAX_PATH) >= MAX_PATH)
+		system[0] = L'\0';
+	if (GetWindowsDirectoryW(windows, MAX_PATH) >= MAX_PATH)
+		windows[0] = L'\0';
+	length = wcslen(child_path) + wcslen(module) + wcslen(cwd) +
+	    wcslen(system) + wcslen(windows) + 5;
+	path = calloc(length, sizeof *path);
+	if (path == NULL)
+		goto memory;
+	swprintf_s(path, length, L"%ls;%ls;%ls;%ls;%ls", module, cwd, system,
+	    windows, child_path);
+	needed = SearchPathW(path, argv[0], L".exe", 0, NULL, NULL);
+	if (needed == 0) {
+		error = GetLastError();
+		free(path);
+		free(inherited);
+		LocalFree(argv);
+		SetLastError(error);
+		return (0);
+	}
+	found = calloc(needed + 1, sizeof *found);
+	if (found == NULL) {
+		free(path);
+		goto memory;
+	}
+	needed = SearchPathW(path, argv[0], L".exe", needed + 1, found, NULL);
+	error = GetLastError();
+	free(path);
+	free(inherited);
+	LocalFree(argv);
+	if (needed == 0) {
+		free(found);
+		SetLastError(error);
+		return (0);
+	}
+	*application = found;
+	return (1);
+memory:
+	free(inherited);
+	LocalFree(argv);
+	SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+	return (0);
+}
 
 void fatalx(const char *, ...);
 
@@ -186,14 +282,14 @@ win32_write_close(int fd, const void *data, size_t len)
 pid_t
 win32_process_spawn(const char *cmd, const char *cwd, char *env, int outfd)
 {
-	STARTUPINFOEXA si;
+	STARTUPINFOEXW si;
 	PROCESS_INFORMATION pi;
 	SECURITY_ATTRIBUTES sa;
 	HANDLE outr = NULL, outw = NULL, inr = NULL, inw = NULL, threads[2];
 	HANDLE inherit[2];
 	struct spawn_bridge *b;
 	SIZE_T attrsize = 0;
-	char *cmddup;
+	wchar_t wcmd[32768], wcwd[MAX_PATH], *application = NULL;
 	BOOL ok;
 
 	memset(&sa, 0, sizeof sa);
@@ -229,15 +325,21 @@ win32_process_spawn(const char *cmd, const char *cwd, char *env, int outfd)
 	    NULL);
 
 	memset(&pi, 0, sizeof pi);
-	cmddup = _strdup(cmd);
+	if (!MultiByteToWideChar(CP_UTF8, 0, cmd, -1, wcmd, 32768))
+		ok = FALSE;
+	if (cwd != NULL && *cwd != '\0' &&
+	    !MultiByteToWideChar(CP_UTF8, 0, cwd, -1, wcwd, MAX_PATH))
+		ok = FALSE;
+	if (ok && !win32_child_application(wcmd, env, &application))
+		ok = FALSE;
 	if (ok) {
-		ok = CreateProcessA(NULL, cmddup, NULL, NULL, TRUE,
+		ok = CreateProcessW(application, wcmd, NULL, NULL, TRUE,
 		    CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT |
 		    CREATE_UNICODE_ENVIRONMENT, env,
-		    (cwd != NULL && *cwd != '\0') ? cwd : NULL,
+		    (cwd != NULL && *cwd != '\0') ? wcwd : NULL,
 		    &si.StartupInfo, &pi);
 	}
-	free(cmddup);
+	free(application);
 	if (si.lpAttributeList != NULL) {
 		DeleteProcThreadAttributeList(si.lpAttributeList);
 		free(si.lpAttributeList);

@@ -86,7 +86,11 @@ cmd_pipe_pane_exec(struct cmd *self, struct cmdq_item *item)
 	old_fd = wp->pipe_fd;
 	if (wp->pipe_fd != -1) {
 		bufferevent_free(wp->pipe_event);
+#ifdef _WIN32
+		closesocket((SOCKET)wp->pipe_fd);
+#else
 		close(wp->pipe_fd);
+#endif
 		wp->pipe_fd = -1;
 
 		if (window_pane_destroy_ready(wp)) {
@@ -276,7 +280,11 @@ cmd_pipe_pane_error_callback(__unused struct bufferevent *bufev,
 	log_debug("%%%u pipe error", wp->id);
 
 	bufferevent_free(wp->pipe_event);
+#ifdef _WIN32
+	closesocket((SOCKET)wp->pipe_fd);
+#else
 	close(wp->pipe_fd);
+#endif
 	wp->pipe_fd = -1;
 
 	if (window_pane_destroy_ready(wp))

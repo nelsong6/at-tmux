@@ -915,6 +915,8 @@ struct win32_pty *win32_pty_import(const struct win32_pty_handoff *h);
 void win32_write_close(int fd, const void *data, size_t len);
 void  win32_process_watch(HANDLE hProcess, pid_t pid);
 pid_t win32_process_spawn(const char *cmd, const char *cwd, char *env, int outfd);
+int win32_child_application(const wchar_t *cmd, const char *env,
+    wchar_t **application);
 void  win32_launch_server(const char *label);
 void  win32_crash_init(void);
 
