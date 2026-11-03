@@ -685,12 +685,32 @@ palette_cmp_strings(const void *a, const void *b)
 	return (strcmp(*(const char **)a, *(const char **)b));
 }
 
+/* The description command-alias-note gives an alias, or NULL. */
+static const char *
+palette_alias_note(const char *name)
+{
+	struct options_entry		*o;
+	struct options_array_item	*a;
+	const char			*value;
+	size_t				 len = strlen(name);
+
+	o = options_get_only(global_options, "command-alias-note");
+	if (o == NULL)
+		return (NULL);
+	for (a = options_array_first(o); a != NULL; a = options_array_next(a)) {
+		value = options_array_item_value(a)->string;
+		if (strncmp(value, name, len) == 0 && value[len] == '=')
+			return (value + len + 1);
+	}
+	return (NULL);
+}
+
 static void
 palette_add_aliases(struct palette *p)
 {
 	struct options_entry		*o;
 	struct options_array_item	*a;
-	const char			**list = NULL;
+	const char			**list = NULL, *note;
 	struct cmd_list			*cmdlist;
 	char				*name, *target, *desc;
 	u_int				 n = 0, i;
@@ -718,7 +738,10 @@ palette_add_aliases(struct palette *p)
 			palette_set_tags(p, cmdlist);
 			cmd_list_free(cmdlist);
 		}
-		xasprintf(&desc, "alias for %s", target);
+		if ((note = palette_alias_note(name)) != NULL)
+			desc = xstrdup(note);
+		else
+			xasprintf(&desc, "alias for %s", target);
 		palette_node_text(p, name, desc, target, name);
 		free(desc);
 		free(name);
