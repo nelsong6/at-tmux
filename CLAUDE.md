@@ -83,7 +83,7 @@ They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after
 
 CI's `release` job makes every master commit whose run passed (macOS included) a Forgejo release, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and its `.sha256`.
 
-`publish.ps1` waits for the release of the checked-out commit (Forgejo API, with git's credential for forgejo.romaine.life), checks the zip against its SHA256 and publishes it as `tmux` to `\\NelsonNAS\tools`, then runs the home profile's `tmux/sync-servers.ps1`, which moves every tab server and the spare (`wt*`) onto the release with `upgrade-server`, sources the config again on each server it moved, and prints each one's result. Run it after every merge.
+After the complete release is published, CI starts home-sync on every PC. home-sync verifies the signed Windows package, switches `C:\Program Files\at-home\tmux\current`, and reconciles existing servers using `upgrade-server` while preserving their panes. The manual `publish.ps1` was retired by HOMECFG-110; merges need no separate publishing command.
 
 ## Winget Package Submission
 
