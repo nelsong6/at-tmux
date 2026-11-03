@@ -28,7 +28,7 @@ cat >"$OUT/test.conf" <<EOF
 set -g default-shell '$COMSPEC'
 set -g status off
 set -g @session-set-dir '$(cygpath -m "$OUT")'
-set -g @session-set-resume '$LONG & rem resumed {id}'
+set -g @session-set-resume '$SYS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Start-Sleep 300 # resumed {id}"'
 EOF
 CONF=$(cygpath -m "$OUT/test.conf")
 

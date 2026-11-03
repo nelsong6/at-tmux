@@ -62,8 +62,9 @@
  * A pane's Claude Code session comes from the pane options @claude-session and
  * @claude-cwd, which Claude Code's own hooks set. @session-set-resume is the
  * command that resumes one ("{id}" for its ID); @session-set-restart-<program>
- * the command that starts a program again. Without either a pane comes back as
- * a shell in its folder.
+ * the command that starts a program again. Each is a program and its arguments
+ * (quotes group, nothing else is special), started with no shell. Without either
+ * a pane comes back as a shell in its folder.
  */
 
 #define SESSION_SET_CLOSED_MAX 25
@@ -988,6 +989,61 @@ ss_add_command(struct evbuffer *evb, const char **argv, u_int argc)
 	}
 }
 
+/*
+ * Add a program and its arguments as separate words, so tmux starts the program
+ * itself rather than a shell running the line. Spaces and tabs separate words,
+ * single and double quotes group them, and nothing else is special: a Windows
+ * path's backslashes stay as written. One word alone still goes to the shell, as
+ * any one-argument command does.
+ */
+static void
+ss_add_words(struct evbuffer *evb, const char *s)
+{
+	char	*word, *escaped, quote;
+	size_t	 n;
+	int	 have;
+
+	word = xmalloc(strlen(s) + 1);
+	for (;;) {
+		while (*s == ' ' || *s == '\t')
+			s++;
+		if (*s == '\0')
+			break;
+		n = 0;
+		quote = '\0';
+		have = 0;
+		for (; *s != '\0'; s++) {
+			if (quote == '\0' && (*s == ' ' || *s == '\t'))
+				break;
+			if (quote == '\0' && (*s == '"' || *s == '\'')) {
+				quote = *s;
+				have = 1;
+			} else if (*s == quote)
+				quote = '\0';
+			else {
+				word[n++] = *s;
+				have = 1;
+			}
+		}
+		if (!have)
+			continue;
+		word[n] = '\0';
+#ifdef _WIN32
+		/* spawn joins the words before CreateProcess, so retain argv quoting. */
+		{
+			char *cmdline = win32_argv_to_cmdline(1, &word);
+			escaped = args_escape(cmdline);
+			free(cmdline);
+		}
+#else
+		escaped = args_escape(word);
+#endif
+		evbuffer_add_printf(evb, " %s", escaped);
+		free(escaped);
+	}
+	free(word);
+}
+
 /* The command that brings a pane's program back, or NULL for a shell. */
 static char *
 ss_start_command(const char *claude, const char *command)
@@ -1124,16 +1180,19 @@ session_set_reopen(int show, char **cause)
 	argv[i++] = "-c";
 	argv[i++] = f[8];
 	start = ss_start_command(f[9], f[10]);
-	argv[i++] = start;
 	ss_add_command(evb, argv, i);
+	if (start != NULL)
+		ss_add_words(evb, start);
 	free(start);
 	free(idx);
 
 	for (u_int p = 1; p < panes; p++) {
 		start = ss_start_command(f[9 + p * 3], f[10 + p * 3]);
 		argv[0] = "split-window"; argv[1] = "-t"; argv[2] = target;
-		argv[3] = "-c"; argv[4] = f[8 + p * 3]; argv[5] = start;
-		ss_add_command(evb, argv, 6);
+		argv[3] = "-c"; argv[4] = f[8 + p * 3];
+		ss_add_command(evb, argv, 5);
+		if (start != NULL)
+			ss_add_words(evb, start);
 		free(start);
 	}
 	argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = target;
@@ -1258,16 +1317,19 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
 		start = ss_start_command(w->f[12], w->f[13]);
 		argv[0] = "new-window"; argv[1] = "-a"; argv[2] = "-t";
 		argv[3] = target; argv[4] = "-c"; argv[5] = w->f[11];
-		argv[6] = start;
-		ss_add_command(evb, argv, 7);
+		ss_add_command(evb, argv, 6);
+		if (start != NULL)
+			ss_add_words(evb, start);
 		free(start);
 		for (p = 1; p < panes; p++) {
 			start = ss_start_command(w->f[12 + p * 3],
 			    w->f[13 + p * 3]);
 			argv[0] = "split-window"; argv[1] = "-t";
 			argv[2] = target; argv[3] = "-c";
-			argv[4] = w->f[11 + p * 3]; argv[5] = start;
-			ss_add_command(evb, argv, 6);
+			argv[4] = w->f[11 + p * 3];
+			ss_add_command(evb, argv, 5);
+			if (start != NULL)
+				ss_add_words(evb, start);
 			free(start);
 		}
 		argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = target;
