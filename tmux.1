@@ -3487,8 +3487,8 @@ if specified, to
 .Xc
 Reopen the window closed last, and on each run the one closed before it.
 The window comes back in its session, at its place among the session's
-windows, with its panes, layout, folders and name; the session is made again
-if it has gone.
+windows, with its panes, layout, folders and name, zoomed if it was; the
+session is made again if it has gone.
 A pane that ran Claude Code (the pane option
 .Ic @claude-session )
 runs the command in the global option
@@ -3649,8 +3649,9 @@ set kept in
 .Pa live/
 (a relative
 .Ar file
-is looked up in that folder), beside this server's own: each session with its
-windows, panes, layouts, folders and names, its panes started as
+is looked up in that folder), beside this server's own, in the order the
+sessions row showed them: each session with its windows, panes, layouts, folders and names,
+its current and last windows and zoomed panes, its panes started as
 .Ic reopen-window
 starts them.
 A session name already in use gets
