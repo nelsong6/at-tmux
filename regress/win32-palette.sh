@@ -34,6 +34,7 @@ set -s command-alias-note[101] 'nothing-by-this-name=Never shown'
 set -g @no-menu 'display-menu -T none #{?#{==:1,0},"Never" n "kill-server",}'
 set -s command-alias[101] 'go-nowhere=run-shell -C "#{E:@no-menu}"'
 set -s command-alias[102] 'clock-mode=display-message clock'
+bind -n F6 reorder-session
 EOF
 $TMUX -f "$(cygpath -m "$OUT/test.conf")" new -d -x100 -y30 -n first \
     </dev/null || exit 1
@@ -164,6 +165,31 @@ sleep 1
 [ -e "$OUT/done" ] && { echo "a failed picker's popup closed by itself"; exit 1; }
 $TMUX send-keys -K -c "$CLIENT" q
 palette pick=nothing
+
+# reorder-session with no place is a folder of the places, and a pick moves
+# the session of the tab it runs on; from a key it shows them in a menu
+# (TMUX-74: a command-alias of that name had hidden the command).
+$TMUX new -d -s later </dev/null || exit 1
+here=$($TMUX display -p -c "$CLIENT" '#{client_session}' | tr -d '\r')
+srow() { $TMUX display -p '#{S:#{session_name} }' | tr -d '\r' | sed 's/ $//'; }
+srow_is() { [ "$(srow)" = "$1" ]; }
+srow_is "$here later" || { echo "sessions row is $(srow)"; exit 1; }
+palette pick=Back under=reorder-session
+row '^0	reorder-session	' || fail_row "no reorder-session row" reorder-session
+for place in Front Forward Backward Back; do
+	row "^1	$place		" || fail_row "no $place under reorder-session" "^1	"
+done
+wait_until srow_is "later $here" ||
+    { echo "Back under reorder-session left the row $(srow)"; exit 1; }
+$TMUX send-keys -K -c "$CLIENT" F6
+_tries=20
+until srow_is "$here later"; do
+	_tries=$((_tries - 1))
+	[ $_tries -gt 0 ] ||
+	    { echo "Front in reorder-session's menu left the row $(srow)"; exit 1; }
+	$TMUX send-keys -K -c "$CLIENT" f 2>/dev/null
+	sleep 0.5
+done
 
 $TMUX kill-server 2>/dev/null
 wait $HOST
