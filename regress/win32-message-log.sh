@@ -8,13 +8,14 @@ TERM=screen
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 TMUX="$TEST_TMUX -L$TEST_SOCKET"
 . "$(dirname "$0")/win32-wait.sh"
-OUT=$(mktemp -d)
+OUT=$(mktemp -d) || exit 1
 export TMUX_ERROR_LOG_DIR=$(cygpath -w "$OUT")
 CFG="$OUT/config"
 printf "set -g default-shell '%s'\n" "$COMSPEC" >"$CFG"
 cleanup() {
 	$TMUX kill-server 2>/dev/null
-	rm -rf "$OUT"
+	rm -f "$OUT"/*
+	rmdir "$OUT"
 }
 trap cleanup 0 1 15
 fail() { echo "FAIL: $*"; exit 1; }
@@ -39,6 +40,7 @@ done
 [ -e "$OUT/unrelated.log" ] || fail "unrelated file removed"
 grep -q "create window failed: can't start tmux41-no-such-program.exe" "$LOG" || fail "new-window failure not logged"
 grep -q "create pane failed: can't start tmux41-no-such-program.exe" "$LOG" || fail "split failure not logged"
+grep -q "^$(date -u +%Y)-" "$LOG" || fail "error timestamp is not current"
 [ "$($TMUX list-windows -t w | wc -l)" -eq 1 ] || fail "failed window remains"
 [ "$($TMUX list-panes -t w:home | wc -l)" -eq 1 ] || fail "failed split remains"
 

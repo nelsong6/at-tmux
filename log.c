@@ -108,6 +108,7 @@ log_message(const char *message)
 		errno = EINVAL;
 		return (-1);
 	}
+	strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%SZ", utc);
 
 	dir = getenv("TMUX_ERROR_LOG_DIR");
 	if (dir == NULL || *dir == '\0') {
@@ -150,7 +151,6 @@ log_message(const char *message)
 		error = ENOMEM;
 		goto done;
 	}
-	strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%SZ", utc);
 	xasprintf(&record, "%s\t%s\t%.65536s%s\n", stamp, socket,
 	    escaped, strlen(escaped) > 65536 ? " [truncated]" : "");
 	length = strlen(record);
