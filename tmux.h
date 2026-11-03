@@ -3642,6 +3642,9 @@ extern struct sessions sessions;
 extern struct session_groups session_groups;
 extern u_int next_session_id;
 extern u_int next_session_order;
+
+/* cmd-reorder-session.c */
+char	*cmd_reorder_session_menu(const char *);
 int	session_cmp(struct session *, struct session *);
 RB_PROTOTYPE(sessions, session, entry, session_cmp);
 int	session_group_cmp(struct session_group *, struct session_group *s2);

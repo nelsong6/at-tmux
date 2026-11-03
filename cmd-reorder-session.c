@@ -22,7 +22,8 @@
 #include "tmux.h"
 
 /*
- * Move a session to another place in the sessions row.
+ * Move a session to another place in the sessions row. With no place and no
+ * -t, offer the places in a menu.
  */
 
 static enum cmd_retval	cmd_reorder_session_exec(struct cmd *,
@@ -43,6 +44,29 @@ const struct cmd_entry cmd_reorder_session_entry = {
 	.exec = cmd_reorder_session_exec
 };
 
+/*
+ * The menu of places, as a display-menu command: for the session source (a
+ * target, quoted) or, if it is NULL, the one the menu's pick runs in. The
+ * palette shows it as a folder of the places.
+ */
+char *
+cmd_reorder_session_menu(const char *source)
+{
+	char	*s, *menu;
+
+	if (source != NULL)
+		xasprintf(&s, " -s '%s'", source);
+	else
+		s = xstrdup("");
+	xasprintf(&menu, "display-menu -T \" reorder session \" -x C -y C "
+	    "Front f { reorder-session%s front } "
+	    "Forward w { reorder-session%s forward } "
+	    "Backward s { reorder-session%s backward } "
+	    "Back b { reorder-session%s back }", s, s, s, s);
+	free(s);
+	return (menu);
+}
+
 static enum cmd_retval
 cmd_reorder_session_exec(struct cmd *self, struct cmdq_item *item)
 {
@@ -53,6 +77,7 @@ cmd_reorder_session_exec(struct cmd *self, struct cmdq_item *item)
 	struct session		*s = source->s, **sorted, **l;
 	struct client		*c;
 	const char		*where = args_string(args, 0);
+	char			*menu, *id, *error = NULL;
 	u_int			 n, i, from, to;
 
 	if (args_has(args, 'a') && args_has(args, 'b')) {
@@ -65,9 +90,22 @@ cmd_reorder_session_exec(struct cmd *self, struct cmdq_item *item)
 		return (CMD_RETURN_ERROR);
 	}
 	if (where == NULL && !args_has(args, 't')) {
-		cmdq_error(item, "no place given: front, back, forward, "
-		    "backward or -t");
-		return (CMD_RETURN_ERROR);
+		if (args_has(args, 'a') || args_has(args, 'b')) {
+			cmdq_error(item, "-a and -b need -t");
+			return (CMD_RETURN_ERROR);
+		}
+		xasprintf(&id, "$%u", s->id);
+		menu = cmd_reorder_session_menu(id);
+		free(id);
+		if (cmd_parse_and_insert(menu, NULL, item, cmdq_get_state(item),
+		    &error) != CMD_PARSE_SUCCESS) {
+			cmdq_error(item, "%s", error);
+			free(error);
+			free(menu);
+			return (CMD_RETURN_ERROR);
+		}
+		free(menu);
+		return (CMD_RETURN_NORMAL);
 	}
 
 	/* The row without the session being moved. */

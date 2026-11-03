@@ -63,6 +63,7 @@ extern const struct cmd_entry cmd_choose_buffer_entry;
 extern const struct cmd_entry cmd_choose_tree_entry;
 extern const struct cmd_entry cmd_command_prompt_entry;
 extern const struct cmd_entry cmd_display_menu_entry;
+extern const struct cmd_entry cmd_reorder_session_entry;
 extern const struct cmd_entry cmd_run_shell_entry;
 
 /*
@@ -423,6 +424,21 @@ palette_menu(struct palette *p, u_int depth, const char *name,
 			found = palette_menu(p, depth, name, desc,
 			    cmd_list_first(cmdlist));
 		}
+		cmd_list_free(cmdlist);
+		return (found);
+	}
+
+	/* With no place, reorder-session offers the places in a menu. */
+	if (entry == &cmd_reorder_session_entry && count == 0 &&
+	    !args_has(args, 't') && !args_has(args, 'a') &&
+	    !args_has(args, 'b')) {
+		command = cmd_reorder_session_menu(args_get(args, 's'));
+		cmdlist = palette_parse(command);
+		free(command);
+		if (cmdlist == NULL)
+			return (0);
+		found = palette_menu(p, depth, name, desc,
+		    cmd_list_first(cmdlist));
 		cmd_list_free(cmdlist);
 		return (found);
 	}
