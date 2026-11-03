@@ -138,6 +138,27 @@ palette pick=new-window status=130
 sleep 0.5
 count_is 2 || { echo "a cancelled pick ran"; exit 1; }
 
+# The picker's standard error is the popup's console (FZT-75): with stdin and
+# stdout pipes it was an invalid handle, and fzt-automate's C library panics
+# without one.
+rm -f "$OUT/stderr"
+palette pick=nothing stderr=checked
+[ -e "$OUT/stderr" ] || { echo "the picker never checked its stderr"; exit 1; }
+[ "$(cat "$OUT/stderr")" = console ] ||
+    { echo "the picker's stderr is $(cat "$OUT/stderr"), not the console"; exit 1; }
+
+# A picker that fails (not 0, nor 130) leaves the popup open until a key: F5
+# goes to the popup, not to a new palette. Then a key closes it, and F5 opens
+# the palette again.
+palette pick=nothing status=3 stderr=it-failed
+sleep 0.5
+rm -f "$OUT/done"
+$TMUX send-keys -K -c "$CLIENT" F5
+sleep 1
+[ -e "$OUT/done" ] && { echo "a failed picker's popup closed by itself"; exit 1; }
+$TMUX send-keys -K -c "$CLIENT" q
+palette pick=nothing
+
 $TMUX kill-server 2>/dev/null
 wait $HOST
 

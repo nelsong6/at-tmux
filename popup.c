@@ -614,7 +614,8 @@ popup_key_cb(struct client *c, void *data, struct key_event *event)
 			goto out;
 		}
 	}
-	if ((((pd->flags & (POPUP_CLOSEEXIT|POPUP_CLOSEEXITZERO)) == 0) ||
+	if ((((pd->flags & (POPUP_CLOSEEXIT|POPUP_CLOSEEXITZERO|
+	    POPUP_CLOSEEXITCANCEL)) == 0) ||
 	    pd->job == NULL) &&
 	    (event->key == '\033' || event->key == ('c'|KEYC_CTRL)))
 		return (1);
@@ -704,8 +705,11 @@ popup_job_complete_cb(struct job *job)
 		pd->status = 0;
 	pd->job = NULL;
 
+	/* POPUP_CLOSEEXITCANCEL: closes on success or a cancel (130, Escape in fzt). */
 	if ((pd->flags & POPUP_CLOSEEXIT) ||
-	    ((pd->flags & POPUP_CLOSEEXITZERO) && pd->status == 0))
+	    ((pd->flags & POPUP_CLOSEEXITZERO) && pd->status == 0) ||
+	    ((pd->flags & POPUP_CLOSEEXITCANCEL) &&
+	    (pd->status == 0 || pd->status == 130)))
 		server_client_clear_overlay(pd->c);
 }
 
