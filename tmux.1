@@ -8093,6 +8093,15 @@ specified by
 .Fl t
 or the current pane if omitted) after the command finishes.
 If the command fails, the exit status is also displayed.
+With
+.Fl b
+and no
+.Fl t ,
+that is the pane of the client whose key or mouse press ran the command; run
+any other way (from a configuration file, a hook or the command line), the
+output and exit status go to the message log instead, as shown by
+.Ic show-messages ,
+and a failure also goes to the error log.
 .Tg wait
 .It Xo Ic wait-for
 .Op Fl L | S | U
