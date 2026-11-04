@@ -256,7 +256,7 @@ panel_key(struct client *c, struct key_event *event)
 	struct cmdq_state *state;
 	char *error;
 	u_int width = panel_width(c), height, top, i, rows;
-	int row, step, n;
+	int row, step, n, click, released;
 	key_code key = event->key & ~KEYC_MASK_FLAGS;
 	if (width == 0)
 		return (0);
@@ -265,14 +265,18 @@ panel_key(struct client *c, struct key_event *event)
 	top = status_at_line(c) == 0 ? status_line_size(c) : 0;
 	rows = height - 2 - (pd->tabs != 0);
 	if (KEYC_IS_MOUSE(key)) {
+		/* Motion with no button held is encoded as a dragged release. */
+		click = !MOUSE_WHEEL(m->b) && !MOUSE_DRAG(m->b);
+		released = click && MOUSE_RELEASE(m->b);
 		if (m->x < c->tty.sx - width || m->y < top || m->y >= top + height) {
-			if (!MOUSE_WHEEL(m->b) && !MOUSE_DRAG(m->b))
+			if (click)
 				pd->focused = 0;
 			c->flags |= CLIENT_REDRAWOVERLAY;
 			return (0);
 		}
-		pd->focused = 1;
-		if (m->y == top && m->x >= c->tty.sx - 4 && MOUSE_RELEASE(m->b)) {
+		if (click)
+			pd->focused = 1;
+		if (m->y == top && m->x >= c->tty.sx - 4 && released) {
 			panel_clear(c);
 			return (1);
 		}
@@ -295,7 +299,7 @@ panel_key(struct client *c, struct key_event *event)
 			goto redraw;
 		if (panel_selectable(pd, row)) {
 			pd->choice = row;
-			if (MOUSE_RELEASE(m->b))
+			if (released)
 				goto chosen;
 		}
 		goto redraw;

@@ -62,6 +62,14 @@ $TMUX send-keys -K -c "$CLIENT" 'echo PANEL-ALIVE' Enter
 pane_contains() { $TMUX capture-pane -p | tr -d '\r' | grep -q PANEL-ALIVE; }
 wait_until pane_contains || { echo 'conversation input was swallowed'; exit 1; }
 wait_until contains PANEL-CONTENT || { echo 'app output erased panel'; exit 1; }
+# Hover and the wheel are not clicks: over a tab, the rows and [x] they leave
+# focus, the tab, the actions and the panel as they were.
+$TMUX set -g @picked no
+$OUTER send-keys -l "$(printf '\033[<35;102;2M\033[<35;85;3M\033[<35;85;4M\033[<35;85;5M\033[<35;85;6M\033[<35;118;1M\033[<65;85;5Mecho HOVER-ALIVE\r')"
+hover_typed() { $TMUX capture-pane -p | tr -d '\r' | grep -q HOVER-ALIVE; }
+wait_until hover_typed || { echo 'hover took keyboard focus'; exit 1; }
+focused_is 0 && option_is @tab prs && option_is @picked no && width_is 80 ||
+ { echo "hover acted as a click: focused $($TMUX display -c "$CLIENT" -p '#{client_panel_focused}'), tab $($TMUX show -gv @tab), picked $($TMUX show -gv @picked), width $($TMUX display -p '#{pane_width}')"; exit 1; }
 # A delayed refresh must not replace a newly navigated view.
 $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T New -g second -- -NEW-VIEW '' ''
 $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Stale -g first -u -- -STALE-VIEW '' ''
