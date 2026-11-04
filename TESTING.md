@@ -13,6 +13,14 @@ and cleans up its private servers; never substitute the live server when a test
 fails. On Linux and macOS run the portable scripts directly with `TEST_TMUX`
 naming the native build.
 
+Run `regress/win32-pane-clear.sh` for Windows rendering changes. Its attached
+client must preserve both panes and the native double-line border when either
+pane clears, including when terminal features explicitly request left/right
+scrolling margins. Those margins cannot pass through the Windows console.
+After upgrading an older server, check `info` for missing `Enmg`, `Dsmg`,
+`Clmg` and `Cmg` capabilities on its existing attached clients, then repeat the
+clear/reflow check without reattaching. Upgrade state must not restore them.
+
 For the conversation panel, run `regress/panel.sh`. It exercises real attached
 clients, conditional footers including a condition which reads panel width,
 keyboard and mouse navigation, conversation input while open, scrolling,

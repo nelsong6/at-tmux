@@ -460,6 +460,16 @@ tty_term_apply_overrides(struct tty_term *term)
 		a = options_array_next(a);
 	}
 
+#ifdef _WIN32
+	/*
+	 * Client output passes through the Windows console, which does not
+	 * preserve DECSLRM. Scrolling to clear a pane would clear entire rows,
+	 * including its neighbours. Do not reenable it from terminal probes,
+	 * explicit features, or capabilities inherited during a server upgrade.
+	 */
+	tty_term_apply(term, "Enmg@:Dsmg@:Clmg@:Cmg@", 1);
+#endif
+
 	/* Log the SIXEL flag. */
 	log_debug("SIXEL flag is %d", !!(term->flags & TERM_SIXEL));
 

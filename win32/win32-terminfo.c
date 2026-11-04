@@ -162,12 +162,6 @@ static const struct win32_terminfo_entry win32_terminfo[] = {
 	{ "Cs",    "\033[%p1%d q",         0, 0, 1 },
 	{ "Cr",    "\033[2 q",             0, 0, 1 },
 
-	/* DECSLRM margins. */
-	{ "Cmg",   "\033[%i%p1%d;%p2%ds",  0, 0, 1 },
-	{ "Clmg",  "\033[s",               0, 0, 1 },
-	{ "Enmg",  "\033[?69h",            0, 0, 1 },
-	{ "Dsmg",  "\033[?69l",            0, 0, 1 },
-
 	/* Hyperlinks. */
 	{ "Hls",   "\033]8;%p1%s;%p2%s\033\\", 0, 0, 1 },
 
