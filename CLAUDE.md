@@ -96,6 +96,17 @@ CI's `linux` job does the same on Ubuntu (apt's autoconf, automake, pkg-config, 
 
 They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after 10 s), not fixed sleeps. Match a command's output with `^`: the typed command line holds the same text.
 
+## Where changes land
+
+GitHub (https://github.com/nelsong6/at-tmux) holds this repo's history, on every machine:
+branch from its master, open the PR there and merge it there, so the work Mac and Linux
+machine can change tmux too. `git config core.hooksPath .githooks` makes a push on a Mac
+or Linux machine build and run the tests CI's `linux` job lists.
+
+Forgejo's `master` only follows GitHub's: `.forgejo/workflows/github-sync.yml` fast-forwards
+it every five minutes, and that push runs CI and the release. Nothing is committed to Forgejo
+directly, and a Forgejo commit GitHub lacks stops the sync until it moves to GitHub.
+
 ## Publishing
 
 CI's `release` job makes every master commit whose run passed a Forgejo release, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and its `.sha256`.

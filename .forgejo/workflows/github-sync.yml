@@ -1,0 +1,38 @@
+name: GitHub sync
+
+# GitHub holds this repo's history. Forgejo builds the signed Windows release, so its
+# master follows GitHub's here, and that push runs CI. A commit made on Forgejo alone
+# stops the sync: move it to GitHub.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve Forgejo on the home network
+        env:
+          HOME_FORGEJO_IP: ${{ vars.HOME_FORGEJO_IP }}
+        run: |
+          if [ -n "$HOME_FORGEJO_IP" ]; then
+            printf '%s forgejo.romaine.life\n' "$HOME_FORGEJO_IP" | sudo tee -a /etc/hosts >/dev/null
+          fi
+
+      - name: Fast-forward master
+        env:
+          TOKEN: ${{ secrets.AT_TMUX_SYNC_TOKEN }}
+        run: |
+          set -eu
+          forgejo="https://nelson:$TOKEN@forgejo.romaine.life/nelsong6/at-tmux.git"
+          git init -q sync && cd sync
+          git fetch -q https://github.com/nelsong6/at-tmux.git master
+          upstream=$(git rev-parse FETCH_HEAD)
+          git fetch -q "$forgejo" master
+          current=$(git rev-parse FETCH_HEAD)
+          [ "$upstream" = "$current" ] && exit 0
+          git merge-base --is-ancestor "$current" "$upstream"
+          git push -q "$forgejo" "$upstream:refs/heads/master"
+          echo "master moved to $upstream"
