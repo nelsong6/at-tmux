@@ -105,7 +105,7 @@ or Linux machine build and run the tests CI's `linux` job lists.
 
 Forgejo's `master` only follows GitHub's: `.forgejo/workflows/github-sync.yml` fast-forwards
 it every five minutes, and that push runs CI and the release. Nothing is committed to Forgejo
-directly, and a Forgejo commit GitHub lacks stops the sync until it moves to GitHub.
+directly, and a Forgejo commit GitHub lacks stops the sync until it moves to GitHub. The job signs in with the repo secret `AT_TMUX_SYNC_TOKEN`, a `write:repository` token of `nelson`, the one account allowed to push to protected `master`.
 
 ## Publishing
 
