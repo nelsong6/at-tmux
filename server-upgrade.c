@@ -28,7 +28,7 @@
  */
 
 #define UPGRADE_MAGIC "tmux-upgrade"
-#define UPGRADE_VERSION 1
+#define UPGRADE_VERSION 2
 #define UPGRADE_ACK_TIMEOUT 30000
 #define UPGRADE_FLUSH_TIMEOUT 5000
 
@@ -36,6 +36,28 @@ int			 server_upgrading;
 static char		*upgrade_exe;
 static char		*upgrade_status;
 static struct event	 upgrade_timer;
+static uint32_t		 upgrade_version;
+static int		 upgrade_old_keys;
+
+#define UPGRADE_KEY(key) key,
+#define UPGRADE_V1_MOUSE(name) \
+	KEYC_ ## name ## _PANE, KEYC_ ## name ## _STATUS, \
+	KEYC_ ## name ## _STATUS_LEFT, KEYC_ ## name ## _STATUS_RIGHT, \
+	KEYC_ ## name ## _STATUS_DEFAULT, KEYC_ ## name ## _SCROLLBAR_UP, \
+	KEYC_ ## name ## _SCROLLBAR_SLIDER, KEYC_ ## name ## _SCROLLBAR_DOWN, \
+	KEYC_ ## name ## _BORDER,
+#define UPGRADE_MOUSE(name) UPGRADE_V1_MOUSE(name)
+static const key_code upgrade_v1_keys[] = {
+#include "upgrade-v1-keys.h"
+};
+#undef UPGRADE_MOUSE
+#define UPGRADE_MOUSE(name) UPGRADE_V1_MOUSE(name) KEYC_ ## name ## _FOOTER,
+static const key_code upgrade_v1_footer_keys[] = {
+#include "upgrade-v1-keys.h"
+};
+#undef UPGRADE_MOUSE
+#undef UPGRADE_V1_MOUSE
+#undef UPGRADE_KEY
 
 static void	upgrade_timer_callback(int, short, void *);
 
@@ -182,6 +204,52 @@ upr_str(struct upgrade_reader *r)
 		memcpy(s, p, n);
 	s[n] = '\0';
 	return (s);
+}
+
+void
+upw_key(struct evbuffer *evb, key_code key)
+{
+	upw_str(evb, key_string_lookup_key(key, 0));
+	upw_u64(evb, key & ~(KEYC_MASK_KEY|KEYC_MASK_MODIFIERS));
+}
+
+key_code
+upgrade_legacy_key(key_code key)
+{
+	key_code value = key & KEYC_MASK_KEY;
+	const key_code *keys;
+	size_t count;
+
+	if (upgrade_version != 1 || value < KEYC_BASE)
+		return (key);
+	if (upgrade_old_keys) {
+		keys = upgrade_v1_keys;
+		count = nitems(upgrade_v1_keys);
+	} else {
+		keys = upgrade_v1_footer_keys;
+		count = nitems(upgrade_v1_footer_keys);
+	}
+	value -= KEYC_BASE;
+	if (value >= count)
+		return (key);
+	return ((key & ~KEYC_MASK_KEY)|keys[value]);
+}
+
+key_code
+upr_key(struct upgrade_reader *r)
+{
+	key_code key, flags;
+	char *name;
+
+	if (upgrade_version == 1)
+		return (upgrade_legacy_key(upr_u64(r)));
+	name = upr_str(r);
+	flags = upr_u64(r);
+	key = name == NULL ? KEYC_UNKNOWN : key_string_lookup_string(name);
+	free(name);
+	if (key == KEYC_UNKNOWN)
+		r->error = 1;
+	return (key|flags);
 }
 
 void
@@ -362,7 +430,7 @@ upgrade_save_keys(struct evbuffer *evb)
 		upw_u32(o, n);
 		for (bd = key_bindings_first(table); bd != NULL;
 		    bd = key_bindings_next(table, bd)) {
-			upw_u64(o, bd->key);
+			upw_key(o, bd->key);
 			upw_str(o, bd->note);
 			upw_u32(o, bd->flags);
 			s = cmd_list_print(bd->cmdlist, 0);
@@ -372,6 +440,42 @@ upgrade_save_keys(struct evbuffer *evb)
 	}
 	upw_obj(evb, o);
 	evbuffer_free(o);
+}
+
+/* Version 1 predates named keys. The footer distinguishes its two layouts. */
+static int
+upgrade_legacy_has_footer(struct upgrade_reader *r)
+{
+	struct upgrade_reader copy = *r, o;
+	char *name, *value;
+	u_int n, i, kind, items, j;
+	int found = 0;
+
+	upr_obj(&copy, &o);
+	n = upr_u32(&o);
+	for (i = 0; i < n && !o.error; i++) {
+		name = upr_str(&o);
+		if (name != NULL && strcmp(name, "status-footer") == 0)
+			found = 1;
+		free(name);
+		kind = upr_u32(&o);
+		if (kind == 1)
+			upr_u64(&o);
+		else if (kind == 3) {
+			items = upr_u32(&o);
+			for (j = 0; j < items && !o.error; j++) {
+				upr_u32(&o);
+				value = upr_str(&o);
+				free(value);
+			}
+		} else {
+			value = upr_str(&o);
+			free(value);
+		}
+	}
+	if (copy.error || o.error)
+		r->error = 1;
+	return (found);
 }
 
 /* Take out every binding of this build's own, then put the old server's in. */
@@ -406,7 +510,7 @@ upgrade_restore_keys(struct upgrade_reader *r)
 		name = upr_str(&o);
 		n = upr_u32(&o);
 		for (j = 0; j < n && !o.error; j++) {
-			key = upr_u64(&o);
+			key = upr_key(&o);
 			note = upr_str(&o);
 			flags = upr_u32(&o);
 			cmd = upr_str(&o);
@@ -2125,12 +2229,13 @@ server_upgrade_restore(void)
 	magic = upr_str(&r);
 	version = upr_u32(&r);
 	if (magic == NULL || strcmp(magic, UPGRADE_MAGIC) != 0 ||
-	    version != UPGRADE_VERSION) {
+	    version < 1 || version > UPGRADE_VERSION) {
 		xasprintf(&cause, "state version %u is not %u", version,
 		    UPGRADE_VERSION);
 		goto fail;
 	}
 	free(magic);
+	upgrade_version = version;
 
 	/* Clients keep talking as they did, so they must be understood. */
 	version = upr_u32(&r);
@@ -2173,6 +2278,8 @@ server_upgrade_restore(void)
 	next_pane = upr_u32(&o);
 
 	options_upgrade_restore(&r, global_options);
+	upgrade_old_keys = upgrade_version == 1 &&
+	    !upgrade_legacy_has_footer(&r);
 	options_upgrade_restore(&r, global_s_options);
 	options_upgrade_restore(&r, global_w_options);
 	/*

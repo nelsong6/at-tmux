@@ -207,6 +207,7 @@ dist_tmux_SOURCES = \
 	style.c \
 	tmux.c \
 	tmux.h \
+	upgrade-v1-keys.h \
 	tmux-protocol.h \
 	tty-acs.c \
 	tty-draw.c \

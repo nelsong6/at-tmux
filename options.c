@@ -1324,6 +1324,10 @@ options_upgrade_save(struct evbuffer *evb, struct options *oo)
 			s = cmd_list_print(oe->value.cmdlist, 0);
 			upw_str(o, s);
 			free(s);
+		} else if (oe->tableentry != NULL &&
+		    oe->tableentry->type == OPTIONS_TABLE_KEY) {
+			upw_u32(o, 4);
+			upw_key(o, (key_code)oe->value.number);
 		} else if (OPTIONS_IS_NUMBER(oe)) {
 			upw_u32(o, 1);
 			upw_u64(o, (uint64_t)oe->value.number);
@@ -1413,9 +1417,16 @@ options_upgrade_restore(struct upgrade_reader *r, struct options *oo)
 			break;
 		case 1:
 			number = upr_u64(&o);
+			if (te != NULL && te->type == OPTIONS_TABLE_KEY)
+				number = upgrade_legacy_key(number);
 			if (te != NULL && te->type != OPTIONS_TABLE_STRING &&
 			    te->type != OPTIONS_TABLE_COMMAND &&
 			    (~te->flags & OPTIONS_TABLE_IS_ARRAY))
+				options_set_number(oo, name, (long long)number);
+			break;
+		case 4:
+			number = upr_key(&o);
+			if (te != NULL && te->type == OPTIONS_TABLE_KEY)
 				options_set_number(oo, name, (long long)number);
 			break;
 		default:

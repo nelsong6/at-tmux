@@ -3890,11 +3890,14 @@ struct upgrade_reader {
 };
 void		 upw_u32(struct evbuffer *, uint32_t);
 void		 upw_u64(struct evbuffer *, uint64_t);
+void		 upw_key(struct evbuffer *, key_code);
 void		 upw_str(struct evbuffer *, const char *);
 void		 upw_data(struct evbuffer *, const void *, size_t);
 void		 upw_obj(struct evbuffer *, struct evbuffer *);
 uint32_t	 upr_u32(struct upgrade_reader *);
 uint64_t	 upr_u64(struct upgrade_reader *);
+key_code	 upr_key(struct upgrade_reader *);
+key_code	 upgrade_legacy_key(key_code);
 char		*upr_str(struct upgrade_reader *);
 const void	*upr_data(struct upgrade_reader *, size_t *);
 void		 upr_obj(struct upgrade_reader *, struct upgrade_reader *);

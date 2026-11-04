@@ -239,6 +239,14 @@ jobs:
         shell: bash
         run: TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-footer.sh
 
+      - name: Build cross-version key fixtures
+        run: ./regress/build-upgrade-key-fixtures.ps1
+
+      - name: Run cross-version key upgrades
+        shell: bash
+        timeout-minutes: 5
+        run: TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade-keys.sh
+
       - name: Upload build artifacts
         if: success()
         uses: https://data.forgejo.org/forgejo/upload-artifact@v4

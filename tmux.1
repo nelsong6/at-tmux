@@ -1792,6 +1792,10 @@ screen and its history, all sessions, windows, options, key bindings and
 buffers, and every client's connection.
 The old server exits once the new one has taken everything over; if the new
 one fails, the old one carries on.
+Key bindings and key-valued options travel by key name, so new mouse events
+do not change existing bindings during an upgrade.
+An upgrade to a build which cannot read the state or a saved key is refused;
+the old server continues running.
 The
 .Ic server_upgrade
 format shows whether the server is waiting and why, or why it failed.

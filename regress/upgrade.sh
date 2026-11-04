@@ -19,7 +19,7 @@ wait_gone
 CFG=$(mktemp)
 printf "set -g default-shell /bin/sh\n" >$CFG
 OUT=$(mktemp)
-trap "rm -f $CFG $OUT; $TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null" 0 1 15
+trap "rm -f $CFG $OUT $OUT.keys; $TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null" 0 1 15
 FAIL=0
 EXE=$(readlink -f "$TEST_TMUX")
 export PS1='$ '
@@ -69,6 +69,9 @@ $TMUX send-keys -tup:0.0 "echo BEFORE_MARK" Enter
 wait_for up:0.0 "^BEFORE_MARK"
 $TMUX set -g @upgrade-test kept
 $TMUX bind -T root F12 display -p f12-bound
+$TMUX bind -T upgrade-custom C-MouseDrag1Pane display -p custom-drag
+$TMUX set -g prefix F2
+$TMUX list-keys >$OUT.keys
 $TMUX set-buffer -b upbuf "buffer kept"
 # As a server upgraded by an affected build carries it in its state.
 $TMUX setenv -g TMUX_UPGRADE 1,2
@@ -99,6 +102,8 @@ pane_has up:0.0 "^BEFORE_MARK" || fail "pane screen lost"
 [ "$($TMUX show -gv @upgrade-test)" = kept ] || fail "option lost"
 [ "$($TMUX show-buffer -b upbuf)" = "buffer kept" ] || fail "buffer lost"
 $TMUX list-keys -T root F12 | grep -q f12-bound || fail "key binding lost"
+[ "$($TMUX show -gv prefix)" = F2 ] || fail "key option changed"
+$TMUX list-keys | diff -u $OUT.keys - || fail "named key bindings changed"
 [ "$($TMUX list-windows -tup | wc -l)" -eq 2 ] || fail "window lost"
 [ "$($TMUX display -tup:1 -p '#{window_name}')" = second ] ||
 	fail "window name lost"
