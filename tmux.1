@@ -7337,7 +7337,15 @@ Play the sound file
 .Ar path
 from the server, without waiting for it to finish; a sound already playing is
 stopped.
-Only Windows is supported.
+macOS plays it with
+.Xr afplay 1 ;
+other Unix systems use the first of
+.Xr pw-play 1 ,
+.Xr paplay 1
+or
+.Xr aplay 1
+found on the global
+.Ev PATH .
 .It Xo Ic display-palette
 .Op Fl c Ar target-client
 .Op Fl h Ar height

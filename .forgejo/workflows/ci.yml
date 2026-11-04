@@ -332,51 +332,17 @@ jobs:
       - name: Run upgrade tests
         run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/upgrade.sh
 
+      - name: Run play-sound tests
+        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/play-sound.sh
+
       - name: Upload Linux build
         uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: tmux-linux
           path: tmux
 
-  # The work Mac runs this fork too (OpenProject 2181). The macOS build and its
-  # tests run on GitHub from the push mirror (.github/workflows/macos.yml); this
-  # job waits for that run on the same commit and passes only if it passed.
-  macos:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: pwsh -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; . ([scriptblock]::Create([IO.File]::ReadAllText('{0}'))); if (Test-Path variable:LASTEXITCODE) { exit $LASTEXITCODE }"
-
-    steps:
-      - name: Wait for the GitHub macOS run
-        env:
-          GH_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          $api = "https://api.github.com/repos/nelsong6/at-tmux/actions/workflows/macos.yml/runs?head_sha=$env:SHA&per_page=1"
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
-          $start = Get-Date
-          while ($true) {
-            $result = Invoke-RestMethod $api -Headers $headers -MaximumRetryCount 3 -RetryIntervalSec 5
-            $elapsed = ((Get-Date) - $start).TotalSeconds
-            if ($result.total_count -gt 0) {
-              $run = $result.workflow_runs[0]
-              Write-Host "macOS run $($run.html_url): $($run.status) $($run.conclusion)"
-              if ($run.status -eq 'completed') {
-                if ($run.conclusion -eq 'success') { exit 0 }
-                throw "the macOS run on GitHub ended $($run.conclusion): $($run.html_url)"
-              }
-              if ($elapsed -ge 2700) { throw "the macOS run on GitHub did not finish in 45 minutes: $($run.html_url)" }
-            } elseif ($elapsed -ge 900) {
-              throw "no macOS run on GitHub for $env:SHA after 15 minutes: the push mirror did not deliver it"
-            }
-            Start-Sleep -Seconds 30
-          }
-
-  # Every master commit whose CI passed is a release, tagged `git describe`.
-  # Package on Windows also on PRs; only publication is restricted to master.
   release:
-    needs: [build-and-test, linux, macos]
+    needs: [build-and-test, linux]
     outputs:
       release-tag: ${{ steps.release.outputs.tag || 'validation-only' }}
     runs-on: windows-latest

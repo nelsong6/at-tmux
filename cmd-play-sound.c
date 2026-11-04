@@ -25,6 +25,10 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <mmsystem.h>
+#else
+#include <paths.h>
+#include <string.h>
+#include <unistd.h>
 #endif
 
 /*
@@ -44,6 +48,52 @@ const struct cmd_entry cmd_play_sound_entry = {
 	.exec = cmd_play_sound_exec
 };
 
+#ifndef _WIN32
+#ifdef __APPLE__
+static const char	*cmd_play_sound_players[] = { "afplay", NULL };
+#else
+static const char	*cmd_play_sound_players[] = { "pw-play", "paplay", "aplay", NULL };
+#endif
+
+static struct job	*cmd_play_sound_job;
+
+static void
+cmd_play_sound_complete(struct job *job)
+{
+	if (job == cmd_play_sound_job)
+		cmd_play_sound_job = NULL;
+}
+
+/* The first player found on the global PATH, the one the job will run with. */
+static const char *
+cmd_play_sound_find_player(void)
+{
+	struct environ_entry	 *envent;
+	const char		**player, *value = _PATH_DEFPATH;
+	char			 *copy, *next, *dir, *path;
+	int			  found;
+
+	envent = environ_find(global_environ, "PATH");
+	if (envent != NULL && envent->value != NULL)
+		value = envent->value;
+	for (player = cmd_play_sound_players; *player != NULL; player++) {
+		next = copy = xstrdup(value);
+		found = 0;
+		while (!found && (dir = strsep(&next, ":")) != NULL) {
+			if (*dir == '\0')
+				continue;
+			xasprintf(&path, "%s/%s", dir, *player);
+			found = (access(path, X_OK) == 0);
+			free(path);
+		}
+		free(copy);
+		if (found)
+			return (*player);
+	}
+	return (NULL);
+}
+#endif
+
 static enum cmd_retval
 cmd_play_sound_exec(struct cmd *self, struct cmdq_item *item)
 {
@@ -52,11 +102,16 @@ cmd_play_sound_exec(struct cmd *self, struct cmdq_item *item)
 #ifdef _WIN32
 	wchar_t		*wpath;
 	int		 n, ok;
+#else
+	const char	*player;
+	char		*argv[3];
+#endif
 
 	if (access(path, R_OK) != 0) {
 		cmdq_error(item, "can't read %s", path);
 		return (CMD_RETURN_ERROR);
 	}
+#ifdef _WIN32
 	n = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
 	if (n <= 0) {
 		cmdq_error(item, "bad path: %s", path);
@@ -72,8 +127,23 @@ cmd_play_sound_exec(struct cmd *self, struct cmdq_item *item)
 	}
 	return (CMD_RETURN_NORMAL);
 #else
-	cmdq_error(item, "play-sound is not supported on this platform: %s",
-	    path);
-	return (CMD_RETURN_ERROR);
+	if ((player = cmd_play_sound_find_player()) == NULL) {
+		cmdq_error(item, "no sound player found to play %s", path);
+		return (CMD_RETURN_ERROR);
+	}
+	if (cmd_play_sound_job != NULL) {
+		job_free(cmd_play_sound_job);
+		cmd_play_sound_job = NULL;
+	}
+	argv[0] = (char *)player;
+	argv[1] = (char *)path;
+	argv[2] = NULL;
+	cmd_play_sound_job = job_run(NULL, 2, argv, NULL, NULL, NULL, NULL,
+	    cmd_play_sound_complete, NULL, NULL, JOB_NOWAIT, -1, -1, -1, -1);
+	if (cmd_play_sound_job == NULL) {
+		cmdq_error(item, "can't start %s", player);
+		return (CMD_RETURN_ERROR);
+	}
+	return (CMD_RETURN_NORMAL);
 #endif
 }
