@@ -210,7 +210,7 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 		tty_attributes(tty, &last, defaults, palette, s->hyperlinks);
 		log_debug("%s: clearing %u padding cells", __func__, cx);
 		tty_draw_line_clear(tty, atx, aty, cx, defaults, bg, 0);
-		if (cx == ex)
+		if (cx == nx)
 			return;
 		atx += cx;
 		px += cx;
@@ -272,6 +272,8 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 			/* Work out the the empty width. */
 			if (i >= ex)
 				empty = 1;
+			else if (gcp->data.width > nx - i)
+				empty = nx - i;
 			else if (gcp->bg != last.bg)
 				empty = 0;
 			else

@@ -1362,7 +1362,9 @@ tty_clear_line(struct tty *tty, const struct grid_cell *defaults, u_int py,
     u_int px, u_int nx, u_int bg)
 {
 	struct client		*c = tty->client;
-	u_int			 lsx;
+	struct visible_ranges	*r;
+	struct visible_range	*rr;
+	u_int			 i, lsx;
 
 	log_debug("%s: %s, %u at %u,%u", __func__, c->name, nx, px, py);
 
@@ -1407,8 +1409,14 @@ tty_clear_line(struct tty *tty, const struct grid_cell *defaults, u_int py,
 	 * Couldn't use an escape sequence, use spaces. Clear only the visible
 	 * bit if there is an overlay.
 	 */
-	tty_cursor(tty, px, py);
-	tty_repeat_space(tty, nx);
+	r = tty_check_overlay_range(tty, px, py, nx);
+	for (i = 0; i < r->used; i++) {
+		rr = &r->ranges[i];
+		if (rr->nx != 0) {
+			tty_cursor(tty, rr->px, py);
+			tty_repeat_space(tty, rr->nx);
+		}
+	}
 }
 
 /* Clear a line, adjusting to visible part of pane. */
@@ -1573,19 +1581,27 @@ tty_clear_pane_area(struct tty *tty, const struct tty_ctx *ctx, u_int py,
 static void
 tty_draw_pane(struct tty *tty, const struct tty_ctx *ctx, u_int py)
 {
-	struct screen	*s = ctx->s;
-	u_int		 nx = ctx->sx, i, x, rx, ry;
+	struct screen		*s = ctx->s;
+	struct visible_ranges	*r;
+	struct visible_range	*rr;
+	u_int			 nx = ctx->sx, i = 0, j, x, rx, ry;
 
 	log_debug("%s: %s %u %d", __func__, tty->client->name, py, ctx->bigger);
 
 	if (!ctx->bigger) {
-		tty_draw_line(tty, s, 0, py, nx, ctx->xoff, ctx->yoff + py,
-		    &ctx->defaults, ctx->palette);
+		x = ctx->xoff;
+		rx = nx;
+		ry = ctx->yoff + py;
+	} else if (!tty_clamp_line(tty, ctx, 0, py, nx, &i, &x, &rx, &ry))
 		return;
-	}
-	if (tty_clamp_line(tty, ctx, 0, py, nx, &i, &x, &rx, &ry)) {
-		tty_draw_line(tty, s, i, py, rx, x, ry, &ctx->defaults,
-		    ctx->palette);
+
+	r = tty_check_overlay_range(tty, x, ry, rx);
+	for (j = 0; j < r->used; j++) {
+		rr = &r->ranges[j];
+		if (rr->nx != 0) {
+			tty_draw_line(tty, s, i + rr->px - x, py, rr->nx,
+			    rr->px, ry, &ctx->defaults, ctx->palette);
+		}
 	}
 }
 
@@ -2188,6 +2204,7 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 	const struct grid_cell	*gcp = ctx->cell;
 	struct screen		*s = ctx->s;
 	struct visible_ranges	*r;
+	struct visible_range	*rr;
 	u_int			 px, py, i, vis = 0;
 
 	px = ctx->xoff + ctx->ocx - ctx->wox;
@@ -2202,8 +2219,7 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 	}
 
 	if (ctx->num == 2) {
-		tty_draw_line(tty, s, 0, s->cy, screen_size_x(s),
-		    ctx->xoff - ctx->wox, py, &ctx->defaults, ctx->palette);
+		tty_draw_pane(tty, ctx, ctx->ocy);
 		return;
 	}
 
@@ -2213,8 +2229,14 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 		for (i = 0; i < r->used; i++)
 			vis += r->ranges[i].nx;
 		if (vis < gcp->data.width) {
-			tty_draw_line(tty, s, s->cx, s->cy, gcp->data.width,
-			    px, py, &ctx->defaults, ctx->palette);
+			for (i = 0; i < r->used; i++) {
+				rr = &r->ranges[i];
+				if (rr->nx == 0)
+					continue;
+				tty_draw_line(tty, s, ctx->ocx + rr->px - px,
+				    ctx->ocy, rr->nx, rr->px, py,
+				    &ctx->defaults, ctx->palette);
+			}
 			return;
 		}
 	}

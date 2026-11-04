@@ -67,6 +67,7 @@ CI runs on Forgejo (`.forgejo/workflows/ci.yml`). Its `build-and-test` job runs 
 - `win32-child-path.sh` — direct pane and pipe programs resolve through their child environment's PATH, including directories with spaces, session overrides and removed paths (TMUX-86)
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)
+- `win32-popup-output.sh` — a pane changing behind a popup (erasing to the end of a line or the screen, deleting or inserting characters, scrolling part of its screen, overwriting half a wide character) leaves every popup row and its border alone and still changes beside the popup; a wide character of its own colour across the popup's edge no longer stops the server (TMUX-103; also run beside `conpty.dll`, which is what passes the delete and insert through to tmux)
 - `win32-attach-size.sh` — a client attaches at its console's size when the console is resized between identify and attach (runs the client in a pseudo-console via `win32-pty.ps1`)
 - `win32-wrap.sh` — a row a pane wrapped reaches the client's console whole (the client runs in a pane of a second server, whose copy shows what it drew)
 - `win32-pane-clear.sh` — clearing either side of a split preserves the other pane and native border in an attached Windows client, even when terminal features request DECSLRM margins; console output cannot preserve those margins, so Windows always uses bounded clear operations

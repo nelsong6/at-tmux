@@ -155,6 +155,11 @@ jobs:
         timeout-minutes: 5
         run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-pane-clear.sh
 
+      - name: Keep pane output out of a popup
+        shell: bash
+        timeout-minutes: 5
+        run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-popup-output.sh
+
       - name: Run line size tests
         shell: bash
         run: |
@@ -245,6 +250,7 @@ jobs:
           cp build/Debug/tmux.exe conpty/runtimes/win-x64/native/conpty.dll conpty/build/native/runtimes/x64/OpenConsole.exe build/upgrade/
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pty-close.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pane-clear.sh || exit 1
+          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-popup-output.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade.sh
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh panel.sh
 
