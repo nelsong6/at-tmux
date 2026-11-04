@@ -23,6 +23,7 @@
 #endif
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -40,7 +41,7 @@ static enum cmd_retval		cmd_run_shell_exec(struct cmd *,
 static void	cmd_run_shell_timer(int, short, void *);
 static void	cmd_run_shell_callback(struct job *);
 static void	cmd_run_shell_free(void *);
-static void	cmd_run_shell_print(struct job *, const char *);
+static void	cmd_run_shell_print(struct job *, const char *, int);
 
 const struct cmd_entry cmd_run_shell_entry = {
 	.name = "run-shell",
@@ -64,6 +65,7 @@ struct cmd_run_shell_data {
 	struct cmdq_item		*item;
 	struct session			*s;
 	int				 wp_id;
+	int				 pressed;
 	struct event			 timer;
 	int				 flags;
 };
@@ -77,13 +79,21 @@ cmd_run_shell_args_parse(struct args *args, __unused u_int idx,
 	return (ARGS_PARSE_STRING);
 }
 
+/*
+ * A background job is shown in its -t pane, or in the pane of the client whose
+ * key or mouse press started it. One started by a config file, a hook or a
+ * command-line client has nobody watching for it, so it goes to the message log
+ * rather than into whichever pane is current; a failure also goes to the error
+ * log.
+ */
 static void
-cmd_run_shell_print(struct job *job, const char *msg)
+cmd_run_shell_print(struct job *job, const char *msg, int failed)
 {
 	struct cmd_run_shell_data	*cdata = job_get_data(job);
 	struct window_pane		*wp = NULL;
-	struct cmd_find_state		 fs;
 	struct window_mode_entry	*wme;
+	struct client			*c = cdata->client;
+	char				*record = NULL;
 
 	if (cdata->wp_id != -1)
 		wp = window_pane_find_by_id(cdata->wp_id);
@@ -92,12 +102,18 @@ cmd_run_shell_print(struct job *job, const char *msg)
 			cmdq_print(cdata->item, "%s", msg);
 			return;
 		}
-		if (cdata->item != NULL && cdata->client != NULL)
-			wp = server_client_get_pane(cdata->client);
-		if (wp == NULL && cmd_find_from_nothing(&fs, 0) == 0)
-			wp = fs.wp;
-		if (wp == NULL)
+		if (cdata->pressed && c != NULL && (~c->flags & CLIENT_DEAD))
+			wp = server_client_get_pane(c);
+		if (wp == NULL) {
+			if (!failed)
+				xasprintf(&record, "'%s': %s", cdata->cmd, msg);
+			else if (log_message(msg) != 0)
+				xasprintf(&record, "%s (can't save error log: %s)",
+				    msg, strerror(errno));
+			server_add_message("%s", record != NULL ? record : msg);
+			free(record);
 			return;
+		}
 	}
 
 	wme = TAILQ_FIRST(&wp->modes);
@@ -151,6 +167,7 @@ cmd_run_shell_exec(struct cmd *self, struct cmdq_item *item)
 		cdata->item = item;
 	} else {
 		cdata->client = tc;
+		cdata->pressed = (cmdq_get_event(item)->key != KEYC_NONE);
 		cdata->flags |= JOB_NOWAIT;
 	}
 	if (cdata->client != NULL)
@@ -239,7 +256,7 @@ cmd_run_shell_callback(struct job *job)
 	do {
 		line = evbuffer_readln(event->input, NULL, EVBUFFER_EOL_LF);
 		if (line != NULL) {
-			cmd_run_shell_print(job, line);
+			cmd_run_shell_print(job, line, 0);
 			free(line);
 		}
 	} while (line != NULL);
@@ -250,7 +267,7 @@ cmd_run_shell_callback(struct job *job)
 		memcpy(line, EVBUFFER_DATA(event->input), size);
 		line[size] = '\0';
 
-		cmd_run_shell_print(job, line);
+		cmd_run_shell_print(job, line, 0);
 
 		free(line);
 	}
@@ -266,7 +283,7 @@ cmd_run_shell_callback(struct job *job)
 	} else
 		retcode = 0;
 	if (msg != NULL)
-		cmd_run_shell_print(job, msg);
+		cmd_run_shell_print(job, msg, 1);
 	free(msg);
 
 	if (item != NULL) {

@@ -49,6 +49,7 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
 CI runs on Forgejo (`.forgejo/workflows/ci.yml`). Its `build-and-test` job runs on upstairspc's runner (host mode, label `windows-latest`): Visual Studio Build Tools' CMake and vcpkg, libevent from `vcpkg.json` (manifest mode, VS's vcpkg has none other) with a binary cache in the runner's folder, and Git Bash for the tests. It runs these test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-message-log.sh` — failed launches keep their caller errors and make no pane, failed program exits are recorded, and error history survives server shutdown, rotates and expires old files (TMUX-41)
+- `win32-run-shell-background.sh` — a `run-shell -b` started by a command-line client, a config file or a hook puts its output and failed exit in the message log (the failure in the error log too), never into whichever pane is current, even with a client attached; one started by a key press shows in that client's pane, and one with `-t` in its pane (TMUX-101)
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
