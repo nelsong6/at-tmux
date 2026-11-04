@@ -26,5 +26,9 @@ pane's Claude/Codex conversation identity and local PR/work-package records.
 The existing first-message hooks mark the active conversation; the condition
 shows the strip only for that conversation, until it exits. Empty agent
 sessions, shells and app panes do not reserve a row.
-It binds a footer click to that conversation's links menu. tmux itself stays
+It binds a footer click to that conversation's persistent right-hand links panel.
+The panel is drawn by tmux, keeps All, PRs, Tickets and History tabs visible,
+and reserves space beside the conversation without creating a shell or pane.
+Tab returns input to the conversation; clicking the panel focuses it again.
+Escape closes the focused panel and restores the conversation's width. tmux itself stays
 independent of any particular agent, issue tracker or PR host.

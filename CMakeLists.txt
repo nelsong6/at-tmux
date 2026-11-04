@@ -149,6 +149,7 @@ set(TMUX_SOURCES
     layout-custom.c
     layout-set.c
     log.c
+    panel.c
     menu.c
     mode-tree.c
     names.c

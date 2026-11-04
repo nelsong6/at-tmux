@@ -2024,6 +2024,7 @@ struct client {
 	struct cmdq_item	*tty_wait_item;
 #endif
 	struct tty		 tty;
+	struct panel_data	*panel;
 
 	size_t			 written;
 	size_t			 discarded;
@@ -3940,6 +3941,20 @@ void		 window_set_next_ids(u_int, u_int);
 void		 window_pane_upgrade_event(struct window_pane *);
 void		 window_pane_upgrade_feed(struct window_pane *,
 		     struct evbuffer *);
+#endif
+
+
+/* panel.c */
+u_int panel_width(struct client *);
+void panel_clear(struct client *);
+void panel_draw(struct client *);
+int panel_key(struct client *, struct key_event *);
+struct screen *panel_mode(struct client *);
+int panel_open(struct client *, struct menu *, struct window_pane *, u_int, const char *, int);
+
+#ifdef HAVE_SERVER_UPGRADE
+void panel_upgrade_save(struct evbuffer *, struct client *);
+void panel_upgrade_restore(struct upgrade_reader *, struct client *);
 #endif
 
 #endif /* TMUX_H */

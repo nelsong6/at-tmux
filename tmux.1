@@ -7391,6 +7391,55 @@ bind -n C-b display-palette -w 90% -h 80% fzt -tiered \e
     -accept-nth 4 -input-col 3 -layout reverse
 .Ed
 .Tg menu
+.It Xo Ic display-panel
+.Op Fl C
+.Op Fl b Ar tab-count
+.Op Fl c Ar target-client
+.Op Fl g Ar generation
+.Op Fl t Ar target-pane
+.Op Fl T Ar title
+.Op Fl u
+.Op Ar name key command ...
+.Xc
+Display a persistent, native side panel beside the conversation on
+.Ar target-client .
+The panel reserves one third of the terminal width, up to 56 columns, without
+creating a pane or starting a program.
+At least 50 columns and six available rows are needed; resizing below this hides
+the panel until sufficient space returns.
+The panel is associated with the source pane's window and is hidden in other
+windows. Closing the source pane hides its panel.
+.Pp
+Each item has a name, shortcut key and tmux command, as for
+.Ic display-menu .
+A name beginning with a hyphen is an informational row.
+Long rows wrap and reflow when the client is resized.
+.Fl b
+keeps the first
+.Ar tab-count
+items in a fixed, clickable tab row (at most eight).
+The panel uses the existing menu styles.
+.Pp
+Click an action or select it with the arrow keys and Enter.
+Page Up, Page Down and the mouse wheel scroll.
+Tab returns keyboard input to the conversation while keeping the panel visible;
+click the panel to focus it again.
+Escape closes the focused panel and
+.Fl C
+closes it from a command.
+Actions keep the panel open.
+Other popups and prompts may be used above it.
+.Pp
+.Fl g
+assigns a generation token to the view.
+With
+.Fl u ,
+the contents are replaced only if that generation is still present, so a delayed
+refresh cannot reopen a closed panel or overwrite a newer view.
+An update preserves keyboard focus.
+Panels, their focus and scroll positions survive
+.Ic upgrade-server ;
+they are client UI and do not add anything to saved session layouts.
 .It Xo Ic display-menu
 .Op Fl OM
 .Op Fl b Ar border-lines

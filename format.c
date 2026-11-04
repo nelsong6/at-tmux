@@ -5784,6 +5784,8 @@ format_defaults_client(struct format_tree *ft, struct client *c)
 	if (ft->s == NULL)
 		ft->s = c->session;
 	ft->c = c;
+	format_add(ft, "client_panel_width", "%u", panel_width(c));
+	format_add(ft, "client_panel_focused", "%d", panel_mode(c) != NULL);
 }
 
 /* Set default format keys for a window. */

@@ -1081,7 +1081,7 @@ tty_window_bigger(struct tty *tty)
 	struct client	*c = tty->client;
 	struct window	*w = c->session->curw->window;
 
-	return (tty->sx < w->sx || tty->sy - status_reserved_size(c) < w->sy);
+	return (tty->sx - panel_width(c) < w->sx || tty->sy - status_reserved_size(c) < w->sy);
 }
 
 /* What offset should this window be drawn at? */
@@ -1107,7 +1107,7 @@ tty_window_offset1(struct tty *tty, u_int *ox, u_int *oy, u_int *sx, u_int *sy)
 
 	lines = status_reserved_size(c);
 
-	if (tty->sx >= w->sx && tty->sy - lines >= w->sy) {
+	if (tty->sx - panel_width(c) >= w->sx && tty->sy - lines >= w->sy) {
 		*ox = 0;
 		*oy = 0;
 		*sx = w->sx;
@@ -1117,7 +1117,7 @@ tty_window_offset1(struct tty *tty, u_int *ox, u_int *oy, u_int *sx, u_int *sy)
 		return (0);
 	}
 
-	*sx = tty->sx;
+	*sx = tty->sx - panel_width(c);
 	*sy = tty->sy - lines;
 
 	if (c->pan_window == w) {
@@ -1257,7 +1257,7 @@ tty_line_size_differs(struct tty *tty, const struct tty_ctx *ctx, u_int py)
 
 	if (ctx->bigger ||
 	    !tty_full_width(tty, ctx) ||
-	    tty->client->overlay_check != NULL)
+	    (tty->client->overlay_check != NULL || panel_width(tty->client) != 0))
 		return (0);
 	size = grid_get_line(s->grid, s->grid->hsize + py)->flags &
 	    GRID_LINE_SIZE;
@@ -1380,7 +1380,7 @@ tty_clear_line(struct tty *tty, const struct grid_cell *defaults, u_int py,
 		return;
 
 	/* If genuine BCE is available, can try escape sequences. */
-	if (c->overlay_check == NULL && !tty_fake_bce(tty, defaults, bg)) {
+	if ((c->overlay_check == NULL && panel_width(c) == 0) && !tty_fake_bce(tty, defaults, bg)) {
 		/* Off the end of the line, use EL if available. */
 		if (px + nx >= lsx && tty_term_has(tty->term, TTYC_EL)) {
 			tty_cursor(tty, px, py);
@@ -1503,7 +1503,7 @@ tty_clear_area(struct tty *tty, const struct grid_cell *defaults, u_int py,
 		return;
 
 	/* If genuine BCE is available, can try escape sequences. */
-	if (c->overlay_check == NULL && !tty_fake_bce(tty, defaults, bg)) {
+	if ((c->overlay_check == NULL && panel_width(c) == 0) && !tty_fake_bce(tty, defaults, bg)) {
 		/* Use ED if clearing off the bottom of the terminal. */
 		if (px == 0 &&
 		    px + nx >= tty->sx &&
@@ -1800,7 +1800,7 @@ tty_cmd_insertcharacter(struct tty *tty, const struct tty_ctx *ctx)
 	    tty_fake_bce(tty, &ctx->defaults, ctx->bg) ||
 	    (!tty_term_has(tty->term, TTYC_ICH) &&
 	    !tty_term_has(tty->term, TTYC_ICH1)) ||
-	    c->overlay_check != NULL) {
+	    (c->overlay_check != NULL || panel_width(c) != 0)) {
 		tty_draw_pane(tty, ctx, ctx->ocy);
 		return;
 	}
@@ -1823,7 +1823,7 @@ tty_cmd_deletecharacter(struct tty *tty, const struct tty_ctx *ctx)
 	    tty_fake_bce(tty, &ctx->defaults, ctx->bg) ||
 	    (!tty_term_has(tty->term, TTYC_DCH) &&
 	    !tty_term_has(tty->term, TTYC_DCH1)) ||
-	    c->overlay_check != NULL) {
+	    (c->overlay_check != NULL || panel_width(c) != 0)) {
 		tty_draw_pane(tty, ctx, ctx->ocy);
 		return;
 	}
@@ -1857,7 +1857,7 @@ tty_cmd_insertline(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_IL1) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL ||
+	    (c->overlay_check != NULL || panel_width(c) != 0) ||
 	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
@@ -1886,7 +1886,7 @@ tty_cmd_deleteline(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_DL1) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL ||
+	    (c->overlay_check != NULL || panel_width(c) != 0) ||
 	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
@@ -1948,7 +1948,7 @@ tty_cmd_reverseindex(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_RIN)) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL ||
+	    (c->overlay_check != NULL || panel_width(c) != 0) ||
 	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
@@ -1981,7 +1981,7 @@ tty_cmd_linefeed(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_CSR) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL ||
+	    (c->overlay_check != NULL || panel_width(c) != 0) ||
 	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
@@ -2023,7 +2023,7 @@ tty_cmd_scrollup(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_CSR) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL ||
+	    (c->overlay_check != NULL || panel_width(c) != 0) ||
 	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
@@ -2065,7 +2065,7 @@ tty_cmd_scrolldown(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_RIN)) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL ||
+	    (c->overlay_check != NULL || panel_width(c) != 0) ||
 	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;

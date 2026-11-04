@@ -562,6 +562,7 @@ server_client_lost(struct client *c)
 	c->flags |= CLIENT_DEAD;
 
 	server_client_clear_overlay(c);
+	panel_clear(c);
 	status_prompt_clear(c);
 	status_message_clear(c);
 
@@ -2822,7 +2823,8 @@ server_client_handle_key(struct client *c, struct key_event *event)
 		if (c->prompt_string != NULL) {
 			if (status_prompt_key(c, event->key) == 0)
 				return (0);
-		}
+		} else if (panel_key(c, event))
+			return (0);
 	}
 
 	/*
@@ -3113,9 +3115,11 @@ server_client_reset_state(struct client *c)
 	if (c->overlay_draw != NULL) {
 		if (c->overlay_mode != NULL)
 			s = c->overlay_mode(c, c->overlay_data, &cx, &cy);
-	} else if (c->prompt_string == NULL)
-		s = wp->screen;
-	else
+	} else if (c->prompt_string == NULL) {
+		s = panel_mode(c);
+		if (s == NULL)
+			s = wp->screen;
+	} else
 		s = c->status.active;
 	if (s != NULL)
 		mode = s->mode;
@@ -3178,6 +3182,9 @@ server_client_reset_state(struct client *c)
 		else if (~mode & MODE_MOUSE_ALL)
 			mode |= MODE_MOUSE_BUTTON;
 	}
+
+	if (panel_width(c) != 0)
+		mode |= MODE_MOUSE_ALL|MODE_MOUSE_BUTTON;
 
 	/* Clear bracketed paste mode if at the prompt. */
 	if (c->overlay_draw == NULL && c->prompt_string != NULL)

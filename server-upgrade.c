@@ -1222,6 +1222,7 @@ upgrade_save_client(struct evbuffer *evb, struct client *c,
 	 */
 	upw_u32(o, (uint32_t)(c->tty.fg + 1));
 	upw_u32(o, (uint32_t)(c->tty.bg + 1));
+	panel_upgrade_save(o, c);
 	upw_obj(evb, o);
 	evbuffer_free(o);
 	return (0);
@@ -1330,6 +1331,7 @@ upgrade_restore_client(struct upgrade_reader *r)
 	}
 	c->tty.fg = (int)upr_u32(&o) - 1;
 	c->tty.bg = (int)upr_u32(&o) - 1;
+	panel_upgrade_restore(&o, c);
 	if (o.error) {
 		r->error = 1;
 		return;

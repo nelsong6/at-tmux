@@ -51,6 +51,7 @@ extern const struct cmd_entry cmd_customize_mode_entry;
 extern const struct cmd_entry cmd_delete_buffer_entry;
 extern const struct cmd_entry cmd_detach_client_entry;
 extern const struct cmd_entry cmd_display_menu_entry;
+extern const struct cmd_entry cmd_display_panel_entry;
 extern const struct cmd_entry cmd_display_message_entry;
 extern const struct cmd_entry cmd_display_palette_entry;
 extern const struct cmd_entry cmd_display_popup_entry;
@@ -155,6 +156,7 @@ const struct cmd_entry *cmd_table[] = {
 	&cmd_delete_buffer_entry,
 	&cmd_detach_client_entry,
 	&cmd_display_menu_entry,
+	&cmd_display_panel_entry,
 	&cmd_display_message_entry,
 	&cmd_display_palette_entry,
 	&cmd_display_popup_entry,

@@ -677,6 +677,7 @@ screen_redraw_screen(struct client *c)
 		log_debug("%s: redrawing status", c->name);
 		screen_redraw_draw_status(&ctx);
 	}
+	panel_draw(c);
 	if (c->overlay_draw != NULL && (flags & CLIENT_REDRAWOVERLAY)) {
 		log_debug("%s: redrawing overlay", c->name);
 		c->overlay_draw(c, c->overlay_data, &ctx);
