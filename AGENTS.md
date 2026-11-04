@@ -3,6 +3,9 @@
 Read [CLAUDE.md](CLAUDE.md) for build commands, regression tests, Windows shell
 quirks, process cleanup, and release publishing.
 
+Read [TESTING.md](TESTING.md) for isolated normal-entry-point checks and signed
+release verification in the existing terminal.
+
 ## Make changes ready in the existing terminal
 
 For changes to interactive behavior, completing the task includes making the

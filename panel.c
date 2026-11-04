@@ -2,6 +2,9 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include "tmux.h"
 
 static u_int
@@ -9,6 +12,8 @@ panel_min(u_int a, u_int b)
 {
 	return (a < b ? a : b);
 }
+
+static uint64_t panel_next_generation;
 
 struct panel_line {
 	char *text;
@@ -33,8 +38,10 @@ u_int
 panel_width(struct client *c)
 {
 	struct window_pane *wp;
+
+	/* Footer formats query this width, so use the cached footer size. */
 	if (c->panel == NULL || c->session == NULL || c->session->curw == NULL ||
-	    c->tty.sx < 50 || c->tty.sy < status_reserved_size(c) + 6)
+	    c->tty.sx < 50 || c->tty.sy < status_line_size(c) + c->status.footer_size + 6)
 		return (0);
 	wp = window_pane_find_by_id(c->panel->source);
 	if (wp == NULL || wp->window != c->session->curw->window)
@@ -129,9 +136,15 @@ panel_mode(struct client *c)
 }
 
 int
-panel_open(struct client *c, struct menu *menu, struct window_pane *wp, u_int tabs, const char *generation, int update)
+panel_open(struct client *c, struct menu *menu, struct window_pane *wp,
+    u_int tabs, const char *generation, int update, const char *expected)
 {
 	struct panel_data *pd;
+	if (expected != NULL && (c->panel == NULL || c->panel->generation == NULL ||
+	    strcmp(c->panel->generation, expected) != 0)) {
+		menu_free(menu);
+		return (1);
+	}
 	if (update && (c->panel == NULL || generation == NULL ||
 	    c->panel->generation == NULL ||
 	    strcmp(c->panel->generation, generation) != 0)) {
@@ -152,9 +165,10 @@ panel_open(struct client *c, struct menu *menu, struct window_pane *wp, u_int ta
 	pd->generation = generation != NULL ? xstrdup(generation) : NULL;
 	pd->tabs = panel_min(tabs, menu->count);
 	pd->source = wp->id;
-	if (!update)
+	if (!update && expected == NULL)
 		pd->focused = 1;
-	pd->top = pd->tabs;
+	if (!update)
+		pd->top = pd->tabs;
 	pd->choice = -1;
 	panel_reflow(c);
 	recalculate_sizes();
@@ -199,7 +213,7 @@ panel_draw(struct client *c)
 			}
 			continue;
 		} else if (y == height - 1)
-			text = pd->focused ? "Esc close | Tab conversation" : "Click panel to focus";
+			text = pd->focused ? "Esc close | Tab return | Shift-drag select" : "Click panel | Shift-drag selects text";
 		else {
 			row = pd->top + y - 1 - (pd->tabs != 0);
 			text = row < pd->nlines ? pd->lines[row].text : NULL;
@@ -341,6 +355,13 @@ chosen:
 	}
 	cmd_find_from_pane(&fs, wp, 0);
 	state = cmdq_new_state(&fs, NULL, 0);
+	if (strstr(pd->menu->items[pd->lines[pd->choice].item].command,
+	    "#{panel_action_generation}") != NULL) {
+		free(pd->generation);
+		xasprintf(&pd->generation, "p%lu-%llu", (unsigned long)getpid(),
+		    (unsigned long long)++panel_next_generation);
+		cmdq_add_format(state, "panel_action_generation", "%s", pd->generation);
+	}
 	if (cmd_parse_and_append(pd->menu->items[pd->lines[pd->choice].item].command, NULL, c,
 	    state, &error) == CMD_PARSE_ERROR) {
 		cmdq_append(c, cmdq_get_error(error));

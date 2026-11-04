@@ -1714,6 +1714,24 @@ format_cb_client_utf8(struct format_tree *ft)
 	return (NULL);
 }
 
+/* Callback for client_panel_width. */
+static void *
+format_cb_client_panel_width(struct format_tree *ft)
+{
+	if (ft->c != NULL)
+		return (format_printf("%u", panel_width(ft->c)));
+	return (NULL);
+}
+
+/* Callback for client_panel_focused. */
+static void *
+format_cb_client_panel_focused(struct format_tree *ft)
+{
+	if (ft->c != NULL)
+		return (xstrdup(panel_mode(ft->c) != NULL ? "1" : "0"));
+	return (NULL);
+}
+
 /* Callback for client_width. */
 static void *
 format_cb_client_width(struct format_tree *ft)
@@ -3202,6 +3220,12 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "client_name", FORMAT_TABLE_STRING,
 	  format_cb_client_name
+	},
+	{ "client_panel_focused", FORMAT_TABLE_STRING,
+	  format_cb_client_panel_focused
+	},
+	{ "client_panel_width", FORMAT_TABLE_STRING,
+	  format_cb_client_panel_width
 	},
 	{ "client_pid", FORMAT_TABLE_STRING,
 	  format_cb_client_pid
@@ -5784,8 +5808,6 @@ format_defaults_client(struct format_tree *ft, struct client *c)
 	if (ft->s == NULL)
 		ft->s = c->session;
 	ft->c = c;
-	format_add(ft, "client_panel_width", "%u", panel_width(c));
-	format_add(ft, "client_panel_focused", "%d", panel_mode(c) != NULL);
 }
 
 /* Set default format keys for a window. */

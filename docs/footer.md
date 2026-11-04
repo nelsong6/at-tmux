@@ -32,3 +32,6 @@ and reserves space beside the conversation without creating a shell or pane.
 Tab returns input to the conversation; clicking the panel focuses it again.
 Escape closes the focused panel and restores the conversation's width. tmux itself stays
 independent of any particular agent, issue tracker or PR host.
+
+Panel verification, including the real configured picker and existing-terminal
+delivery, is described in [TESTING.md](../TESTING.md).

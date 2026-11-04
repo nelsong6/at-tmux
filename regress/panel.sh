@@ -19,9 +19,16 @@ cat >"$OUT/test.conf" <<EOF
 set -g default-shell "$PS"
 set -g status off
 set -g mouse on
+set -g @show-footer 1
+set -g status-footer 'PANEL_FOOTER_#{client_panel_width}_#{client_panel_focused}'
+set -g status-footer-condition '#{==:#{@show-footer},1}'
+EOF
+cat >"$OUT/outer.conf" <<EOF
+set -g default-shell "$PS"
+set -g status off
 EOF
 $TMUX -f "$OUT/test.conf" new -d -x120 -y28 -s panel || exit 1
-$OUTER -f "$OUT/test.conf" new -d -x120 -y28 "$EXE" "-L$TEST_SOCKET" attach-session || exit 1
+$OUTER -f "$OUT/outer.conf" new -d -x120 -y28 "$EXE" "-L$TEST_SOCKET" attach-session || exit 1
 attached() { [ -n "$($TMUX list-clients 2>/dev/null)" ]; }
 wait_until attached || { echo 'no attached client'; exit 1; }
 CLIENT=$($TMUX list-clients -F '#{client_name}' | tr -d '\r')
@@ -44,6 +51,10 @@ wait_until option_is @tab prs || { echo 'mouse tab failed'; exit 1; }
 $TMUX send-keys -K -c "$CLIENT" x
 wait_until option_is @picked yes || { echo 'action failed'; exit 1; }
 wait_until width_is 80 || exit 1
+wait_until contains PANEL_FOOTER_40_1 || { echo 'conditional footer lost panel formats'; exit 1; }
+# Footer conditions may themselves inspect the panel without reentering layout.
+$TMUX set -g status-footer-condition '#{>:#{client_panel_width},0}'
+wait_until contains PANEL_FOOTER_40_1 || exit 1
 $TMUX send-keys -K -c "$CLIENT" Tab
 focused_is() { [ "$($TMUX display -c "$CLIENT" -p '#{client_panel_focused}' | tr -d '\r')" = "$1" ]; }
 wait_until focused_is 0 || exit 1
@@ -61,8 +72,34 @@ $TMUX new-window -n other || exit 1
 wait_until width_is 120 || { echo 'panel leaked into another window'; $TMUX list-windows -F '#{window_id}|#{window_name}|#{window_width}|#{window_active}'; exit 1; }
 $TMUX select-window -t panel:0
 wait_until width_is 80 || exit 1
-$TMUX send-keys -K -c "$CLIENT" Escape
+# A queued navigation cannot replace a newer view or steal conversation focus.
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Wrong -g third -G first -- -STALE-VIEW '' ''
+wait_until contains NEW-VIEW || exit 1
+$TMUX send-keys -K -c "$CLIENT" Tab
+wait_until focused_is 0 || exit 1
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Next -g third -G second -- -NEXT-VIEW '' ''
+wait_until contains NEXT-VIEW || exit 1
+wait_until focused_is 0 || { echo 'navigation stole conversation focus'; exit 1; }
+$TMUX display-panel -c "$CLIENT" -C
 wait_until width_is 120 || { echo 'close did not return columns'; exit 1; }
+# Generations belong to input order, independently of background command order.
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Navigation -- Next n 'set -gF @navigation "#{panel_action_generation}"'
+$TMUX send-keys -K -c "$CLIENT" n
+navigation_set() { [ -n "$($TMUX show -gqv @navigation | tr -d '\r')" ]; }
+wait_until navigation_set || exit 1
+first_navigation=$($TMUX show -gqv @navigation | tr -d '\r')
+$TMUX send-keys -K -c "$CLIENT" n
+navigation_changed() { [ "$($TMUX show -gqv @navigation | tr -d '\r')" != "$first_navigation" ]; }
+wait_until navigation_changed || exit 1
+last_navigation=$($TMUX show -gqv @navigation | tr -d '\r')
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Last -g accepted -G "$last_navigation" -- -LATEST-NAVIGATION '' ''
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Old -g rejected -G "$first_navigation" -- -STALE-VIEW '' ''
+wait_until contains LATEST-NAVIGATION || exit 1
+$TMUX send-keys -K -c "$CLIENT" Escape
+wait_until width_is 120 || exit 1
+# A queued navigation cannot reopen a closed panel.
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Reopen -g fourth -G third -- -STALE-VIEW '' ''
+wait_until width_is 120 || exit 1
 # Closing also invalidates the refresh generation.
 $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Stale -g second -u -- -STALE-VIEW '' ''
 wait_until width_is 120 || exit 1
@@ -70,13 +107,15 @@ wait_until width_is 120 || exit 1
 set --
 i=1
 while [ "$i" -le 70 ]; do set -- "$@" "-SCROLL-ROW-$i" '' ''; i=$((i+1)); done
-$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Scroll -- Action x "set -g @hidden activated" "$@"
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Scroll -g scroll -- Action x "set -g @hidden activated" "$@"
 $TMUX send-keys -K -c "$CLIENT" x
 wait_until option_is @hidden activated || exit 1
 $TMUX set -g @hidden untouched
 $TMUX send-keys -K -c "$CLIENT" NPage Enter
 wait_until option_is @hidden untouched || { echo 'scrolled-away action ran'; exit 1; }
 wait_until contains SCROLL-ROW-27 || { echo 'scroll failed'; $OUTER capture-pane -p; exit 1; }
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Refreshed -g scroll -u -- Action x "set -g @hidden activated" "$@"
+wait_until contains SCROLL-ROW-27 || { echo 'refresh reset scroll'; exit 1; }
 # Upgrade preserves panel content, scroll and focus along with pane processes.
 PID=$($TMUX display -p '#{pid}' | tr -d '\r')
 PANES=$($TMUX list-panes -F '#{pane_id}|#{pane_pid}')

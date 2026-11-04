@@ -52,9 +52,10 @@ const struct cmd_entry cmd_display_menu_entry = {
 
 const struct cmd_entry cmd_display_panel_entry = {
 	.name = "display-panel",
-	.args = { "b:c:Cg:t:T:u", 0, -1, cmd_display_menu_args_parse },
+	.args = { "b:c:Cg:G:t:T:u", 0, -1, cmd_display_menu_args_parse },
 	.usage = "[-C] [-b tab-count] [-c target-client] " CMD_TARGET_PANE_USAGE
-	    " [-g generation] [-T title] [-u] [name key command ...]",
+	    " [-g generation] [-G expected-generation] [-T title] [-u] "
+	    "[name key command ...]",
 	.target = { 't', CMD_FIND_PANE, 0 },
 	.flags = CMD_CLIENT_CFLAG,
 	.exec = cmd_display_menu_exec
@@ -385,7 +386,7 @@ cmd_display_menu_exec(struct cmd *self, struct cmdq_item *item)
 			}
 		}
 		if (panel_open(tc, menu, target->wp, tabs,
-		    args_get(args, 'g'), args_has(args, 'u')) < 0) {
+		    args_get(args, 'g'), args_has(args, 'u'), args_get(args, 'G')) < 0) {
 			menu_free(menu);
 			cmdq_error(item, "side panel needs at least 50 columns and 6 rows");
 			return (CMD_RETURN_ERROR);

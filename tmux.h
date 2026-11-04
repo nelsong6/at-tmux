@@ -3950,7 +3950,8 @@ void panel_clear(struct client *);
 void panel_draw(struct client *);
 int panel_key(struct client *, struct key_event *);
 struct screen *panel_mode(struct client *);
-int panel_open(struct client *, struct menu *, struct window_pane *, u_int, const char *, int);
+int panel_open(struct client *, struct menu *, struct window_pane *, u_int,
+    const char *, int, const char *);
 
 #ifdef HAVE_SERVER_UPGRADE
 void panel_upgrade_save(struct evbuffer *, struct client *);

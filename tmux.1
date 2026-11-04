@@ -7396,6 +7396,7 @@ bind -n C-b display-palette -w 90% -h 80% fzt -tiered \e
 .Op Fl b Ar tab-count
 .Op Fl c Ar target-client
 .Op Fl g Ar generation
+.Op Fl G Ar expected-generation
 .Op Fl t Ar target-pane
 .Op Fl T Ar title
 .Op Fl u
@@ -7428,6 +7429,7 @@ Escape closes the focused panel and
 .Fl C
 closes it from a command.
 Actions keep the panel open.
+Use the terminal's Shift-drag gesture to select displayed panel text.
 Other popups and prompts may be used above it.
 .Pp
 .Fl g
@@ -7436,7 +7438,20 @@ With
 .Fl u ,
 the contents are replaced only if that generation is still present, so a delayed
 refresh cannot reopen a closed panel or overwrite a newer view.
-An update preserves keyboard focus.
+An update preserves keyboard focus and scroll position.
+.Fl G
+replaces the view only if its current generation matches
+.Ar expected-generation ,
+then assigns the new
+.Fl g
+value. This guards queued navigation as well as refreshes, while retaining
+keyboard focus if the user returned to the conversation in the meantime.
+A command containing
+.Ql #{panel_action_generation}
+assigns a fresh generation at the time it is chosen and supplies that format
+in its command queue. Asynchronous navigation may use it with
+.Fl G
+so the most recent choice wins, even if an earlier command starts later.
 Panels, their focus and scroll positions survive
 .Ic upgrade-server ;
 they are client UI and do not add anything to saved session layouts.
