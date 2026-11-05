@@ -51,7 +51,7 @@
  * window too: when a window is destroyed (killed, or its last pane exited, but
  * not moved) it goes on top of closed-windows in the same folder, and
  * reopen-window takes it off again. Nothing is recorded while the server
- * itself shuts down.
+ * itself shuts down, or while Windows ends the session (ss_ending).
  *
  * The snapshot an earlier server of the same name left is the previous set:
  * the first write sets it aside as live/<socket>-previous.set, and the first
@@ -98,6 +98,20 @@ static int		 ss_restoring;
 static char		*ss_attached;
 static char		*ss_show;
 static char		*ss_last_sessions;
+
+/*
+ * Windows is ending this session: panes die before the server does, so what is
+ * left is not the set. Not latched, since a shutdown can be cancelled.
+ */
+static int
+ss_ending(void)
+{
+#ifdef _WIN32
+	return (GetSystemMetrics(SM_SHUTTINGDOWN) != 0);
+#else
+	return (0);
+#endif
+}
 
 static const char *
 ss_dir(void)
@@ -857,7 +871,8 @@ ss_flush(__unused int fd, __unused short events, __unused void *data)
 	uint64_t	 started = get_timer();
 
 	ss_pending = 0;
-	if (ss_stopped || (dir = ss_dir()) == NULL || RB_EMPTY(&sessions))
+	if (ss_stopped || ss_ending() || (dir = ss_dir()) == NULL ||
+	    RB_EMPTY(&sessions))
 		return;
 
 	/* The session the window shows; a closing window's is kept. */
@@ -920,7 +935,8 @@ session_set_closed(void)
 {
 	const char	*dir;
 
-	if (ss_stopped || (dir = ss_dir()) == NULL || ss_last_sessions == NULL)
+	if (ss_stopped || ss_ending() || (dir = ss_dir()) == NULL ||
+	    ss_last_sessions == NULL)
 		return;
 	ss_write(dir, ss_last_sessions, (long long)time(NULL));
 	ss_stopped = 1;
@@ -946,7 +962,7 @@ session_set_window_destroyed(struct window *w)
 
 	if (w->session_set_line == NULL)
 		return;
-	if (!ss_stopped && (dir = ss_dir()) != NULL) {
+	if (!ss_stopped && !ss_ending() && (dir = ss_dir()) != NULL) {
 		path = ss_closed_path(dir);
 		if ((old = ss_read_file(path)) == NULL)
 			old = xstrdup("");
