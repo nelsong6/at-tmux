@@ -91,6 +91,9 @@
 #define SESSION_SET_VERSION "tmux-session-set 1"
 #define SESSION_SET_ID_WAIT 60
 
+/* Seconds a restore can go without a step before nothing waits for it. */
+#define SESSION_SET_STALL 5
+
 /* A window's place in its session, and its flags in the reopen line. */
 #define SS_CURRENT 0x1
 #define SS_LAST 0x2
@@ -136,9 +139,11 @@ struct ss_job {
 	struct cmdq_item *item;
 	struct cmdq_item **held;
 	u_int		  nheld;
+	int		  stalled;
 	struct event	  timer;
 	int		  silent;	/* no offer: after a restart */
 	char		 *show;		/* for the first client, if none yet */
+	struct event	  stall;
 };
 static struct ss_job	*ss_job;
 static char		*ss_job_last;
@@ -1832,6 +1837,7 @@ ss_job_end(int done)
 {
 	struct ss_job	*job = ss_job;
 	struct ss_step	*step;
+	struct client	*c;
 	const char	*dir;
 	char		*result;
 	u_int		 i;
@@ -1841,6 +1847,7 @@ ss_job_end(int done)
 		return;
 	ss_job = NULL;
 	evtimer_del(&job->timer);
+	evtimer_del(&job->stall);
 
 	if (job->failed != 0) {
 		xasprintf(&result, "restored %u of %u windows, failed: %.*s",
@@ -1876,7 +1883,8 @@ ss_job_end(int done)
 	}
 
 	if (job->item != NULL) {
-		if (done && job->failed != 0)
+		c = cmdq_get_client(job->item);
+		if (done && job->failed != 0 && (~c->flags & CLIENT_DEAD))
 			cmdq_error(job->item, "%s", result);
 		cmdq_continue(job->item);
 	}
@@ -1906,6 +1914,39 @@ ss_job_end(int done)
 	session_set_changed();
 	if (ss_show != NULL || ss_notice != NULL)
 		session_set_offer_soon();
+}
+
+/*
+ * No step for a while. What waits for the job can be what holds it up: a
+ * foreground run-shell in a hook keeps the global queue until its program
+ * ends, and that program can be a tmux waiting for the job. So from here
+ * nothing waits.
+ */
+static void
+ss_job_stalled(__unused int fd, __unused short events, __unused void *data)
+{
+	struct ss_job	*job = ss_job;
+	u_int		 i;
+
+	if (job == NULL)
+		return;
+	job->stalled = 1;
+	if (job->item != NULL) {
+		cmdq_continue(job->item);
+		job->item = NULL;
+	}
+	for (i = 0; i < job->nheld; i++)
+		cmdq_continue(job->held[i]);
+	job->nheld = 0;
+}
+
+/* Start the stall timer again. */
+static void
+ss_job_watch(struct ss_job *job)
+{
+	struct timeval	tv = { SESSION_SET_STALL, 0 };
+
+	evtimer_add(&job->stall, &tv);
 }
 
 /* Whether a step's window is there, with all its panes. */
@@ -1946,6 +1987,7 @@ ss_job_stepped(__unused struct cmdq_item *item, __unused void *data)
 		ss_job_show(status, 0);
 		free(status);
 	}
+	ss_job_watch(job);
 	evtimer_add(&job->timer, &tv);
 	return (CMD_RETURN_NORMAL);
 }
@@ -1996,12 +2038,14 @@ ss_job_start(struct ss_snap **snaps, char **files, u_int nfiles,
 		fatalx("out of memory");
 	ss_restore(job, snaps, nfiles, replace, c);
 	evtimer_set(&job->timer, ss_job_step, NULL);
+	evtimer_set(&job->stall, ss_job_stalled, NULL);
 	ss_job = job;
 	server_add_message("restore-set: restoring %u windows", job->total);
 
 	/* Marked now, so a crash from here leaves the source to be offered. */
 	ss_written = 0;
 	ss_flush(-1, 0, NULL);
+	ss_job_watch(job);
 	evtimer_add(&job->timer, &tv);
 }
 
@@ -2092,7 +2136,7 @@ session_set_restoring(void)
 int
 session_set_hold(struct cmdq_item *item)
 {
-	if (ss_job == NULL)
+	if (ss_job == NULL || ss_job->stalled)
 		return (0);
 	ss_job->held = xreallocarray(ss_job->held, ss_job->nheld + 1,
 	    sizeof *ss_job->held);

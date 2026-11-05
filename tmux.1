@@ -3688,6 +3688,11 @@ A command from a client that makes a session or a window waits for the end, and
 a second
 .Ic restore-set
 is refused.
+A restore that makes no window for five seconds stops anything waiting for it,
+since a foreground
+.Ic run-shell
+in a hook can be holding it up with a client of its own; it carries on when it
+can.
 .Ic restore-set
 with no
 .Ar file
@@ -5222,6 +5227,14 @@ Mouse bindings use the Footer suffix, for example
 .Ic MouseDown1Footer ;
 .Ql #{mouse_status_range}
 reports its user range.
+A
+.Ql #()
+command here runs when first shown, when its text changes and on
+.Ic refresh-client
+.Fl S ,
+never on
+.Ic status-interval
+or another redraw, so what changes its output must say so.
 .It Ic status-footer-condition Ar format
 Show the footer only when
 .Ar format

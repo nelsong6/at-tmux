@@ -65,10 +65,12 @@ CI runs on Forgejo (`.forgejo/workflows/ci.yml`). Its `build-and-test` job runs 
 - `win32-process-watch.sh` — the server sees every child it starts exit: 70 jobs at once, rounds of overlapping jobs that end oldest first, and a job and a pane started beside a program that keeps running (before TMUX-54 a table of 64 filled up and popups, jobs and panes stayed open after their program ended)
 - `win32-environment.sh` — changes to global and session environments reach background commands and pane pipes, including PATH lookup through a directory with spaces, removed variables and Unicode values; new panes receive the same values (TMUX-80)
 - `win32-child-path.sh` — direct pane and pipe programs resolve through their child environment's PATH, including directories with spaces, session overrides and removed paths (TMUX-86)
+- `win32-crash-log.sh` — run on the signed package: a server started through a junction that then moves to the next release, faulting in its own code (`win32-crash.ps1`, a thread started on `xstrdup`), writes a `tmux-crash-<pid>.log` naming function, file and line from the `tmux.pdb` beside the exe, with none at the build path stored in it (TMUX-114)
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)
 - `win32-popup-output.sh` — a pane changing behind a popup (erasing to the end of a line or the screen, deleting or inserting characters, scrolling part of its screen, overwriting half a wide character) leaves every popup row and its border alone and still changes beside the popup; a wide character of its own colour across the popup's edge no longer stops the server (TMUX-103; also run beside `conpty.dll`, which is what passes the delete and insert through to tmux)
 - `win32-attach-size.sh` — a client attaches at its console's size when the console is resized between identify and attach (runs the client in a pseudo-console via `win32-pty.ps1`)
+- `win32-client-name.sh` — two attached clients each have the name `client-<pid>`, since every Windows console reports the tty `CON`: `display-message -c`, `refresh-client -S -t`, `switch-client -c` and `choose-client`'s Enter reach the client named and no other; `#{client_tty}` stays `CON` (before TMUX-119 both were `CON` and all of these reached whichever attached first). `win32-upgrade.sh` checks the name survives `upgrade-server`
 - `win32-wrap.sh` — a row a pane wrapped reaches the client's console whole (the client runs in a pane of a second server, whose copy shows what it drew)
 - `win32-pane-clear.sh` — clearing either side of a split preserves the other pane and native border in an attached Windows client, even when terminal features request DECSLRM margins; console output cannot preserve those margins, so Windows always uses bounded clear operations
 - `win32-linesize.sh` — a double-width or double-height line (DECDWL, DECDHL) wraps at half the pane's width and DECSWL restores it, in the pane and as the client draws it (outer-server pattern as above). That the terminal shows the rows at double size is checked by eye in Windows Terminal (`window-shot`), since no capture reports a row's size
@@ -86,6 +88,7 @@ CI runs on Forgejo (`.forgejo/workflows/ci.yml`). Its `build-and-test` job runs 
 - `win32-new-window-options.sh` — `new-window -o name=value` sets window options on the new window before its program can end: with `remain-on-exit=failed` a program that fails at once keeps its window, output and exit status, one that succeeds closes it, a bad `-o` makes no window, and `-W` switches to the dead pane once its message is drawn (TMUX-52)
 - `win32-global-foreground.sh` — `#{global_key_terminal_foreground}` is 1 when the client's terminal (a window of a process it runs under) had the focus at a global key, else 0; `win32-foreground.ps1` presses Win+` only on a CI runner with a desktop of its own (`ci_desktop` in `win32-test.sh`), which upstairspc's runner, in session 0, is not; `win32-control-client.sh`'s global key test likewise
 - `win32-session-restart.sh` — a set last saved before this Windows sign-in comes back with no offer, with no client or under one, the first client landing on the session it showed and told of any window that failed, and a second restart before any client attached keeps it; one saved since is offered as likely crash recovery; a session in use, a server that died in a restore and an upgraded server all ask rather than restore (`@session-set-signin` stands in for the sign-in, since the runner in session 0 has none; runs beside `conpty.dll` for the upgrade)
+- `win32-footer.sh` — `status-footer` keeps its own row beside the top bars through pane output, prompts, resizing, hidden bars and an upgrade, with its own clicks and condition; a `#()` job in it runs when told by `refresh-client -S` or when its command changes, not on a redraw (TMUX-112)
 - `win32-upgrade.sh` — `upgrade-server` hands a server with an attached client (unfocused, its pane asking for focus reports) to another process without restarting its panes, waits while copy mode is open, carries on when the new build fails, keeps the sessions row's order, and keeps the global environment as it was, less its handover variable `TMUX_UPGRADE`, in it and in new panes (6 tests; runs beside `conpty.dll`)
 - `win32-upgrade-keys.sh` — upgrades from the pre-footer build and between builds with deliberately different key numbers, preserving all bindings, custom tables, modifiers, notes, Unicode, unbinds and key options. Upgrade state version 2 names keys; version 1 imports the pre-footer numeric layout when its saved options have no `status-footer`.
 
@@ -101,18 +104,13 @@ They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after
 
 ## Where changes land
 
-GitHub (https://github.com/nelsong6/at-tmux) holds this repo's history, on every machine:
-branch from its master, open the PR there and merge it there, so the work Mac and Linux
-machine can change tmux too. `git config core.hooksPath .githooks` makes a push on a Mac
-or Linux machine build and run the tests CI's `linux` job lists.
+GitHub (https://github.com/nelsong6/at-tmux) and Forgejo stay in step, so a change can land on either, and the work Mac and Linux machine land theirs on GitHub. `git config core.hooksPath .githooks` makes a push on a Mac or Linux machine build and run the tests CI's `linux` job lists.
 
-Forgejo's `master` only follows GitHub's: `.forgejo/workflows/github-sync.yml` fast-forwards
-it every five minutes, and that push runs CI and the release. Nothing is committed to Forgejo
-directly, and a Forgejo commit GitHub lacks stops the sync until it moves to GitHub. The job signs in with the repo secret `AT_TMUX_SYNC_TOKEN`, a `write:repository` token of `nelson`, the one account allowed to push to protected `master`.
+A push to `master` on either side fast-forwards the other: `.github/workflows/forgejo-sync.yml` on the NAS's sync runner, because Forgejo is closed to the internet, and `.forgejo/workflows/github-sync.yml`, which signs in to GitHub with the repo secret `GH_SYNC_TOKEN`. Forgejo's push runs CI and the release. Nothing is forced: if `master` moves on both sides, the sync fails and shows in Alerts, and a session merges them.
 
 ## Publishing
 
-CI's `release` job makes every master commit whose run passed a Forgejo release, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and its `.sha256`.
+CI's `release` job makes every master commit whose run passed a Forgejo release, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with its `tmux.pdb`, `conpty.dll` and `OpenConsole.exe`) and its `.sha256`.
 
 After the complete release is published, CI starts home-sync on every PC. home-sync verifies the signed Windows package, switches `C:\Program Files\at-home\tmux\current`, and reconciles existing servers using `upgrade-server` while preserving their panes. The manual `publish.ps1` was retired by HOMECFG-110; merges need no separate publishing command.
 

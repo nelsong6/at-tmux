@@ -339,6 +339,14 @@ if(MSVC)
         /wd4702  # unreachable code
         /wd4996  # deprecated POSIX names
     )
+    # A release ships its PDB, so a crash log names function, file and line.
+    # /DEBUG alone turns off the optimizations a Release link has by default.
+    target_compile_options(tmux PRIVATE $<$<CONFIG:Release>:/Zi>)
+    target_link_options(tmux PRIVATE
+        $<$<CONFIG:Release>:/DEBUG>
+        $<$<CONFIG:Release>:/OPT:REF>
+        $<$<CONFIG:Release>:/OPT:ICF>
+    )
     # Use C11
     set_property(TARGET tmux PROPERTY C_STANDARD 11)
 endif()

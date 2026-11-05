@@ -4,8 +4,8 @@
 # client that asked waits for the end, other clients are answered with the true
 # state, and commands that make sessions or windows wait. A restored pane has its
 # session's ID, folder and window title without any hook, a window that fails
-# loses only itself, and a server that dies part way through leaves the set to be
-# offered again. A pane running Claude with no session saved is reported.
+# loses only itself, a client that dies or a hook that runs tmux doesn't stop it,
+# and a server that dies part way through leaves the set to be offered again. A pane running Claude with no session saved is reported.
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -209,8 +209,62 @@ wait "$RESTORE" || fail "restore-set failed"
 $TMUX kill-session -t =main-2 2>/dev/null
 quick_restore
 
-# 8. kill-server during a restore ends the server and the waiting client, and
-#    leaves the source.
+# 8. The client that asked dies during a restore with a window failing: the
+#    server carries on, and the failure stays on record.
+$TMUX set -g @session-set-restart-cmd "no-such-program.exe argument"
+slow_restore
+cp "$DIR/saved" "$DIR/dead.set"
+$TMUX restore-set -d dead.set >/dev/null 2>&1 &
+RESTORE=$!
+wait_until restoring || fail "no restore for the client to die in"
+"$(cygpath -u "$SYSTEMROOT")/System32/taskkill.exe" //F //PID \
+    "$(cat /proc/$RESTORE/winpid)" >/dev/null
+wait "$RESTORE"
+wait_until restored || fail "the restore never ended"
+$TMUX has-session -t =main 2>/dev/null ||
+    fail "a dead client's failed restore ended the server"
+$TMUX restore-set | tr -d '\r' | grep -q "failed: main-2:" ||
+    fail "the failure isn't on record"
+$TMUX kill-session -t =main-2 || fail "clean up"
+$TMUX set -gu @session-set-restart-cmd
+quick_restore
+
+# 9. restore-set from a hook runs on the queue its own steps use, so nothing
+#    waits for it there.
+hook_restored() { $TMUX has-session -t =main 2>/dev/null && restored; }
+hook_clean() {
+	$TMUX set-hook -gu session-renamed
+	$TMUX kill-session -t =main || fail "clean up"
+	$TMUX rename-session -t =moved main || fail "clean up"
+}
+cp "$DIR/saved" "$DIR/hook.set"
+$TMUX set-hook -g session-renamed 'restore-set -d hook.set'
+$TMUX rename-session -t =main moved || fail "rename"
+wait_until hook_restored || fail "restore-set from a hook never finished"
+hook_clean
+
+# 10. A foreground run-shell in a hook holds that queue until its program ends.
+#     The tmux it runs can't be left waiting for the restore behind it, whether
+#     that tmux starts the restore or runs a command that waits for one.
+SHELL_TMUX="\"$(cygpath -w "$(readlink -f "$TEST_TMUX")")\" -L$TEST_SOCKET"
+cp "$DIR/saved" "$DIR/shell.set"
+$TMUX set-hook -g session-renamed "run-shell '$SHELL_TMUX restore-set -d shell.set'"
+$TMUX rename-session -t =main moved || fail "rename"
+wait_until hook_restored || fail "restore-set from a hook's run-shell never finished"
+hook_clean
+cp "$DIR/saved" "$DIR/inner.set"
+$TMUX set-hook -g after-new-window "run-shell '$SHELL_TMUX new-session -d -s inner'"
+$TMUX restore-set -d inner.set || fail "a restore with a hook's tmux in it"
+wait_until restored || fail "a hook's tmux held the restore up"
+$TMUX set-hook -gu after-new-window
+$TMUX has-session -t =inner || fail "the hook's tmux never ran"
+$TMUX kill-session -t =inner || fail "clean up"
+[ "$($TMUX lsw -t =main-2 | wc -l | tr -d ' ')" = "$WINDOWS" ] ||
+    fail "a hook's tmux cost the restore windows"
+$TMUX kill-session -t =main-2 || fail "clean up"
+
+# 11. kill-server during a restore ends the server and the waiting client, and
+#     leaves the source.
 $TMUX kill-server
 wait_gone
 start_server
@@ -224,8 +278,8 @@ wait_gone
 wait "$RESTORE"
 [ -f "$DIR/eight.set" ] || fail "kill-server lost the source"
 
-# 9. A server that dies during a restore leaves the set where the next server
-#    offers it, with the partly restored snapshot in the archive.
+# 12. A server that dies during a restore leaves the set where the next server
+#     offers it, with the partly restored snapshot in the archive.
 start_server
 wait_until snap_has "main" || fail "the new server wrote no snapshot"
 slow_restore
