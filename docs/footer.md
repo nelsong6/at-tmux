@@ -21,6 +21,11 @@ events have their own names (`MouseDown1Footer`, `WheelUpFooter`, and so on),
 so bindings for the existing status bars keep their meaning.
 `#{mouse_status_range}` reports the clicked footer region.
 
+A `#()` command in the footer runs when first shown, when its text changes (a
+new pane's values, a new width) and on `refresh-client -S`. It does not run on
+`status-interval` or on any other redraw: the footer shows its last output
+until whatever changed that output says so.
+
 The home configuration uses `tmux-strip` from at-home-tools to read each
 pane's Claude/Codex conversation identity and local PR/work-package records.
 The existing first-message hooks mark the active conversation; the condition

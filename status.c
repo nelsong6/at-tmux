@@ -501,7 +501,7 @@ status_footer_redraw(struct client *c)
 	struct format_tree	*ft;
 	char			*expanded;
 	u_int			 n, width = c->tty.sx;
-	int			 flags = FORMAT_STATUS, force;
+	int			 flags = FORMAT_STATUS|FORMAT_JOBEVENT, force;
 
 	if (width == 0 || !status_footer_size(c))
 		return (0);
