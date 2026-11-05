@@ -39,7 +39,10 @@ jobs:
             echo "$tree has no package; this run builds it"
             exit 0
           fi
-          curl -fsSL -H "Authorization: token $TOKEN" -o tested.zip "$url"
+          if ! curl -fsSL -H "Authorization: token $TOKEN" -o tested.zip "$url"; then
+            echo "::warning::$tree has a package this job can't download; this run builds it"
+            exit 0
+          fi
           unzip -q tested.zip -d package
           echo "$tree was built in a PR run; releasing its package"
           echo found=true >> "$GITHUB_OUTPUT"
