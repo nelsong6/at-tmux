@@ -24,6 +24,7 @@ struct win32_pty {
 	HANDLE   bridge_thread; /* Thread: hPipeOut -> bridge_peer (output) */
 	HANDLE   input_thread;  /* Thread: bridge_peer -> hPipeIn (input) */
 	volatile int closing;
+	volatile uint64_t input_since; /* GetTickCount64 of the write under way, or 0 */
 };
 
 /*
@@ -118,9 +119,12 @@ pty_input_thread(LPVOID arg)
 		n = recv(pty->bridge_peer, buf, sizeof buf, 0);
 		if (n <= 0)
 			break;
+		pty->input_since = GetTickCount64();
 		if (!WriteFile(pty->hPipeIn, buf, (DWORD)n, &written, NULL))
 			break;
+		pty->input_since = 0;
 	}
+	pty->input_since = 0;
 	return 0;
 }
 
@@ -404,6 +408,17 @@ win32_pty_get_process(struct win32_pty *pty)
 	if (pty == NULL)
 		return NULL;
 	return pty->hProcess;
+}
+
+/* How long the write into the console has been under way, in ms. */
+uint64_t
+win32_pty_input_blocked(struct win32_pty *pty)
+{
+	uint64_t	since;
+
+	if (pty == NULL || (since = pty->input_since) == 0)
+		return (0);
+	return (GetTickCount64() - since);
 }
 
 /*

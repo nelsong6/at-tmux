@@ -60,6 +60,7 @@ extern const struct cmd_entry cmd_find_window_entry;
 extern const struct cmd_entry cmd_has_session_entry;
 extern const struct cmd_entry cmd_if_shell_entry;
 extern const struct cmd_entry cmd_join_pane_entry;
+extern const struct cmd_entry cmd_key_trace_entry;
 extern const struct cmd_entry cmd_kill_pane_entry;
 extern const struct cmd_entry cmd_kill_server_entry;
 extern const struct cmd_entry cmd_kill_session_entry;
@@ -166,6 +167,7 @@ const struct cmd_entry *cmd_table[] = {
 	&cmd_has_session_entry,
 	&cmd_if_shell_entry,
 	&cmd_join_pane_entry,
+	&cmd_key_trace_entry,
 	&cmd_kill_pane_entry,
 	&cmd_kill_server_entry,
 	&cmd_kill_session_entry,

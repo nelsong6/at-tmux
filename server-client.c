@@ -2723,6 +2723,7 @@ try_again:
 		server_status_client(c);
 
 		/* Execute the key binding. */
+		key_trace_took("a key binding");
 		key_bindings_dispatch(bd, item, c, event, &fs);
 		key_bindings_unref_table(table);
 		goto out;
@@ -2808,6 +2809,7 @@ server_client_handle_key(struct client *c, struct key_event *event)
 	/* Check the client is good to accept input. */
 	if (s == NULL || (c->flags & CLIENT_UNATTACHEDFLAGS))
 		return (0);
+	key_trace_read(event->key);
 
 	/*
 	 * Handle theme reporting keys before overlays so they work even when a
@@ -2829,11 +2831,14 @@ server_client_handle_key(struct client *c, struct key_event *event)
 	 */
 	if (~c->flags & CLIENT_READONLY) {
 		if (c->message_string != NULL) {
-			if (c->message_ignore_keys)
+			if (c->message_ignore_keys) {
+				key_trace_took("a message");
 				return (0);
+			}
 			status_message_clear(c);
 		}
 		if (c->overlay_key != NULL) {
+			key_trace_took("a menu or popup");
 			switch (c->overlay_key(c, c->overlay_data, event)) {
 			case 0:
 				return (0);
@@ -2844,10 +2849,13 @@ server_client_handle_key(struct client *c, struct key_event *event)
 		}
 		server_client_clear_overlay(c);
 		if (c->prompt_string != NULL) {
+			key_trace_took("the command prompt");
 			if (status_prompt_key(c, event->key) == 0)
 				return (0);
-		} else if (panel_key(c, event))
+		} else if (panel_key(c, event)) {
+			key_trace_took("a panel");
 			return (0);
+		}
 	}
 
 	/*

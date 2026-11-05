@@ -107,6 +107,7 @@ dist_tmux_SOURCES = \
 	cmd-kill-pane.c \
 	cmd-kill-server.c \
 	cmd-kill-session.c \
+	cmd-key-trace.c \
 	cmd-kill-window.c \
 	cmd-list-buffers.c \
 	cmd-list-clients.c \
@@ -202,6 +203,7 @@ dist_tmux_SOURCES = \
 	server-upgrade.c \
 	server.c \
 	flight.c \
+	key-trace.c \
 	session-set.c \
 	session.c \
 	sort.c \

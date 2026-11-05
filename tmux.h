@@ -3661,6 +3661,13 @@ int	 session_set_hold(struct cmdq_item *, struct cmd *, struct client *);
 int	 cmd_run_shell_holding_queue(void);
 void	 session_set_offer_soon(void);
 
+/* key-trace.c */
+void	 key_trace_pressed(uint64_t, pid_t);
+void	 key_trace_read(key_code);
+void	 key_trace_took(const char *);
+void	 key_trace_sent(struct window_pane *);
+void	 key_trace_print(struct cmdq_item *);
+
 /* flight.c */
 void	 flight_start(void);
 void printflike(1, 2) flight_note(const char *, ...);

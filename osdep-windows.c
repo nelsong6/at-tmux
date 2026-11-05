@@ -260,7 +260,8 @@ desktop_modifiers_held(key_code modifiers)
  * global key table. A low-level keyboard hook sees them before Windows hands
  * out hotkeys and passes every key on, so a key another program registered
  * (Windows Terminal's summon) still reaches it. The hook's thread writes each
- * key to a socket that the event loop reads.
+ * key to a socket that the event loop reads. Every other key goes the same way
+ * with no key_code, for the key trace: only that one went down, and when.
  */
 static SOCKET		global_keys[2] = { INVALID_SOCKET, INVALID_SOCKET };
 static struct event	global_keys_event;
@@ -275,6 +276,7 @@ static DWORD		global_keys_down; /* held key, to skip auto-repeat */
  */
 struct win32_global_key {
 	key_code	key;
+	uint64_t	at;
 	DWORD		foreground;
 };
 
@@ -298,29 +300,57 @@ win32_global_key(DWORD vk)
 	return (key);
 }
 
+/* Does this virtual key only change what other keys mean, typing nothing? */
+static int
+win32_key_is_modifier(DWORD vk)
+{
+	switch (vk) {
+	case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT:
+	case VK_CONTROL: case VK_LCONTROL: case VK_RCONTROL:
+	case VK_MENU: case VK_LMENU: case VK_RMENU:
+	case VK_LWIN: case VK_RWIN:
+	case VK_CAPITAL: case VK_NUMLOCK: case VK_SCROLL:
+		return (1);
+	}
+	return (0);
+}
+
+/* Never blocks: a hook that does holds up the keyboard of the whole desktop. */
+static void
+win32_global_keys_send(key_code key)
+{
+	struct win32_global_key	 gk;
+	HWND			 fg;
+
+	gk.key = key;
+	gk.at = get_timer();
+	gk.foreground = 0;
+	if ((fg = GetForegroundWindow()) != NULL)
+		GetWindowThreadProcessId(fg, &gk.foreground);
+	send(global_keys[1], (char *)&gk, sizeof gk, 0);
+}
+
 static LRESULT CALLBACK
 win32_global_keys_hook(int code, WPARAM wp, LPARAM lp)
 {
-	KBDLLHOOKSTRUCT		*k = (KBDLLHOOKSTRUCT *)lp;
-	struct win32_global_key	 gk;
-	HWND			 fg;
+	KBDLLHOOKSTRUCT	*k = (KBDLLHOOKSTRUCT *)lp;
+	key_code	 key;
 
 	if (code != HC_ACTION)
 		return (CallNextHookEx(NULL, code, wp, lp));
 	if (wp == WM_KEYUP || wp == WM_SYSKEYUP) {
 		if (k->vkCode == global_keys_down)
 			global_keys_down = 0;
-	} else if (k->vkCode != global_keys_down &&
-	    ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000)) {
-		gk.key = win32_global_key(k->vkCode);
-		if (gk.key != KEYC_NONE) {
-			global_keys_down = k->vkCode;
-			gk.foreground = 0;
-			if ((fg = GetForegroundWindow()) != NULL)
-				GetWindowThreadProcessId(fg, &gk.foreground);
-			send(global_keys[1], (char *)&gk, sizeof gk, 0);
+	} else if ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000) {
+		if (k->vkCode != global_keys_down) {
+			key = win32_global_key(k->vkCode);
+			if (key != KEYC_NONE) {
+				global_keys_down = k->vkCode;
+				win32_global_keys_send(key);
+			}
 		}
-	}
+	} else if (!win32_key_is_modifier(k->vkCode))
+		win32_global_keys_send(KEYC_NONE);
 	return (CallNextHookEx(NULL, code, wp, lp));
 }
 
@@ -344,7 +374,11 @@ win32_global_keys_read(evutil_socket_t fd, __unused short events,
 {
 	struct win32_global_key	gk;
 
-	if (recv((SOCKET)fd, (char *)&gk, sizeof gk, MSG_WAITALL) == sizeof gk)
+	if (recv((SOCKET)fd, (char *)&gk, sizeof gk, MSG_WAITALL) != sizeof gk)
+		return;
+	if (gk.key == KEYC_NONE)
+		key_trace_pressed(gk.at, (pid_t)gk.foreground);
+	else
 		key_bindings_global(gk.key, (pid_t)gk.foreground);
 }
 
@@ -357,6 +391,7 @@ desktop_global_key_add(__unused key_code key)
 {
 	int	sv[2];
 	HANDLE	thread;
+	u_long	nonblocking = 1;
 
 	if (global_keys[0] != INVALID_SOCKET)
 		return;
@@ -364,6 +399,7 @@ desktop_global_key_add(__unused key_code key)
 		return;
 	global_keys[0] = (SOCKET)sv[0];
 	global_keys[1] = (SOCKET)sv[1];
+	ioctlsocket(global_keys[1], FIONBIO, &nonblocking);
 	event_set(&global_keys_event, sv[0], EV_READ|EV_PERSIST,
 	    win32_global_keys_read, NULL);
 	event_add(&global_keys_event, NULL);

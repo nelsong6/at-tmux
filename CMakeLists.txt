@@ -78,6 +78,7 @@ set(TMUX_SOURCES
     cmd-kill-pane.c
     cmd-kill-server.c
     cmd-kill-session.c
+    cmd-key-trace.c
     cmd-kill-window.c
     cmd-list-buffers.c
     cmd-list-clients.c
@@ -171,6 +172,7 @@ set(TMUX_SOURCES
     server-fn.c
     server-upgrade.c
     flight.c
+    key-trace.c
     session-set.c
     session.c
     sort.c

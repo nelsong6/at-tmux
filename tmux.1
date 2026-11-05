@@ -7639,6 +7639,14 @@ The following keys are available in menus:
 .It Li "q" Ta "Exit menu"
 .El
 .Tg display
+.It Xo Ic key-trace
+.Op Fl p
+.Xc
+Show how recent keys travelled from the keyboard to a pane, by time only: when
+each was seen and read, and what took it.
+With
+.Fl p ,
+record a press as the keyboard hook would.
 .It Xo Ic display-message
 .Op Fl aCIlNpv
 .Op Fl c Ar target-client

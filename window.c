@@ -1291,6 +1291,7 @@ window_pane_key(struct window_pane *wp, struct client *c, struct session *s,
 
 	wme = TAILQ_FIRST(&wp->modes);
 	if (wme != NULL) {
+		key_trace_took(wme->mode->name);
 		if (wme->mode->key != NULL && c != NULL) {
 			key &= ~KEYC_MASK_FLAGS;
 			wme->mode->key(wme, c, s, wl, key, m);
@@ -1298,14 +1299,17 @@ window_pane_key(struct window_pane *wp, struct client *c, struct session *s,
 		return (0);
 	}
 
-	if (wp->fd == -1 || wp->flags & PANE_INPUTOFF)
+	if (wp->fd == -1 || wp->flags & PANE_INPUTOFF) {
+		key_trace_took("a pane with input off");
 		return (0);
+	}
 
 	if (input_key_pane(wp, key, m) != 0)
 		return (-1);
 
 	if (KEYC_IS_MOUSE(key))
 		return (0);
+	key_trace_sent(wp);
 	if (options_get_number(wp->options, "synchronize-panes"))
 		window_pane_copy_key(wp, key);
 	return (0);

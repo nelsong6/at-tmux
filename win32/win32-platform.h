@@ -893,6 +893,7 @@ void win32_pty_close(struct win32_pty *pty);
 int  win32_pty_get_fd(struct win32_pty *pty);
 HANDLE win32_pty_get_process(struct win32_pty *pty);
 int  win32_pty_write(struct win32_pty *pty, const void *data, size_t len);
+uint64_t win32_pty_input_blocked(struct win32_pty *pty);
 /* A console handed to a server's replacement: handle values in that process. */
 struct win32_pty_handoff {
 	uint64_t	signal;

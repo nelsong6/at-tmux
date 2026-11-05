@@ -58,6 +58,7 @@ CI runs on Forgejo (`.forgejo/workflows/ci.yml`). Its `build-and-test` job runs 
 - `win32-keys.sh` — key handling (13 tests, tests effects not raw codes)
 - `win32-csi-u.sh` — a key in the kitty keyboard protocol's short form (`ESC [ 27 u`) is read as that key, not as `M-[` and typed text (client in a pane of a second server)
 - `win32-has-session.sh` — exit code validation
+- `win32-key-trace.sh` — the key trace names where a key stopped: pressed and never read, taken by a menu, or stuck going into a pane whose console stopped reading (`win32-suspend.ps1` suspends the console), each with its message and recovery (TMUX-131)
 - `win32-file.sh` — `source-file`, `load-buffer` and `save-buffer` from a second client finish, keep the bytes, and fail with exit 1; relative config paths work from a client's folder containing spaces and punctuation
 - `conf-crlf.sh` — LF and Windows CRLF continuations give the same options when sourced, parsed without execution or loaded at startup; literal carriage returns stay intact and errors report physical line numbers (also runs on Linux and macOS)
 - `win32-strftime.sh` — a `%` sequence Windows' `strftime` doesn't know (`%Q`, `% -`, a trailing `%`) is printed as written and the server keeps running (it ended the server before TMUX-37), and the format is recorded once in `show-messages`
