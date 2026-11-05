@@ -68,14 +68,24 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
 done
 [ -z "$BAD" ] || fail "a client exited non-zero"
 
-# 2. A client kept waiting over ten seconds says so, then gets its answer.
-busy_file "$(lines_for 13)"
-$TMUX source-file "$WDIR/busy.conf" &
-BUSY=$!
-sleep 0.5
-$TMUX display -p answered >"$DIR/out.long" 2>"$DIR/err.long" ||
-    fail "the long wait failed: $(cat "$DIR/err.long")"
-wait "$BUSY"
+# 2. A client kept waiting over ten seconds says so, then gets its answer. The
+#    measured length runs short on some machines: a wait under ten seconds proves
+#    nothing, so it goes again with twice as much.
+SECONDS_BUSY=13
+for attempt in 1 2 3; do
+	busy_file "$(lines_for $SECONDS_BUSY)"
+	$TMUX source-file "$WDIR/busy.conf" &
+	BUSY=$!
+	sleep 0.5
+	WAIT_START=$(date +%s%3N)
+	$TMUX display -p answered >"$DIR/out.long" 2>"$DIR/err.long" ||
+	    fail "the long wait failed: $(cat "$DIR/err.long")"
+	WAITED=$(($(date +%s%3N) - WAIT_START))
+	wait "$BUSY"
+	[ "$WAITED" -lt 10500 ] || break
+	SECONDS_BUSY=$((SECONDS_BUSY * 2))
+done
+[ "$WAITED" -ge 10500 ] || fail "the server was only busy for $WAITED ms"
 [ "$(tr -d '\r' <"$DIR/out.long")" = "answered" ] || fail "no answer after the wait"
 grep -q "has not answered for 10 seconds, still waiting" "$DIR/err.long" ||
     fail "the wait wasn't reported: $(cat "$DIR/err.long")"
