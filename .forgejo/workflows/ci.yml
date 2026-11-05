@@ -278,6 +278,8 @@ jobs:
         run: |
           New-Item -ItemType Directory package | Out-Null
           Copy-Item build/Release/tmux.exe, conpty/runtimes/win-x64/native/conpty.dll, conpty/build/native/runtimes/x64/OpenConsole.exe package/
+          # Moved, so nothing finds it at the path stored in the exe, as on a home PC.
+          Move-Item build/Release/tmux.pdb package/
 
       # Defender quarantined an unsigned build as Program:Win32/Contebrew.A!ml
       # and passed the same build signed (TMUX-30). The certificate is at
@@ -294,6 +296,11 @@ jobs:
             & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD package/tmux.exe package/conpty.dll package/OpenConsole.exe
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           } finally { Remove-Item cert.pfx }
+
+      - name: Run crash log tests
+        timeout-minutes: 5
+        shell: bash
+        run: TEST_TMUX=./package/tmux.exe bash regress/win32-run.sh win32-crash-log.sh
 
       - name: Upload Release package
         uses: https://data.forgejo.org/forgejo/upload-artifact@v4
@@ -375,13 +382,13 @@ jobs:
 
       - name: Package
         run: |
-          foreach ($f in 'tmux.exe', 'conpty.dll', 'OpenConsole.exe') {
+          foreach ($f in 'tmux.exe', 'tmux.pdb', 'conpty.dll', 'OpenConsole.exe') {
             if (-not (Test-Path "package/$f")) { throw "package/$f is missing" }
           }
           $signature = Get-AuthenticodeSignature package/tmux.exe
           if (-not $signature.SignerCertificate -or $signature.Status -eq 'HashMismatch') { throw 'tmux.exe has no intact Authenticode signature' }
           $zip = "tmux-windows-$env:VERSION.zip"
-          Compress-Archive -Path package/tmux.exe, package/conpty.dll, package/OpenConsole.exe -DestinationPath $zip
+          Compress-Archive -Path package/tmux.exe, package/tmux.pdb, package/conpty.dll, package/OpenConsole.exe -DestinationPath $zip
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zip" | Set-Content -Encoding utf8 "$zip.sha256"
           Write-Host "Packaged $zip; SHA256 $hash; signer $($signature.SignerCertificate.Thumbprint)"

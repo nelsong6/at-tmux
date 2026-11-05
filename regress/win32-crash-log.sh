@@ -1,0 +1,76 @@
+#!/bin/sh
+
+# A crash of the release package explains itself: tmux-crash-<pid>.log names
+# function, file and line from the PDB beside the exe. The server runs through
+# a junction as home-sync's `current` is, and the junction moves on before the
+# crash, as it does when a release lands (TMUX-114). TEST_TMUX is a tmux.exe
+# with its PDB beside it and no PDB at the path stored in it, as on a home PC.
+
+PATH=/bin:/usr/bin
+TERM=screen
+
+[ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
+. "$(dirname "$0")/win32-test.sh"
+
+system=$(cygpath "$SYSTEMROOT")/System32
+powershell=$system/WindowsPowerShell/v1.0/powershell.exe
+cmd=$system/cmd.exe
+
+dir=$(dirname "$0")
+package=$(cd "$(dirname "$TEST_TMUX")" && pwd)
+OUT=$(mktemp -d) || exit 1
+winout=$(cygpath -aw "$OUT")
+TMUX="$OUT/current/tmux.exe -L$TEST_SOCKET"
+. "$dir/win32-wait.sh"
+
+# Junctions go first: rm -rf would follow one into the package.
+cleanup() {
+	$TMUX kill-server 2>/dev/null
+	"$powershell" -NoProfile -Command "
+		Get-CimInstance Win32_Process |
+		    Where-Object { \$_.ExecutablePath -like '$(cygpath -aw "$package")\\*' -or
+		        \$_.ExecutablePath -like '$winout\\*' } |
+		    ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
+	"$cmd" //c rmdir "$winout\\current" 2>/dev/null
+	rm -rf "$OUT"
+}
+trap cleanup 0 1 15
+
+fail() {
+	echo "FAIL: $1"
+	[ -f "$log" ] && cat "$log"
+	exit 1
+}
+
+[ -f "$package/tmux.pdb" ] || fail "no tmux.pdb beside $TEST_TMUX"
+
+"$cmd" //c mklink //J "$winout\\current" "$(cygpath -aw "$package")" >/dev/null ||
+    fail "making the junction"
+
+# The server's %TEMP% is GetTempPath's, which reads TMP first.
+TMP=$winout $TMUX -fNUL new -d </dev/null || fail "new-session"
+server=$($TMUX display-message -p '#{pid}' | tr -d '\r')
+[ -n "$server" ] || fail "no server pid"
+log=$OUT/tmux-crash-$server.log
+
+mkdir "$OUT/next"
+"$cmd" //c rmdir "$winout\\current"
+"$cmd" //c mklink //J "$winout\\current" "$winout\\next" >/dev/null ||
+    fail "moving the junction"
+
+"$powershell" -NoProfile -ExecutionPolicy Bypass \
+    -File "$(cygpath -aw "$dir/win32-crash.ps1")" \
+    -Id "$server" -Exe "$(cygpath -aw "$package/tmux.exe")" || fail "crashing the server"
+
+log_done() {
+	grep -q 'RtlUserThreadStart' "$log" 2>/dev/null
+}
+WAIT_TIMEOUT=30 wait_until log_done || fail "no finished crash log"
+
+tr -d '\r' <"$log" | grep -q '^tmux crashed: exception 0xc0000005' ||
+    fail "the log names no access violation"
+tr -d '\r' <"$log" | grep -q '^  #[0-9]* xstrdup .*xmalloc\.c:[0-9]*$' ||
+    fail "the log names no function, file and line"
+
+echo PASS
+exit 0

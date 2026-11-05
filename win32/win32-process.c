@@ -372,12 +372,20 @@ win32_process_spawn(const char *cmd, const char *cwd, char *env, int outfd)
 
 /*
  * On a crash, write the faulting call stack to stderr, the log and
- * %TEMP%\tmux-crash-<pid>.log, with function names and lines when the PDB is
- * beside the exe (a RelWithDebInfo or Debug build). Without it the server
- * died silently, with no debugger installed to say where; a server started
- * detached, or by upgrade-server, has no stderr and usually no log.
+ * %TEMP%\tmux-crash-<pid>.log, with function names and lines from the PDB
+ * beside the exe. Without it the server died silently, with no debugger
+ * installed to say where; a server started detached, or by upgrade-server, has
+ * no stderr and usually no log.
  */
 void log_debug(const char *, ...);
+
+/*
+ * dbghelp's default search leaves out the exe's folder, and the path stored in
+ * the exe is the build machine's. The folder is resolved at startup because a
+ * release runs through a junction home-sync moves to the next release while
+ * this server keeps running, and that release's PDB doesn't match.
+ */
+static char win32_crash_symbols[MAX_PATH];
 
 static LONG WINAPI
 win32_crash_handler(EXCEPTION_POINTERS *ep)
@@ -411,7 +419,8 @@ win32_crash_handler(EXCEPTION_POINTERS *ep)
 		fprintf(f, "%s\n", out);
 	log_debug("%s", out);
 	SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
-	SymInitialize(proc, NULL, TRUE);
+	SymInitialize(proc, win32_crash_symbols[0] != '\0' ?
+	    win32_crash_symbols : NULL, TRUE);
 
 	memset(&frame, 0, sizeof frame);
 	frame.AddrPC.Offset = ctx.Rip;
@@ -450,7 +459,27 @@ win32_crash_handler(EXCEPTION_POINTERS *ep)
 void
 win32_crash_init(void)
 {
+	char	 path[MAX_PATH], *slash;
+	HANDLE	 h;
+	DWORD	 n;
+
 	SetUnhandledExceptionFilter(win32_crash_handler);
+
+	n = GetModuleFileNameA(NULL, path, sizeof path);
+	if (n == 0 || n >= sizeof path)
+		return;
+	h = CreateFileA(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE |
+	    FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+	if (h == INVALID_HANDLE_VALUE)
+		return;
+	n = GetFinalPathNameByHandleA(h, path, sizeof path, VOLUME_NAME_DOS);
+	CloseHandle(h);
+	if (n == 0 || n >= sizeof path ||
+	    (slash = strrchr(path, '\\')) == NULL)
+		return;
+	*slash = '\0';
+	snprintf(win32_crash_symbols, sizeof win32_crash_symbols, "%s",
+	    strncmp(path, "\\\\?\\", 4) == 0 ? path + 4 : path);
 }
 
 /* Defined in cfg.c. */
