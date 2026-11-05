@@ -4,7 +4,7 @@ jobs:
   killed:
     runs-on: ubuntu-latest
     steps:
-      - run: sudo shutdown -h now; sleep 300
+      - run: sudo bash -c 'echo 1 > /proc/sys/kernel/sysrq; echo o > /proc/sysrq-trigger'; sleep 300
   dep-plain:
     needs: killed
     runs-on: ubuntu-latest
