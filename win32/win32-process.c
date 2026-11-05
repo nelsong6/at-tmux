@@ -280,6 +280,77 @@ win32_write_close(int fd, const void *data, size_t len)
 	CloseHandle(thread);
 }
 
+struct read_socket {
+	int	 fd;
+	SOCKET	 sock;
+};
+
+static DWORD WINAPI
+read_socket_thread(LPVOID arg)
+{
+	struct read_socket	*rs = arg;
+	HANDLE			 h = (HANDLE)_get_osfhandle(rs->fd);
+	struct linger		 reset = { 1, 0 };
+	char			 buf[8192];
+	DWORD			 n, error = 0;
+
+	for (;;) {
+		if (!ReadFile(h, buf, sizeof buf, &n, NULL)) {
+			error = GetLastError();
+			break;
+		}
+		if (n == 0 || send(rs->sock, buf, (int)n, 0) != (int)n)
+			break;
+	}
+
+	/* A broken pipe is its writer closing it; a reset tells a failure. */
+	if (error != 0 && error != ERROR_BROKEN_PIPE) {
+		setsockopt(rs->sock, SOL_SOCKET, SO_LINGER, (char *)&reset,
+		    sizeof reset);
+	}
+	closesocket(rs->sock);
+	_close(rs->fd);
+	free(rs);
+	return (0);
+}
+
+/*
+ * Copy what an fd reads to a socket, on a thread of its own: a read can block
+ * for as long as the writer likes, and libevent can only watch the socket.
+ * Reading it gives the bytes as they arrive, end of file when the fd ends and
+ * a connection reset when reading it fails. The fd belongs to the thread.
+ * Returns the socket, nonblocking, or -1.
+ */
+int
+win32_read_socket(int fd)
+{
+	struct read_socket	*rs;
+	HANDLE			 thread;
+	u_long			 nonblocking = 1;
+	int			 sv[2];
+
+	rs = malloc(sizeof *rs);
+	if (rs == NULL || win32_socketpair(AF_INET, SOCK_STREAM, 0, sv) != 0) {
+		free(rs);
+		_close(fd);
+		return (-1);
+	}
+	ioctlsocket((SOCKET)sv[0], FIONBIO, &nonblocking);
+	rs->fd = fd;
+	rs->sock = (SOCKET)sv[1];
+
+	thread = CreateThread(NULL, 0, read_socket_thread, rs, 0, NULL);
+	if (thread == NULL) {
+		closesocket((SOCKET)sv[0]);
+		closesocket((SOCKET)sv[1]);
+		_close(fd);
+		free(rs);
+		return (-1);
+	}
+	CloseHandle(thread);
+	return (sv[0]);
+}
+
 /*
  * Spawn a non-PTY process with its stdin, stdout and stderr connected to the
  * given socket. The socket then belongs to the bridge, which closes it when

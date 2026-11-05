@@ -4,6 +4,8 @@
 # load-buffer and save-buffer from a second client finish, keep the file's
 # bytes, and report errors with exit 1. On Windows they used to wait forever
 # (libevent can't watch a file descriptor that isn't a socket).
+# Stdin is read as well: source-file -, load-buffer - and split-window -I
+# used to get nothing and exit 0 on Windows.
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -67,6 +69,66 @@ printf 'set -g @relative "loaded relative"\n' \
 ) 2>/dev/null
 _rc=$?
 [ $_rc -eq 1 ] || fail "missing relative file exited $_rc instead of 1"
+
+# Stdin, whatever it is, reaches the server as it was written.
+printf 'set -g @piped "h\303\251llo"\r\nset -g @piped2 2\n' |
+    run source-file - || fail "piped source-file"
+[ "$($TMUX show -gv @piped)" = "$(printf 'h\303\251llo')" ] ||
+    fail "piped @piped not set"
+[ "$($TMUX show -gv @piped2)" = 2 ] || fail "piped @piped2 not set"
+
+printf 'set -g @redirected 1\n' >$OUT/redirected.conf
+run source-file - <$OUT/redirected.conf || fail "redirected source-file"
+[ "$($TMUX show -gv @redirected)" = 1 ] || fail "redirected file not executed"
+
+run source-file - </dev/null || fail "source-file of empty stdin"
+
+printf 'set -g @four 4\nno-such-command\n' |
+    run source-file - >/dev/null 2>&1 && fail "piped bad commands exited 0"
+
+: >$OUT/unreadable
+run source-file - 0>$OUT/unreadable 2>$OUT/err &&
+    fail "unreadable stdin exited 0"
+tr -d '\r' <$OUT/err | grep -q ': -$' ||
+    fail "unreadable stdin error: $(cat $OUT/err)"
+
+# More than a pipe or a tmux message holds, with every byte value.
+head -c 300000 /dev/urandom >$OUT/stdin.bin
+run load-buffer -b stdin - <$OUT/stdin.bin || fail "load-buffer from a file"
+run save-buffer -b stdin $OUT/saved.bin || fail "save stdin buffer"
+cmp -s $OUT/stdin.bin $OUT/saved.bin || fail "load-buffer changed stdin's bytes"
+cat $OUT/stdin.bin | run load-buffer -b piped - || fail "load-buffer from a pipe"
+run save-buffer -b piped $OUT/saved.bin || fail "save piped buffer"
+cmp -s $OUT/stdin.bin $OUT/saved.bin || fail "load-buffer changed piped bytes"
+
+# A pane fed from stdin shows it as it arrives, before stdin ends.
+(
+	printf 'early-line\n'
+	wait_for :.1 '^early-line' || touch $OUT/late
+) | run split-window -I
+[ ! -e $OUT/late ] || fail "stdin reached the pane only when it ended"
+$TMUX kill-pane -t:.1
+
+# A stdin nobody closes doesn't keep a client whose server has gone.
+(
+	while [ ! -e $OUT/stop ]; do
+		sleep 0.1
+	done
+) | (
+	timeout 20 $TMUX set -g @reading 1 \; source-file - 2>/dev/null
+	echo $? >$OUT/rc
+) &
+reading() {
+	[ "$($TMUX show -gv @reading 2>/dev/null)" = 1 ]
+}
+wait_until reading || fail "client reading stdin did not start"
+$TMUX kill-server 2>/dev/null
+wait_until test -e $OUT/rc
+_found=$?
+touch $OUT/stop
+wait
+[ $_found -eq 0 ] || fail "client kept reading stdin after its server ended"
+[ "$(cat $OUT/rc)" != 124 ] || fail "client outlived its server"
 
 $TMUX kill-server 2>/dev/null
 

@@ -137,7 +137,7 @@ cross-platform differences are handled automatically:
 | `tmux-protocol.h` | `struct msg_resize_data`, `MSG_IDENTIFY_TTYTOKEN`, Windows-specific message types |
 | `cmd-pipe-pane.c` | Windows pipe handling |
 | `tty-term.c` | `win32_terminfo_*()` lookups instead of terminfo database |
-| `file.c` | Skip bufferevent for stdout/stderr/stdin; direct `_write()` for output |
+| `file.c` | Skip bufferevent for stdout/stderr and files, with direct `_read()`/`_write()`; a thread copies stdin to a socket the bufferevent can watch |
 | `window.c` | ConPTY cleanup on pane destruction |
 | `cmd-source-file.c` | Path handling for Windows |
 

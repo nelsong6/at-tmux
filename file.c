@@ -705,7 +705,7 @@ file_write_close(struct client_files *files, struct imsg *imsg)
 
 /* Client file read error callback. */
 static void
-file_read_error_callback(__unused struct bufferevent *bev, __unused short what,
+file_read_error_callback(__unused struct bufferevent *bev, short what,
     void *arg)
 {
 	struct client_file	*cf = arg;
@@ -714,11 +714,15 @@ file_read_error_callback(__unused struct bufferevent *bev, __unused short what,
 	log_debug("read error file %d", cf->stream);
 
 	msg.stream = cf->stream;
-	msg.error = 0;
+	msg.error = (what & BEV_EVENT_ERROR) ? EIO : 0;
 	proc_send(cf->peer, MSG_READ_DONE, -1, &msg, sizeof msg);
 
 	bufferevent_free(cf->event);
+#ifdef _WIN32
+	closesocket((SOCKET)cf->fd);
+#else
 	close(cf->fd);
+#endif
 	RB_REMOVE(client_files, cf->tree, cf);
 	file_free(cf);
 }
@@ -815,33 +819,31 @@ file_read_open(struct client_files *files, struct tmuxpeer *peer,
 
 #ifdef _WIN32
 	/*
-	 * On Windows, stdin is a CRT file descriptor (console handle),
-	 * not a Winsock socket. libevent's bufferevent uses select()
-	 * which only works with sockets. Send an immediate read-done
-	 * with no data for stdin.
+	 * libevent's select() only watches sockets, so a bufferevent would
+	 * never read a file or stdin. A file ends, so read it whole here and
+	 * send it, then read-done. Stdin may stay open as long as its writer
+	 * likes while this client still has the server to answer, so a thread
+	 * copies it to a socket, which the bufferevent below can watch.
 	 */
 	if (msg->fd == STDIN_FILENO) {
+		cf->fd = win32_read_socket(cf->fd);
+		if (cf->fd == -1) {
+			error = EIO;
+			goto reply;
+		}
+	} else {
+		data = xmalloc(sizeof *data + sizeof buf);
+		data->stream = cf->stream;
+		while ((n = _read(cf->fd, buf, sizeof buf)) > 0) {
+			memcpy(data + 1, buf, n);
+			proc_send(peer, MSG_READ, -1, data, sizeof *data + n);
+		}
+		free(data);
+		error = (n < 0) ? errno : 0;
 		close(cf->fd);
-		cf->fd = -1;
-		error = 0;
+		file_free(cf);
 		goto reply;
 	}
-
-	/*
-	 * A file has the same problem: the bufferevent would never read it.
-	 * Read it whole here and send it, then read-done.
-	 */
-	data = xmalloc(sizeof *data + sizeof buf);
-	data->stream = cf->stream;
-	while ((n = _read(cf->fd, buf, sizeof buf)) > 0) {
-		memcpy(data + 1, buf, n);
-		proc_send(peer, MSG_READ, -1, data, sizeof *data + n);
-	}
-	free(data);
-	error = (n < 0) ? errno : 0;
-	close(cf->fd);
-	file_free(cf);
-	goto reply;
 #endif
 	cf->event = bufferevent_new(cf->fd, file_read_callback, NULL,
 	    file_read_error_callback, cf);
