@@ -5,6 +5,9 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Starts a run again from the API, as a run the runner dropped: the same as
+  # a push when its ref is master.
+  workflow_dispatch:
 
 jobs:
   # upstairspc, host mode: the job uses the machine's Visual Studio Build Tools
@@ -403,7 +406,7 @@ jobs:
       # PRs exercise local tag creation; only master pushes publish the ref.
       - name: Create and verify release tag
         env:
-          PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+          PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
         run: |
           $sha = git rev-parse HEAD
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -429,7 +432,7 @@ jobs:
 
       - name: Release
         id: release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

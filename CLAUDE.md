@@ -109,6 +109,8 @@ A push to `master` on either side fast-forwards the other: `.github/workflows/fo
 
 CI's `release` job makes every master commit whose run passed a Forgejo release, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with its `tmux.pdb`, `conpty.dll` and `OpenConsole.exe`) and its `.sha256`.
 
+A master run the runner dropped leaves that commit with no release. Start it again with `POST /api/v1/repos/nelsong6/at-tmux/actions/workflows/ci.yml/dispatches` and the body `{"ref":"master"}`: it runs and publishes as the push would have. Forgejo's API has no rerun of its own (TMUX-114).
+
 After the complete release is published, CI starts home-sync on every PC. home-sync verifies the signed Windows package, switches `C:\Program Files\at-home\tmux\current`, and reconciles existing servers using `upgrade-server` while preserving their panes. The manual `publish.ps1` was retired by HOMECFG-110; merges need no separate publishing command.
 
 ## Winget Package Submission
