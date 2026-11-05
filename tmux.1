@@ -3681,12 +3681,18 @@ showed.
 .Pp
 A server with
 .Ic @session-set-dir
-set offers the snapshot an earlier server of its name left (after a reboot,
+set finds the snapshot an earlier server of its name left (after a reboot,
 a crash or
-.Ic kill-server )
-in a menu on the first client to attach: Enter rebuilds it in place of the
-session the client opened in, if that is still one shell; Escape moves it to
+.Ic kill-server ) .
+On Windows, one last saved before this sign-in is rebuilt with no offer in
+place of the server's first session, if that is one shell with nothing running
+in it, and the first client to attach lands on the session it showed.
+Any other is offered in a menu on the first client to attach, as crash recovery
+if it was saved since this sign-in: Enter rebuilds it in place of the session
+the client opened in, if that is still one shell; Escape moves it to
 .Pa archive/ .
+A restore with no offer that fails leaves that session and the snapshot, which
+is offered and not tried unasked again.
 A snapshot of a server that ended with its last session, or that no client
 ever showed, is archived without an offer.
 .Tg rotatew

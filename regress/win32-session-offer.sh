@@ -83,6 +83,9 @@ windows_are() {
 	[ "$($TMUX lsw -t"=$1" -F '#{window_name}' 2>/dev/null | tr -d '\r' |
 	    tr '\n' ' ' | sed 's/ $//')" = "$2" ]
 }
+messages_have() {
+	$TMUX show-messages 2>/dev/null | tr -d '\r' | grep -q -- "$1"
+}
 snap() { echo "$OUT/live/$($TMUX display -p '#{b:socket_path}' | tr -d '\r').set"; }
 snap_has() { grep -q -- "$2" "$1" 2>/dev/null; }
 
@@ -120,6 +123,7 @@ $TMUX -f "$CONF" new -d -s primary || fail "start second server"
 wait_until test -f "$PREVIOUS" || fail "earlier snapshot not set aside"
 attach
 press_until Enter sessions_are "alpha main other zed" || fail "Enter did not restore"
+messages_have "offered as crash recovery" || fail "saved since sign-in, not crash recovery"
 windows_are main "one two three" || fail "restored windows differ"
 [ "$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')" = "$row" ] ||
     fail "sessions not back in the sessions row's order"
@@ -177,5 +181,47 @@ $TMUX restore-set -d "archive/$(basename "${SNAP%.set}")-$first.set" ||
 wait_until windows_are main-2 "one two three" || fail "taken name not numbered"
 $TMUX restore-set -d "$(cygpath -m "$OUT/test.conf")" 2>/dev/null &&
     fail "restore-set took a file that is not a snapshot"
+
+# 6. A set last saved before this sign-in comes back with no client and no
+# offer, in place of the fresh session, and the first client lands on the
+# session it showed.
+cat >"$OUT/reboot.conf" <<EOF
+source '$CONF'
+set -g @session-set-signin 4102444800
+EOF
+BASE=$(basename "${SNAP%.set}")
+attach
+press_until Escape eval '! test -f "$PREVIOUS"' || fail "fifth's offer not closed"
+$TMUX switch-client -c "$CLIENT" -t alpha
+wait_until snap_has "$SNAP" "^attached${T}alpha$" || fail "alpha not saved"
+fifth=$(sed -n "s/^start${T}//p" "$SNAP" | tr -d '\r')
+stop
+$TMUX -f "$(cygpath -m "$OUT/reboot.conf")" new -d -s primary || fail "start sixth server"
+wait_until test -f "$OUT/archive/$BASE-$fifth.set" || fail "not restored unasked"
+sessions_are "alpha alpha-2 main main-2 other other-2 primary zed zed-2" || fail "silent restore's sessions"
+windows_are main "one two three" || fail "silent restore's windows"
+test -f "$PREVIOUS" && fail "restored set still offered"
+wait_until snap_has "$SNAP" "^attached${T}alpha$" || fail "shown session not kept"
+attach
+client_on_alpha() {
+	[ "$($TMUX display -p -c "$CLIENT" '#{client_session}' | tr -d '\r')" = alpha ]
+}
+wait_until client_on_alpha || fail "first client not on the session it showed"
+sixth=$(sed -n "s/^start${T}//p" "$SNAP" | tr -d '\r')
+stop
+
+# 7. A restore that can't finish (here a layout that won't parse) leaves the
+# fresh session and the set, and the next server offers it rather than running
+# it again.
+sed -i "s/${T}[0-9a-f]\{4\},[0-9]*x[0-9]*,0,0\[/${T}bad,/" "$SNAP"
+$TMUX -f "$(cygpath -m "$OUT/reboot.conf")" new -d -s primary || fail "start seventh server"
+wait_until messages_have "restore after a reboot failed" || fail "failure not recorded"
+wait_until sessions_are primary || fail "fresh session not back"
+snap_has "$PREVIOUS" "^start${T}$sixth$" || fail "failed restore lost its set"
+stop
+$TMUX -f "$(cygpath -m "$OUT/reboot.conf")" new -d -s primary || fail "start eighth server"
+attach
+wait_until messages_have "offered as the previous set" || fail "set not offered"
+sessions_are primary || fail "restore ran again unasked"
 
 exit 0

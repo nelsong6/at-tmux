@@ -25,6 +25,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <wtsapi32.h>
 #include <direct.h>
 #else
 #include <dirent.h>
@@ -59,6 +60,14 @@
  * restore-set rebuilds any snapshot the same way, beside the server's own
  * sessions. archive/ keeps the last SESSION_SET_ARCHIVE_MAX.
  *
+ * A set last saved before this Windows sign-in ended with the PC (a reboot, a
+ * shutdown or a sign-out), so a new server rebuilds it with no offer, client or
+ * none, in place of its fresh session (ss_restore_silent). One saved since was
+ * lost while the PC stayed up, and the offer calls it likely a crash. A marker,
+ * live/<socket>-previous.tried, goes down before that restore starts and stays
+ * until the set is archived, so a restore that fails or kills the server is
+ * offered next time, never run again unasked.
+ *
  * A pane's Claude Code session comes from the pane options @claude-session and
  * @claude-cwd, which Claude Code's own hooks set. @session-set-resume is the
  * command that resumes one ("{id}" for its ID); @session-set-restart-<program>
@@ -84,7 +93,10 @@ static struct event	 ss_programs_timer;
 static int		 ss_programs_pending;
 static int		 ss_stopped;
 static int		 ss_set_aside;
+static int		 ss_new_server;
+static int		 ss_restoring;
 static char		*ss_attached;
+static char		*ss_show;
 static char		*ss_last_sessions;
 
 static const char *
@@ -680,11 +692,35 @@ ss_prune(const char *archive)
 	free(entries);
 }
 
+static char *
+ss_tried_path(const char *dir)
+{
+	char	*path;
+
+	xasprintf(&path, "%s/live/%s-previous.tried", dir, ss_socket_name());
+	return (path);
+}
+
+/* Whether a silent restore has already started on the previous set. */
+static int
+ss_tried(const char *dir)
+{
+	struct stat	 sb;
+	char		*path;
+	int		 tried;
+
+	path = ss_tried_path(dir);
+	tried = (stat(path, &sb) == 0);
+	free(path);
+	return (tried);
+}
+
 /* Move a snapshot to archive/, named by its server's socket and start time. */
 static void
 ss_archive(const char *dir, const char *path, struct ss_snap *snap)
 {
-	char		*archive, *to;
+	struct stat	 sb;
+	char		*archive, *to, *previous, *tried;
 	const char	*name, *p;
 	long long	 start;
 
@@ -706,6 +742,14 @@ ss_archive(const char *dir, const char *path, struct ss_snap *snap)
 	free(to);
 	ss_prune(archive);
 	free(archive);
+
+	previous = ss_snapshot_path(dir, "-previous");
+	if (stat(previous, &sb) != 0) {
+		tried = ss_tried_path(dir);
+		remove(tried);
+		free(tried);
+	}
+	free(previous);
 }
 
 /*
@@ -714,8 +758,9 @@ ss_archive(const char *dir, const char *path, struct ss_snap *snap)
  * <socket>-previous.set, archiving the one there. One that ended with its last
  * session, or that no client ever showed (a server started at logon that went
  * before the terminal opened), is archived instead, so the set before it stays
- * offered. An upgraded server keeps its start time, so its own snapshot stays
- * and the session its client showed carries over.
+ * offered, as does one left by a server that died in a silent restore. An
+ * upgraded server keeps its start time, so its own snapshot stays and the
+ * session its client showed carries over.
  */
 static void
 ss_take_earlier(const char *dir)
@@ -724,6 +769,7 @@ ss_take_earlier(const char *dir)
 	char		*path, *previous, *data;
 
 	ss_set_aside = 1;
+	ss_new_server = 1;
 	path = ss_snapshot_path(dir, "");
 	if ((snap = ss_snap_read(path)) == NULL) {
 		if ((data = ss_read_file(path)) != NULL) {
@@ -731,9 +777,10 @@ ss_take_earlier(const char *dir)
 			ss_archive(dir, path, NULL);
 		}
 	} else if (snap->start == (long long)start_time.tv_sec) {
+		ss_new_server = 0;
 		if (ss_attached == NULL && *snap->attached != '\0')
 			ss_attached = xstrdup(snap->attached);
-	} else if (snap->closed != 0 || *snap->attached == '\0')
+	} else if (snap->closed != 0 || *snap->attached == '\0' || ss_tried(dir))
 		ss_archive(dir, path, snap);
 	else {
 		previous = ss_snapshot_path(dir, "-previous");
@@ -844,6 +891,8 @@ ss_flush(__unused int fd, __unused short events, __unused void *data)
 	ss_written = 1;
 	log_debug("session-set: snapshot written in %llu ms",
 	    (unsigned long long)(get_timer() - started));
+	if (ss_new_server)
+		session_set_offer_soon();
 }
 
 /* Something a snapshot holds may have changed: write one soon. */
@@ -1254,22 +1303,30 @@ ss_name_taken(const char *name, struct session *replace, char **made,
 	return (0);
 }
 
+/* The pane of a session that is one window with one pane, or NULL. */
+static struct window_pane *
+ss_lone_pane(struct session *s)
+{
+	struct winlink	*wl;
+
+	if (s == NULL || winlink_count(&s->windows) != 1)
+		return (NULL);
+	wl = RB_MIN(winlinks, &s->windows);
+	if (window_count_panes(wl->window) != 1)
+		return (NULL);
+	return (TAILQ_FIRST(&wl->window->panes));
+}
+
 /* Whether a session is one window with one pane running its shell. */
 static int
 ss_lone_shell(struct session *s)
 {
-	struct winlink		*wl;
 	struct window_pane	*wp;
 	char			*command, *shell;
 	int			 lone;
 
-	if (s == NULL || winlink_count(&s->windows) != 1)
-		return (0);
-	wl = RB_MIN(winlinks, &s->windows);
-	if (window_count_panes(wl->window) != 1)
-		return (0);
-	wp = TAILQ_FIRST(&wl->window->panes);
-	if (wp->shell == NULL || (command = ss_pane_command(wp)) == NULL)
+	if ((wp = ss_lone_pane(s)) == NULL || wp->shell == NULL ||
+	    (command = ss_pane_command(wp)) == NULL)
 		return (0);
 	shell = ss_program_name(wp->shell);
 	lone = (strcasecmp(command, shell) == 0);
@@ -1378,8 +1435,10 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
  * with its windows, splits, layouts, folders and names, Claude Code resumed and
  * programs started again. A session name already taken gets "-2" and up; each
  * snapshot's primary session is made first. replace is a session that goes
- * once c shows the set, if it is still a lone shell: it steps aside first so
- * the set's sessions keep their names.
+ * once the set is made, showing on c, if it is still a lone shell: it steps
+ * aside first so the set's sessions keep their names. With replace and no
+ * client, the first client to attach lands on the session to show, and a server
+ * that goes before one attaches still has a set.
  */
 static char *
 ss_restore(struct ss_snap **snaps, u_int nsnaps, struct session *replace,
@@ -1393,7 +1452,7 @@ ss_restore(struct ss_snap **snaps, u_int nsnaps, struct session *replace,
 	u_int		 i, j, k, nmade = 0, nfrom;
 	int		 seen;
 
-	if (c == NULL || !ss_lone_shell(replace))
+	if (!ss_lone_shell(replace))
 		replace = NULL;
 
 	evb = evbuffer_new();
@@ -1447,6 +1506,12 @@ ss_restore(struct ss_snap **snaps, u_int nsnaps, struct session *replace,
 	}
 	free(from);
 
+	if (c == NULL && replace != NULL && nmade != 0) {
+		free(ss_attached);
+		ss_attached = xstrdup(show != NULL ? show : made[0]);
+		free(ss_show);
+		ss_show = xstrdup(ss_attached);
+	}
 	if (c != NULL && nmade != 0) {
 		xasprintf(&target, "=%s", show != NULL ? show : made[0]);
 		argv[0] = "switch-client"; argv[1] = "-c"; argv[2] = c->name;
@@ -1524,6 +1589,22 @@ session_set_restore(const char **paths, u_int npaths, struct client *c,
 static struct event	 ss_offer_timer;
 static struct client	*ss_offer_client;
 
+/* Queue the commands a restore returned, on c or the global queue. */
+static void
+ss_append(const char *commands, struct client *c)
+{
+	struct cmdq_state	*state;
+	char			*error;
+
+	state = cmdq_new_state(NULL, NULL, 0);
+	if (cmd_parse_and_append(commands, NULL, c, state, &error) ==
+	    CMD_PARSE_ERROR) {
+		cmdq_append(c, cmdq_get_error(error));
+		free(error);
+	}
+	cmdq_free_state(state);
+}
+
 /* A client's choice in the offer: Enter restores, Escape archives. */
 static void
 ss_offer_choice(__unused struct menu *menu, u_int idx, key_code key,
@@ -1531,9 +1612,8 @@ ss_offer_choice(__unused struct menu *menu, u_int idx, key_code key,
 {
 	struct client		*c = data;
 	struct ss_snap		*snap;
-	struct cmdq_state	*state;
 	const char		*dir;
-	char			*previous, *commands, *error;
+	char			*previous, *commands;
 
 	ss_offer_client = NULL;
 	log_debug("session-set: offer closed, item %d key %llx", (int)idx,
@@ -1547,13 +1627,7 @@ ss_offer_choice(__unused struct menu *menu, u_int idx, key_code key,
 	}
 	if (key == '\r' && c->session != NULL) {
 		commands = ss_restore(&snap, 1, c->session, c);
-		state = cmdq_new_state(NULL, NULL, 0);
-		if (cmd_parse_and_append(commands, NULL, c, state, &error) ==
-		    CMD_PARSE_ERROR) {
-			cmdq_append(c, cmdq_get_error(error));
-			free(error);
-		}
-		cmdq_free_state(state);
+		ss_append(commands, c);
 		free(commands);
 	}
 	if (key == '\r' || key == '\033')
@@ -1564,7 +1638,7 @@ ss_offer_choice(__unused struct menu *menu, u_int idx, key_code key,
 
 /* The offer: when the set was saved, its sessions, and the two choices. */
 static struct menu *
-ss_offer_menu(struct ss_snap *snap, struct client *c)
+ss_offer_menu(struct ss_snap *snap, struct client *c, int lost)
 {
 	struct menu		*menu;
 	struct menu_item	 item;
@@ -1587,9 +1661,14 @@ ss_offer_menu(struct ss_snap *snap, struct client *c)
 	else
 		strftime(day, sizeof day, "%A %b %d", tm);
 
-	menu = menu_create(" Previous session set ");
+	menu = menu_create(lost ? " Crash recovery " : " Previous session set ");
 	memset(&item, 0, sizeof item);
 	item.key = KEYC_NONE;
+	if (lost) {
+		item.name = "-at-terminal-tmux-server stopped while this PC was "
+		    "running, likely a crash";
+		menu_add_item(menu, &item, NULL, c, NULL);
+	}
 	xasprintf(&line, "-Last saved %s %s", when + (when[0] == '0'), day);
 	item.name = line;
 	menu_add_item(menu, &item, NULL, c, NULL);
@@ -1645,31 +1724,178 @@ ss_offer_menu(struct ss_snap *snap, struct client *c)
 	return (menu);
 }
 
+/* When this Windows sign-in began, or 0 if that can't be told. */
+static long long
+ss_signed_in(void)
+{
+#ifdef _WIN32
+	LPWSTR		 buffer;
+	DWORD		 size;
+	long long	 ticks;
+#endif
+
+	if (options_get_only(global_s_options, "@session-set-signin") != NULL) {
+		return (strtoll(options_get_string(global_s_options,
+		    "@session-set-signin"), NULL, 10));
+	}
+#ifdef _WIN32
+	if (!WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE,
+	    WTS_CURRENT_SESSION, WTSSessionInfo, &buffer, &size))
+		return (0);
+	ticks = ((WTSINFOW *)buffer)->LogonTime.QuadPart;
+	WTSFreeMemory(buffer);
+	if (ticks > 0)
+		return (ticks / 10000000 - 11644473600LL);
+#endif
+	return (0);
+}
+
+/* A new server's only session, if nothing is running in its shell right now. */
+static struct session *
+ss_fresh_session(void)
+{
+	struct session		*s;
+	struct window_pane	*wp;
+	char			*command = NULL, *shell;
+	int			 idle = 0;
+#ifdef _WIN32
+	pid_t			 pid;
+#endif
+
+	s = RB_MIN(sessions, &sessions);
+	if (s == NULL || RB_NEXT(sessions, &sessions, s) != NULL ||
+	    !ss_lone_shell(s))
+		return (NULL);
+	wp = ss_lone_pane(s);
+	if (wp->argc != 0)
+		return (NULL);
+#ifdef _WIN32
+	pid = wp->pid;
+	win32_pane_commands(&pid, 1, &command);
+#else
+	command = ss_format("#{pane_current_command}", NULL, NULL, wp);
+#endif
+	if (command != NULL) {
+		shell = ss_program_name(wp->shell);
+		idle = (strcasecmp(command, shell) == 0);
+		free(shell);
+		free(command);
+	}
+	return (idle ? s : NULL);
+}
+
 /*
- * Offer the previous set on the first client that can show it. Tried when a
- * client attaches and when one is resized (a client too small for the menu
- * waits for its terminal's size); a menu closed without a choice, by a detach
- * say, leaves the set to be offered on the next attach.
+ * A silent restore's commands have run. Any that fails drops the rest, so the
+ * fresh session still being aside means it didn't finish: that session comes
+ * back, what was made goes, and the set stays for the offer.
+ */
+static enum cmd_retval
+ss_restored(__unused struct cmdq_item *item, void *data)
+{
+	struct evbuffer	*evb;
+	struct session	*s;
+	struct ss_snap	*snap;
+	const char	*dir, *argv[4];
+	char		*fresh = data, *aside, *previous, *target, *commands;
+
+	ss_restoring = 0;
+	xasprintf(&aside, "restoring-%ld", (long)getpid());
+	if (session_find(aside) == NULL) {
+		if ((dir = ss_dir()) != NULL) {
+			previous = ss_snapshot_path(dir, "-previous");
+			snap = ss_snap_read(previous);
+			ss_archive(dir, previous, snap);
+			ss_snap_free(snap);
+			free(previous);
+		}
+		server_add_message("session-set: restored after a reboot");
+	} else {
+		free(ss_attached);
+		ss_attached = NULL;
+		free(ss_show);
+		ss_show = NULL;
+
+		evb = evbuffer_new();
+		if (evb == NULL)
+			fatalx("out of memory");
+		RB_FOREACH(s, sessions, &sessions) {
+			if (strcmp(s->name, aside) == 0)
+				continue;
+			xasprintf(&target, "=%s", s->name);
+			argv[0] = "kill-session"; argv[1] = "-t"; argv[2] = target;
+			ss_add_command(evb, argv, 3);
+			free(target);
+		}
+		xasprintf(&target, "=%s", aside);
+		argv[0] = "rename-session"; argv[1] = "-t"; argv[2] = target;
+		argv[3] = fresh;
+		ss_add_command(evb, argv, 4);
+		free(target);
+		commands = xmalloc(EVBUFFER_LENGTH(evb) + 1);
+		memcpy(commands, EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
+		commands[EVBUFFER_LENGTH(evb)] = '\0';
+		evbuffer_free(evb);
+		ss_append(commands, NULL);
+		free(commands);
+		server_add_message("session-set: restore after a reboot failed");
+	}
+	free(aside);
+	free(fresh);
+	ss_written = 0;
+	session_set_changed();
+	session_set_offer_soon();
+	return (CMD_RETURN_NORMAL);
+}
+
+/* Rebuild the previous set in place of a new server's session s, unasked. */
+static int
+ss_restore_silent(const char *dir, struct ss_snap *snap, struct session *s,
+    struct client *c)
+{
+	char	*tried, *commands;
+	int	 retval;
+
+	tried = ss_tried_path(dir);
+	retval = ss_write_file(tried, "1\n", 2);
+	free(tried);
+	if (retval != 0)
+		return (-1);
+
+	ss_restoring = 1;
+	commands = ss_restore(&snap, 1, s, c);
+	ss_append(commands, NULL);
+	free(commands);
+	cmdq_append(NULL, cmdq_get_callback(ss_restored, xstrdup(s->name)));
+	return (0);
+}
+
+/*
+ * Rebuild the previous set after a reboot, or offer it on the first client that
+ * can show it. Tried when a new server first writes, when a client attaches and
+ * when one is resized (a client too small for the menu waits for its terminal's
+ * size); a menu closed without a choice, by a detach say, leaves the set to be
+ * offered on the next attach. Only a new server's first try restores with no
+ * offer: an upgraded one, or one whose session is in use, always asks.
  */
 static void
 ss_offer(__unused int fd, __unused short events, __unused void *data)
 {
 	const char	*dir;
 	struct client	*c;
+	struct session	*s;
 	struct ss_snap	*snap;
 	struct menu	*menu;
 	char		*previous;
 	u_int		 w, h, px, py;
+	int		 new_server, lost;
 
-	if (ss_stopped || ss_offer_client != NULL || (dir = ss_dir()) == NULL)
+	if (ss_stopped || ss_offer_client != NULL || ss_restoring ||
+	    (dir = ss_dir()) == NULL || RB_EMPTY(&sessions))
 		return;
 	if (!ss_set_aside)
 		ss_take_earlier(dir);
-	previous = ss_snapshot_path(dir, "-previous");
-	snap = ss_snap_read(previous);
-	free(previous);
-	if (snap == NULL)
-		return;
+	new_server = ss_new_server;
+	ss_new_server = 0;
 
 	TAILQ_FOREACH(c, &clients, entry) {
 		if (c->session == NULL || c->overlay_draw != NULL ||
@@ -1678,12 +1904,32 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 			continue;
 		break;
 	}
+	if (c != NULL && ss_show != NULL) {
+		if ((s = session_find(ss_show)) != NULL && c->session != s)
+			server_client_set_session(c, s);
+		free(ss_show);
+		ss_show = NULL;
+	}
+
+	previous = ss_snapshot_path(dir, "-previous");
+	snap = ss_snap_read(previous);
+	free(previous);
+	if (snap == NULL)
+		return;
+
+	lost = (snap->seen >= ss_signed_in());
+	if (new_server && !lost && snap->nwindows != 0 && !ss_tried(dir) &&
+	    (s = ss_fresh_session()) != NULL &&
+	    ss_restore_silent(dir, snap, s, c) == 0) {
+		ss_snap_free(snap);
+		return;
+	}
 	if (c == NULL) {
 		ss_snap_free(snap);
 		return;
 	}
 
-	menu = ss_offer_menu(snap, c);
+	menu = ss_offer_menu(snap, c, lost);
 	ss_snap_free(snap);
 	w = menu->width + 4;
 	h = menu->count + 2;
@@ -1697,6 +1943,8 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 		return;
 	}
 	log_debug("session-set: offered on %s", c->name);
+	server_add_message("session-set: offered as %s",
+	    lost ? "crash recovery" : "the previous set");
 	ss_offer_client = c;
 }
 

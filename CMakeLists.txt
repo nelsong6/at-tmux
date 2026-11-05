@@ -313,6 +313,7 @@ target_link_libraries(tmux PRIVATE
     ole32
     ntdll
     winmm
+    wtsapi32
 )
 
 # utf8proc
