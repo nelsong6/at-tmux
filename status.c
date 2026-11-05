@@ -413,7 +413,7 @@ status_get_range(struct client *c, u_int x, u_int y)
 }
 
 /* Free all ranges. */
-static void
+void
 status_free_ranges(struct style_ranges *srs)
 {
 	struct style_range	*sr, *sr1;

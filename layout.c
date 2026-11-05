@@ -313,6 +313,12 @@ layout_fix_panes(struct window *w, struct window_pane *skip)
 			sy--;
 		}
 
+		wp->footer_rows = 0;
+		if (wp->footer && sy > PANE_MINIMUM) {
+			wp->footer_rows = 1;
+			sy--;
+		}
+
 		if (window_pane_show_scrollbar(wp, scrollbars)) {
 			sb_w = wp->scrollbar_style.width;
 			sb_pad = wp->scrollbar_style.pad;

@@ -938,6 +938,7 @@ have_event:
 	m->s = s->id;
 	m->w = -1;
 	m->wp = -1;
+	m->on_pane_footer = 0;
 	m->ignore = ignore;
 
 	/* Is this on the status line? */
@@ -1027,8 +1028,16 @@ have_event:
 			wp = window_get_active_at(w, px, py);
 			if (wp == NULL)
 				return (KEYC_UNKNOWN);
-			where = server_client_check_mouse_in_pane(wp, px, py,
-			    &sl_mpos);
+			if (wp->footer_rows != 0 &&
+			    py == wp->yoff + wp->sy &&
+			    px >= wp->xoff && px < wp->xoff + wp->sx) {
+				footer = 1;
+				where = STATUS_DEFAULT;
+				m->on_pane_footer = 1;
+				m->pane_footer_x = px - wp->xoff;
+			} else
+				where = server_client_check_mouse_in_pane(wp,
+				    px, py, &sl_mpos);
 
 			if (where == PANE) {
 				log_debug("mouse %u,%u on pane %%%u", x, y,
@@ -3366,6 +3375,8 @@ server_client_check_redraw(struct client *c)
 
 	if (c->flags & (CLIENT_CONTROL|CLIENT_SUSPENDED))
 		return;
+	if (c->session != NULL)
+		window_update_pane_footers(c->session->curw->window);
 	if (c->status.footer_size != status_footer_size(c)) {
 		c->status.footer_size = status_footer_size(c);
 		recalculate_sizes_now(1);

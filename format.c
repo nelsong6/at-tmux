@@ -1393,6 +1393,7 @@ static void *
 format_cb_mouse_status_range(struct format_tree *ft)
 {
 	struct style_range	*sr;
+	struct window_pane	*wp;
 	u_int			 x, y;
 
 	if (!ft->m.valid)
@@ -1400,6 +1401,14 @@ format_cb_mouse_status_range(struct format_tree *ft)
 	if (ft->c == NULL || (~ft->c->tty.flags & TTY_STARTED))
 		return (NULL);
 
+	if (ft->m.on_pane_footer) {
+		wp = window_pane_find_by_id(ft->m.wp);
+		sr = wp == NULL ? NULL :
+		    window_pane_footer_get_range(wp, ft->m.pane_footer_x);
+		if (sr != NULL && sr->type == STYLE_RANGE_USER)
+			return (xstrdup(sr->string));
+		return (NULL);
+	}
 	if (status_footer_size(ft->c) && ft->m.y == ft->c->tty.sy - 1) {
 		sr = status_footer_get_range(ft->c, ft->m.x);
 		if (sr != NULL && sr->type == STYLE_RANGE_USER)

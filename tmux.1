@@ -5597,6 +5597,28 @@ Like
 .Ic base-index ,
 but set the starting index for pane numbers.
 .Pp
+.It Ic pane-footer Ar format
+Set the text of a row at the bottom of the pane, as wide as the pane and taken from its
+height.
+An empty format, the default, leaves the pane its full height.
+Formats are expanded for the pane, may contain
+.Ic #()
+commands and
+.Ic range=user
+regions, and clicks on them use the
+.Ic MouseDown1Footer
+family of key names with the clicked pane as the mouse target.
+.Pp
+.It Ic pane-footer-condition Ar format
+A format deciding whether the pane has its footer row.
+An empty or 0 result gives the row back to the pane.
+This format does not run
+.Ic #()
+commands.
+.Pp
+.It Ic pane-footer-style Ar style
+Set the style of the pane's footer row.
+.Pp
 .It Ic pane-border-format Ar format
 Set the text shown in pane border status lines.
 .Pp

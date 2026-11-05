@@ -26,6 +26,13 @@ new pane's values, a new width) and on `refresh-client -S`. It does not run on
 `status-interval` or on any other redraw: the footer shows its last output
 until whatever changed that output says so.
 
+`pane-footer` is the same row for one pane: it takes the pane's bottom row, is as wide
+as the pane, and moves and resizes with it, so a split shows one for each pane that has
+one. The formats run in that pane's context. `pane-footer-condition` and
+`pane-footer-style` work as above, per pane, and clicks use the same `...Footer` mouse
+names with the clicked pane as the mouse target, so `select-pane -t =` focuses it.
+Changing a pane's row doesn't change the window's size, so nothing else moves.
+
 The home configuration uses `tmux-strip` from at-home-tools to read each
 pane's Claude/Codex conversation identity and local PR/work-package records.
 The existing first-message hooks mark the active conversation; the condition

@@ -642,6 +642,64 @@ window_get_active_at(struct window *w, u_int x, u_int y)
 	return (NULL);
 }
 
+/* Does the pane's condition give it a footer row? */
+static int
+window_pane_wants_footer(struct window_pane *wp)
+{
+	struct winlink		*wl = TAILQ_FIRST(&wp->window->winlinks);
+	struct format_tree	*ft;
+	const char		*condition;
+	char			*expanded;
+	int			 wanted;
+
+	if (*options_get_string(wp->options, "pane-footer") == '\0')
+		return (0);
+	condition = options_get_string(wp->options, "pane-footer-condition");
+	if (strcmp(condition, "1") == 0)
+		return (1);
+	if (wl == NULL)
+		return (0);
+	ft = format_create(NULL, NULL, FORMAT_PANE|wp->id, FORMAT_NOJOBS);
+	format_defaults(ft, NULL, wl->session, wl, wp);
+	expanded = format_expand(ft, condition);
+	wanted = format_true(expanded);
+	free(expanded);
+	format_free(ft);
+	return (wanted);
+}
+
+/* Give each pane of a window the footer row its condition asks for. */
+void
+window_update_pane_footers(struct window *w)
+{
+	struct window_pane	*wp;
+	int			 wanted, changed = 0;
+
+	TAILQ_FOREACH(wp, &w->panes, entry) {
+		wanted = window_pane_wants_footer(wp);
+		if (wanted != wp->footer) {
+			wp->footer = wanted;
+			changed = 1;
+		}
+	}
+	if (changed) {
+		layout_fix_panes(w, NULL);
+		server_redraw_window(w);
+	}
+}
+
+struct style_range *
+window_pane_footer_get_range(struct window_pane *wp, u_int x)
+{
+	struct style_range	*sr;
+
+	TAILQ_FOREACH(sr, &wp->footer_ranges, entry) {
+		if (x >= sr->start && x < sr->end)
+			return (sr);
+	}
+	return (NULL);
+}
+
 struct window_pane *
 window_find_string(struct window *w, const char *s)
 {
@@ -997,6 +1055,8 @@ window_pane_create(struct window *w, u_int sx, u_int sy, u_int hlimit)
 	window_pane_default_cursor(wp);
 
 	screen_init(&wp->status_screen, 1, 1, 0);
+	screen_init(&wp->footer_screen, 1, 1, 0);
+	TAILQ_INIT(&wp->footer_ranges);
 
 	if (gethostname(host, sizeof host) == 0)
 		screen_set_title(&wp->base, host);
@@ -1034,6 +1094,9 @@ window_pane_destroy(struct window_pane *wp)
 		input_free(wp->ictx);
 
 	screen_free(&wp->status_screen);
+	screen_free(&wp->footer_screen);
+	status_free_ranges(&wp->footer_ranges);
+	free(wp->footer_expanded);
 
 	screen_free(&wp->base);
 
@@ -1423,7 +1486,7 @@ window_pane_full_size_offset(struct window_pane *wp, u_int *xoff, u_int *yoff,
 		*sx = wp->sx + sb_w;
 	}
 	*yoff = wp->yoff;
-	*sy = wp->sy;
+	*sy = wp->sy + wp->footer_rows;
 }
 
 /*

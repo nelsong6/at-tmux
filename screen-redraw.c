@@ -508,65 +508,128 @@ screen_redraw_make_pane_status(struct client *c, struct window_pane *wp,
 	return (1);
 }
 
+/* Draw one row of a pane's chrome, clipped to the client's view of the window. */
+static void
+screen_redraw_draw_pane_row(struct screen_redraw_ctx *ctx, struct screen *s,
+    u_int size, u_int xoff, u_int yoff)
+{
+	struct tty	*tty = &ctx->c->tty;
+	u_int		 i, x, width;
+
+	if (xoff + size <= ctx->ox ||
+	    xoff >= ctx->ox + ctx->sx ||
+	    yoff < ctx->oy ||
+	    yoff >= ctx->oy + ctx->sy)
+		return;
+
+	if (xoff >= ctx->ox && xoff + size <= ctx->ox + ctx->sx) {
+		/* All visible. */
+		i = 0;
+		x = xoff - ctx->ox;
+		width = size;
+	} else if (xoff < ctx->ox && xoff + size > ctx->ox + ctx->sx) {
+		/* Both left and right not visible. */
+		i = ctx->ox;
+		x = 0;
+		width = ctx->sx;
+	} else if (xoff < ctx->ox) {
+		/* Left not visible. */
+		i = ctx->ox - xoff;
+		x = 0;
+		width = size - i;
+	} else {
+		/* Right not visible. */
+		i = 0;
+		x = xoff - ctx->ox;
+		width = size - x;
+	}
+
+	if (ctx->statustop)
+		yoff += ctx->statuslines;
+	tty_draw_line(tty, s, i, 0, width, x, yoff - ctx->oy,
+	    &grid_default_cell, NULL);
+}
+
 /* Draw pane status. */
 static void
 screen_redraw_draw_pane_status(struct screen_redraw_ctx *ctx)
 {
 	struct client		*c = ctx->c;
 	struct window		*w = c->session->curw->window;
-	struct tty		*tty = &c->tty;
 	struct window_pane	*wp;
-	struct screen		*s;
-	u_int			 i, x, width, xoff, yoff, size;
+	u_int			 yoff;
 
 	log_debug("%s: %s @%u", __func__, c->name, w->id);
 
 	TAILQ_FOREACH(wp, &w->panes, entry) {
 		if (!window_pane_visible(wp))
 			continue;
-		s = &wp->status_screen;
-
-		size = wp->status_size;
 		if (ctx->pane_status == PANE_STATUS_TOP)
 			yoff = wp->yoff - 1;
 		else
 			yoff = wp->yoff + wp->sy;
-		xoff = wp->xoff + 2;
-
-		if (xoff + size <= ctx->ox ||
-		    xoff >= ctx->ox + ctx->sx ||
-		    yoff < ctx->oy ||
-		    yoff >= ctx->oy + ctx->sy)
-			continue;
-
-		if (xoff >= ctx->ox && xoff + size <= ctx->ox + ctx->sx) {
-			/* All visible. */
-			i = 0;
-			x = xoff - ctx->ox;
-			width = size;
-		} else if (xoff < ctx->ox && xoff + size > ctx->ox + ctx->sx) {
-			/* Both left and right not visible. */
-			i = ctx->ox;
-			x = 0;
-			width = ctx->sx;
-		} else if (xoff < ctx->ox) {
-			/* Left not visible. */
-			i = ctx->ox - xoff;
-			x = 0;
-			width = size - i;
-		} else {
-			/* Right not visible. */
-			i = 0;
-			x = xoff - ctx->ox;
-			width = size - x;
-		}
-
-		if (ctx->statustop)
-			yoff += ctx->statuslines;
-		tty_draw_line(tty, s, i, 0, width, x, yoff - ctx->oy,
-		    &grid_default_cell, NULL);
+		screen_redraw_draw_pane_row(ctx, &wp->status_screen,
+		    wp->status_size, wp->xoff + 2, yoff);
 	}
-	tty_cursor(tty, 0, 0);
+	tty_cursor(&c->tty, 0, 0);
+}
+
+/* Update a pane's footer row. */
+static int
+screen_redraw_make_pane_footer(struct client *c, struct window_pane *wp)
+{
+	struct screen_write_ctx	 ctx;
+	struct grid_cell	 gc;
+	struct format_tree	*ft;
+	char			*expanded;
+	u_int			 n, width = wp->sx;
+	int			 flags = FORMAT_STATUS, force;
+
+	if (c->flags & CLIENT_STATUSFORCE)
+		flags |= FORMAT_FORCE;
+	ft = format_create(c, NULL, FORMAT_PANE|wp->id, flags);
+	format_defaults(ft, c, c->session, c->session->curw, wp);
+	style_apply(&gc, wp->options, "pane-footer-style", ft);
+	expanded = format_expand_time(ft,
+	    options_get_string(wp->options, "pane-footer"));
+	format_free(ft);
+	force = screen_size_x(&wp->footer_screen) != width ||
+	    !grid_cells_equal(&gc, &wp->footer_style);
+	if (!force && wp->footer_expanded != NULL &&
+	    strcmp(expanded, wp->footer_expanded) == 0) {
+		free(expanded);
+		return (0);
+	}
+	screen_resize(&wp->footer_screen, width, 1, 0);
+	memcpy(&wp->footer_style, &gc, sizeof gc);
+	screen_write_start(&ctx, &wp->footer_screen);
+	screen_write_cursormove(&ctx, 0, 0, 0);
+	for (n = 0; n < width; n++)
+		screen_write_putc(&ctx, &gc, ' ');
+	screen_write_cursormove(&ctx, 0, 0, 0);
+	status_free_ranges(&wp->footer_ranges);
+	format_draw(&ctx, &gc, width, expanded, &wp->footer_ranges, 0);
+	screen_write_stop(&ctx);
+	free(wp->footer_expanded);
+	wp->footer_expanded = expanded;
+	return (1);
+}
+
+/* Draw pane footers, over the row of each pane the borders treat as outside it. */
+static void
+screen_redraw_draw_pane_footers(struct screen_redraw_ctx *ctx)
+{
+	struct client		*c = ctx->c;
+	struct window		*w = c->session->curw->window;
+	struct window_pane	*wp;
+
+	TAILQ_FOREACH(wp, &w->panes, entry) {
+		if (wp->footer_rows == 0 || !window_pane_visible(wp))
+			continue;
+		screen_redraw_draw_pane_row(ctx, &wp->footer_screen, wp->sx,
+		    wp->xoff, wp->yoff + wp->sy);
+	}
+	tty_cursor(&c->tty, 0, 0);
 }
 
 /* Update status line and change flags if unchanged. */
@@ -602,6 +665,15 @@ screen_redraw_update(struct screen_redraw_ctx *ctx, uint64_t flags)
 		if (redraw)
 			flags |= CLIENT_REDRAWBORDERS;
 	}
+
+	redraw = 0;
+	TAILQ_FOREACH(wp, &w->panes, entry) {
+		if (wp->footer_rows != 0 &&
+		    screen_redraw_make_pane_footer(c, wp))
+			redraw = 1;
+	}
+	if (redraw)
+		flags |= CLIENT_REDRAWBORDERS;
 
 	return (flags);
 }
@@ -665,6 +737,7 @@ screen_redraw_screen(struct client *c)
 		screen_redraw_draw_borders(&ctx);
 		if (ctx.pane_status != PANE_STATUS_OFF)
 			screen_redraw_draw_pane_status(&ctx);
+		screen_redraw_draw_pane_footers(&ctx);
 		screen_redraw_draw_pane_scrollbars(&ctx);
 	}
 	if (flags & CLIENT_REDRAWWINDOW) {

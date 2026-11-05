@@ -1365,6 +1365,29 @@ const struct options_table_entry options_table[] = {
 	  .text = "Index of the first pane in each window."
 	},
 
+	{ .name = "pane-footer",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
+	  .default_str = "",
+	  .text = "Format of a row at the bottom of a pane, as wide as the pane. "
+		  "Empty disables it."
+	},
+
+	{ .name = "pane-footer-condition",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
+	  .default_str = "1",
+	  .text = "Format deciding whether a pane has a footer row."
+	},
+
+	{ .name = "pane-footer-style",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
+	  .flags = OPTIONS_TABLE_IS_STYLE,
+	  .default_str = "bg=default,fg=default",
+	  .text = "Style of a pane's footer row."
+	},
+
 	{ .name = "pane-border-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,

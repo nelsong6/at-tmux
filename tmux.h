@@ -1281,6 +1281,14 @@ struct window_pane {
 	struct screen	 status_screen;
 	size_t		 status_size;
 
+	/* pane-footer: wanted by its condition, and rows taken from the pane. */
+	int		 footer;
+	u_int		 footer_rows;
+	struct screen	 footer_screen;
+	struct grid_cell footer_style;
+	char		*footer_expanded;
+	struct style_ranges footer_ranges;
+
 	TAILQ_HEAD(, window_mode_entry) modes;
 
 	char		*searchstr;
@@ -1551,6 +1559,9 @@ struct mouse_event {
 	int		s;
 	int		w;
 	int		wp;
+
+	int		on_pane_footer;
+	u_int		pane_footer_x;
 
 	u_int		sgr_type;
 	u_int		sgr_b;
@@ -3106,6 +3117,7 @@ u_int	 status_reserved_size_for_window(struct client *, struct window *);
 u_int	 status_reserved_size(struct client *);
 int	 status_footer_redraw(struct client *);
 struct style_range *status_footer_get_range(struct client *, u_int);
+void	 status_free_ranges(struct style_ranges *);
 struct style_range *status_get_range(struct client *, u_int, u_int);
 void	 status_init(struct client *);
 void	 status_free(struct client *);
@@ -3404,6 +3416,8 @@ struct window	*window_create(u_int, u_int, u_int, u_int);
 void		 window_pane_set_event(struct window_pane *);
 struct window_pane *window_get_active_at(struct window *, u_int, u_int);
 struct window_pane *window_find_string(struct window *, const char *);
+void		 window_update_pane_footers(struct window *);
+struct style_range *window_pane_footer_get_range(struct window_pane *, u_int);
 int		 window_has_pane(struct window *, struct window_pane *);
 int		 window_set_active_pane(struct window *, struct window_pane *,
 		     int);
