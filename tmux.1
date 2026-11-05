@@ -4057,6 +4057,16 @@ for any other modifiers held.
 .Nm
 watches the keyboard only once the table has a key, and passes every key on,
 so other programs still receive it.
+A key bound in the
+.Em global
+table does nothing on a server with no client unless it is also bound in the
+.Em global-no-client
+table, which runs it instead.
+For example, to open a terminal when none is attached:
+.Bd -literal -offset indent
+bind -T global-no-client W-\(ga start-program at-terminal.exe
+.Ed
+.Pp
 On Windows, a binding in the
 .Em global
 table can tell whether the terminal showing that client was the foreground
@@ -7354,6 +7364,11 @@ or
 .Xr aplay 1
 found on the global
 .Ev PATH .
+.It Ic start-program Ar program Op Ar argument ...
+Start
+.Ar program
+from the server with no shell and no pane, without waiting for it.
+It keeps running if the server ends.
 .It Xo Ic display-palette
 .Op Fl c Ar target-client
 .Op Fl h Ar height

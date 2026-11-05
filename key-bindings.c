@@ -723,7 +723,8 @@ key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
 
 /*
  * Run a key from the global table, pressed anywhere on the desktop, for the
- * most recently active client. A server with no client ignores it.
+ * most recently active client. With no client, the key runs from the
+ * global-no-client table instead, if bound there.
  *
  * foreground is the process owning the window that was in the foreground when
  * the key was pressed (0 for none), or -1 where the platform doesn't say. On
@@ -743,8 +744,12 @@ key_bindings_global(key_code key, pid_t foreground)
 		return;
 	if ((bd = key_bindings_get(table, key)) == NULL)
 		return;
-	if ((c = cmd_find_best_client(NULL)) == NULL)
+	if ((c = cmd_find_best_client(NULL)) == NULL) {
+		table = key_bindings_get_table("global-no-client", 0);
+		if (table != NULL && (bd = key_bindings_get(table, key)) != NULL)
+			key_bindings_dispatch(bd, NULL, NULL, &event, NULL);
 		return;
+	}
 #ifdef _WIN32
 	if (foreground != -1) {
 		ft = format_create(NULL, NULL, FORMAT_NONE, 0);

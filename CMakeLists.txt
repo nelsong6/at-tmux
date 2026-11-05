@@ -122,6 +122,7 @@ set(TMUX_SOURCES
     cmd-show-prompt-history.c
     cmd-source-file.c
     cmd-split-window.c
+    cmd-start-program.c
     cmd-swap-pane.c
     cmd-swap-window.c
     cmd-switch-client.c
