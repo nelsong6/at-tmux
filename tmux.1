@@ -3721,6 +3721,17 @@ session the client opened in, if that is still one shell; Escape moves it to
 .Pa archive/ .
 A snapshot of a server that ended with its last session, or that no client
 ever showed, is archived without an offer.
+.Pp
+On Windows, a snapshot last saved before this sign-in began ended with the
+computer, so a new server rebuilds it with no offer in place of its one session,
+if that is still one shell, whether or not a client is attached; the first client
+to attach is switched to the session it showed, and told of any window that could
+not be made.
+With a session in use it is offered instead.
+A snapshot saved since, or one whose restore the last server died in, was lost
+while the computer stayed up, and the offer says it is likely crash recovery.
+.Ic @session-set-signin
+stands in for the time the sign-in began.
 .Tg rotatew
 .It Xo Ic rotate-window
 .Op Fl DUZ
