@@ -611,8 +611,10 @@ cmdq_fire_command(struct cmdq_item *item)
 	int			 flags, quiet = 0;
 	char			*tmp;
 
-	if (cfg_finished)
+	if (cfg_finished) {
 		cmdq_add_message(item);
+		flight_note("command %s", entry->name);
+	}
 	if (log_get_level() > 1) {
 		tmp = cmd_print(cmd);
 		log_debug("%s %s: (%u) %s", __func__, name, item->group, tmp);

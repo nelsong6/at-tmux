@@ -399,6 +399,7 @@ server_start(struct tmuxproc *client, uint64_t flags, struct event_base *base,
 
 	server_acl_init();
 
+	flight_start();
 	server_add_accept(0);
 	proc_loop(server_proc, server_loop);
 
@@ -410,6 +411,7 @@ server_start(struct tmuxproc *client, uint64_t flags, struct event_base *base,
 	win32_ipc_cleanup(socket_path);
 #endif
 
+	flight_end("%s", server_exit ? "told to exit" : "its last session closed");
 	exit(0);
 }
 
@@ -421,6 +423,7 @@ server_loop(void)
 	u_int		 items;
 
 	current_time = time(NULL);
+	flight_worked(current_time);
 
 	do {
 		items = cmdq_next(NULL);

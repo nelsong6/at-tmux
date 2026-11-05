@@ -861,6 +861,7 @@ client_dispatch(struct imsg *imsg, __unused void *arg)
 		if (!client_exitflag) {
 			client_exitreason = CLIENT_EXIT_LOST_SERVER;
 			client_exitval = 1;
+			flight_lost_server();
 		}
 		proc_exit(client_proc);
 		return;

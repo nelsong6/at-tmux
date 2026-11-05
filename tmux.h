@@ -3652,6 +3652,16 @@ char	*session_set_reopen(int, char **);
 char	*session_set_restore(const char **, u_int, struct client *, char **);
 void	 session_set_offer_soon(void);
 
+/* flight.c */
+void	 flight_start(void);
+void printflike(1, 2) flight_note(const char *, ...);
+void	 flight_worked(time_t);
+void	 flight_expanding(const char *);
+void	 flight_crashed(const char *);
+void printflike(1, 2) flight_end(const char *, ...);
+void	 flight_tell(struct client *);
+void	 flight_lost_server(void);
+
 /* session.c */
 extern struct sessions sessions;
 extern struct session_groups session_groups;
@@ -3764,6 +3774,7 @@ void	log_open(const char *);
 void	log_toggle(const char *);
 void	log_close(void);
 int	log_message(const char *);
+void	log_prune_messages(const char *);
 void printflike(1, 2) log_debug(const char *, ...);
 __dead void printflike(1, 2) fatal(const char *, ...);
 __dead void printflike(1, 2) fatalx(const char *, ...);

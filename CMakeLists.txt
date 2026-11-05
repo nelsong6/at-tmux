@@ -169,6 +169,7 @@ set(TMUX_SOURCES
     server-client.c
     server-fn.c
     server-upgrade.c
+    flight.c
     session-set.c
     session.c
     sort.c

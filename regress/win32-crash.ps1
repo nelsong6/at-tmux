@@ -2,7 +2,7 @@
 # regress/win32-crash-log.sh: a new thread runs xstrdup on a bad pointer. Exe is
 # a tmux.exe of the same build, with its PDB beside it, where this finds the
 # function; the server's crash handler has to find the PDB by itself.
-param([int]$Id, [string]$Exe)
+param([int]$Id, [string]$Exe, [string]$Function = 'xstrdup')
 
 Add-Type -TypeDefinition @'
 using System;
@@ -26,7 +26,7 @@ if ($base -eq 0) { throw 'SymLoadModuleEx failed' }
 $symbol = New-Object byte[] 512
 [BitConverter]::GetBytes([uint32]88).CopyTo($symbol, 0)
 $symbol[80] = 64
-if (-not [Crash]::SymFromName($me, 'xstrdup', $symbol)) { throw 'no xstrdup in the PDB' }
+if (-not [Crash]::SymFromName($me, $Function, $symbol)) { throw "no $Function in the PDB" }
 $rva = [BitConverter]::ToUInt64($symbol, 56) - $base
 
 $start = [IntPtr]([Int64](Get-Process -Id $Id).MainModule.BaseAddress + [Int64]$rva)

@@ -200,6 +200,7 @@ dist_tmux_SOURCES = \
 	server-fn.c \
 	server-upgrade.c \
 	server.c \
+	flight.c \
 	session-set.c \
 	session.c \
 	sort.c \

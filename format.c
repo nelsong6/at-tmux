@@ -5491,6 +5491,9 @@ format_expand1(struct format_expand_state *es, const char *fmt)
 	const char		*ptr, *s, *style_end = NULL;
 	size_t			 off, len, n, outlen;
 	int			 ch, brackets;
+
+	if (es->loop == 0)
+		flight_expanding(fmt);
 	char			 expanded[8192];
 
 	if (fmt == NULL || *fmt == '\0')

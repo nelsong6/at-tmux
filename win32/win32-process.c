@@ -13,6 +13,14 @@
 #include "win32-platform.h"
 #include <shellapi.h>
 #include <dbghelp.h>
+#include <signal.h>
+
+/* Defined in flight.c. */
+void flight_crashed(const char *);
+
+/* From appmodel.h, which needs more of windows.h than this platform header sets up. */
+#define PACKAGE_FULL_NAME_MAX_LENGTH 127
+LONG WINAPI GetCurrentPackageFullName(unsigned int *, wchar_t *);
 
 #pragma comment(lib, "dbghelp.lib")
 
@@ -387,11 +395,11 @@ void log_debug(const char *, ...);
  */
 static char win32_crash_symbols[MAX_PATH];
 
-static LONG WINAPI
-win32_crash_handler(EXCEPTION_POINTERS *ep)
+static void
+win32_crash_report(const char *what, const CONTEXT *context)
 {
 	HANDLE			 proc = GetCurrentProcess(), thread = GetCurrentThread();
-	CONTEXT			 ctx = *ep->ContextRecord;
+	CONTEXT			 ctx = *context;
 	STACKFRAME64		 frame;
 	char			 symbuf[sizeof(SYMBOL_INFO) + 256];
 	SYMBOL_INFO		*sym = (SYMBOL_INFO *)symbuf;
@@ -411,9 +419,8 @@ win32_crash_handler(EXCEPTION_POINTERS *ep)
 		f = fopen(path, "w");
 	}
 
-	snprintf(out, sizeof out, "tmux crashed: exception 0x%08lx at %p",
-	    ep->ExceptionRecord->ExceptionCode,
-	    ep->ExceptionRecord->ExceptionAddress);
+	flight_crashed(what);
+	snprintf(out, sizeof out, "tmux crashed: %s", what);
 	fprintf(stderr, "%s\n", out);
 	if (f != NULL)
 		fprintf(f, "%s\n", out);
@@ -453,7 +460,50 @@ win32_crash_handler(EXCEPTION_POINTERS *ep)
 	if (f != NULL)
 		fclose(f);
 	fflush(NULL);
+}
+
+static LONG WINAPI
+win32_crash_handler(EXCEPTION_POINTERS *ep)
+{
+	char	 what[64];
+
+	snprintf(what, sizeof what, "exception 0x%08lx at %p",
+	    ep->ExceptionRecord->ExceptionCode,
+	    ep->ExceptionRecord->ExceptionAddress);
+	win32_crash_report(what, ep->ContextRecord);
 	return (EXCEPTION_CONTINUE_SEARCH);
+}
+
+/*
+ * The C runtime reports a bad argument, and abort(), without raising an
+ * exception, so the handler above never sees them. Ending in a fail-fast keeps
+ * the crash dump Windows writes for one.
+ */
+static void
+win32_invalid_parameter(const wchar_t *expression, const wchar_t *function,
+    const wchar_t *file, unsigned int line, uintptr_t reserved)
+{
+	CONTEXT	 ctx;
+
+	(void)expression;
+	(void)function;
+	(void)file;
+	(void)line;
+	(void)reserved;
+	RtlCaptureContext(&ctx);
+	win32_crash_report("invalid argument to a C runtime function", &ctx);
+	__fastfail(FAST_FAIL_INVALID_ARG);
+}
+
+static void
+win32_abort(int sig)
+{
+	CONTEXT	 ctx;
+
+	(void)sig;
+	RtlCaptureContext(&ctx);
+	signal(SIGABRT, SIG_DFL);
+	win32_crash_report("abort", &ctx);
 }
 
 void
@@ -464,6 +514,8 @@ win32_crash_init(void)
 	DWORD	 n;
 
 	SetUnhandledExceptionFilter(win32_crash_handler);
+	_set_invalid_parameter_handler(win32_invalid_parameter);
+	signal(SIGABRT, win32_abort);
 
 	n = GetModuleFileNameA(NULL, path, sizeof path);
 	if (n == 0 || n >= sizeof path)
@@ -480,6 +532,45 @@ win32_crash_init(void)
 	*slash = '\0';
 	snprintf(win32_crash_symbols, sizeof win32_crash_symbols, "%s",
 	    strncmp(path, "\\\\?\\", 4) == 0 ? path + 4 : path);
+}
+
+#ifndef PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY
+#define PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY ProcThreadAttributeValue(18, FALSE, TRUE, FALSE)
+#endif
+#ifndef PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE
+#define PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE 0x1
+#endif
+
+/*
+ * A child of a packaged desktop app stays in the app's container, even though
+ * CREATE_BREAKAWAY_FROM_JOB reports success, and the app's next update ends it
+ * with the app. This policy is what takes a child out.
+ */
+void
+win32_leave_package(LPPROC_THREAD_ATTRIBUTE_LIST list)
+{
+	static DWORD	 policy =
+	    PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE;
+
+	UpdateProcThreadAttribute(list, 0,
+	    PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY, &policy, sizeof policy,
+	    NULL, NULL);
+}
+
+/* What this process runs inside: a package or job can end it with no warning. */
+void
+win32_origin(char *buf, size_t size)
+{
+	wchar_t	 package[PACKAGE_FULL_NAME_MAX_LENGTH + 1];
+	unsigned int	 length = PACKAGE_FULL_NAME_MAX_LENGTH + 1;
+	BOOL	 job = FALSE;
+
+	IsProcessInJob(GetCurrentProcess(), NULL, &job);
+	if (GetCurrentPackageFullName(&length, package) == ERROR_SUCCESS) {
+		snprintf(buf, size, "package %ls, %s", package,
+		    job ? "in a job" : "no job");
+	} else
+		snprintf(buf, size, "no package, %s", job ? "in a job" : "no job");
 }
 
 /* Defined in cfg.c. */
@@ -499,12 +590,15 @@ int log_get_level(void);
 void
 win32_launch_server(const char *label)
 {
-	STARTUPINFOA si;
+	STARTUPINFOEXA si;
 	PROCESS_INFORMATION pi;
 	char exe[MAX_PATH];
 	char cmdline[8192];
+	SIZE_T size = 0;
 	size_t len;
 	unsigned int i;
+	DWORD flags = DETACHED_PROCESS | CREATE_NO_WINDOW |
+	    EXTENDED_STARTUPINFO_PRESENT;
 
 	if (GetModuleFileNameA(NULL, exe, sizeof exe) == 0)
 		return;
@@ -519,8 +613,15 @@ win32_launch_server(const char *label)
 		return;
 
 	memset(&si, 0, sizeof si);
-	si.cb = sizeof si;
+	si.StartupInfo.cb = sizeof si;
 	memset(&pi, 0, sizeof pi);
+	InitializeProcThreadAttributeList(NULL, 1, 0, &size);
+	if ((si.lpAttributeList = malloc(size)) == NULL ||
+	    !InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &size)) {
+		free(si.lpAttributeList);
+		return;
+	}
+	win32_leave_package(si.lpAttributeList);
 
 	/*
 	 * CREATE_BREAKAWAY_FROM_JOB detaches the server from any job object
@@ -530,15 +631,18 @@ win32_launch_server(const char *label)
 	 * doesn't allow breakaway (ERROR_ACCESS_DENIED).
 	 */
 	if (!CreateProcessA(NULL, cmdline, NULL, NULL, FALSE,
-	    DETACHED_PROCESS | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB,
-	    NULL, NULL, &si, &pi)) {
-		if (GetLastError() != ERROR_ACCESS_DENIED)
+	    flags | CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si.StartupInfo,
+	    &pi)) {
+		if (GetLastError() != ERROR_ACCESS_DENIED ||
+		    !CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, flags,
+		    NULL, NULL, &si.StartupInfo, &pi)) {
+			DeleteProcThreadAttributeList(si.lpAttributeList);
+			free(si.lpAttributeList);
 			return;
-		if (!CreateProcessA(NULL, cmdline, NULL, NULL, FALSE,
-		    DETACHED_PROCESS | CREATE_NO_WINDOW, NULL, NULL,
-		    &si, &pi))
-			return;
+		}
 	}
+	DeleteProcThreadAttributeList(si.lpAttributeList);
+	free(si.lpAttributeList);
 
 	CloseHandle(pi.hThread);
 	CloseHandle(pi.hProcess);

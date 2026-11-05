@@ -41,7 +41,7 @@ static int	 log_level;
 #define MESSAGE_LOG_BYTES (1024 * 1024)
 #define MESSAGE_LOG_DAYS 30
 
-static void
+void
 log_prune_messages(const char *dir)
 {
 	struct stat	 sb;
@@ -287,6 +287,15 @@ log_debug(const char *msg, ...)
 	va_end(ap);
 }
 
+static void
+log_flight_fatal(const char *msg, va_list ap)
+{
+	char	 why[256];
+
+	vsnprintf(why, sizeof why, msg, ap);
+	flight_crashed(why);
+}
+
 /* Log a critical error with error string and die. */
 __dead void
 fatal(const char *msg, ...)
@@ -301,6 +310,10 @@ fatal(const char *msg, ...)
 	log_vwrite(msg, ap, tmp);
 	va_end(ap);
 
+	va_start(ap, msg);
+	log_flight_fatal(msg, ap);
+	va_end(ap);
+
 	exit(1);
 }
 
@@ -312,6 +325,10 @@ fatalx(const char *msg, ...)
 
 	va_start(ap, msg);
 	log_vwrite(msg, ap, "fatal: ");
+	va_end(ap);
+
+	va_start(ap, msg);
+	log_flight_fatal(msg, ap);
 	va_end(ap);
 
 	exit(1);

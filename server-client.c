@@ -564,8 +564,11 @@ server_client_set_session(struct client *c, struct session *s)
 		status_timer_start(c);
 		notify_client("client-session-changed", c);
 		server_redraw_client(c);
-		if (old == NULL)
+		if (old == NULL) {
 			session_set_offer_soon();
+			flight_tell(c);
+		}
+		flight_note("client %s on session %s", c->name, s->name);
 	}
 
 	server_check_unattached();

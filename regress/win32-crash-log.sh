@@ -21,6 +21,8 @@ package=$(cd "$(dirname "$TEST_TMUX")" && pwd)
 OUT=$(mktemp -d) || exit 1
 winout=$(cygpath -aw "$OUT")
 TMUX="$OUT/current/tmux.exe -L$TEST_SOCKET"
+TMUX_FLIGHT_DIR=$(cygpath -m "$OUT/flight")
+export TMUX_FLIGHT_DIR
 . "$dir/win32-wait.sh"
 
 # Junctions go first: rm -rf would follow one into the package.
@@ -71,6 +73,33 @@ tr -d '\r' <"$log" | grep -q '^tmux crashed: exception 0xc0000005' ||
     fail "the log names no access violation"
 tr -d '\r' <"$log" | grep -q '^  #[0-9]* xstrdup .*xmalloc\.c:[0-9]*$' ||
     fail "the log names no function, file and line"
+
+# abort() and a bad C runtime argument raise no exception, and each still logs,
+# and the next server reports how the last one ended (TMUX-40). The junction
+# has moved on, so these run from the package.
+TMUX="$package/tmux.exe -L$TEST_SOCKET"
+gone() {
+	! $TMUX list-sessions >/dev/null 2>&1
+}
+crash_with() {
+	WAIT_TIMEOUT=30 wait_until gone || fail "the crashed server is still up"
+	last=$server
+	TMP=$winout $TMUX -fNUL new -d </dev/null || fail "new-session"
+	server=$($TMUX display-message -p '#{pid}' | tr -d '\r')
+	[ -n "$server" ] || fail "no server pid"
+	tr -d '\r' <"$OUT/flight/ended/tmux-$last.log" | grep -q "^ended: *crashed: $3" ||
+	    fail "the next server did not report how $last ended"
+	log=$OUT/tmux-crash-$server.log
+	"$powershell" -NoProfile -ExecutionPolicy Bypass \
+	    -File "$(cygpath -aw "$dir/win32-crash.ps1")" -Id "$server" \
+	    -Exe "$(cygpath -aw "$package/tmux.exe")" -Function "$1" ||
+	    fail "crashing the server with $1"
+	WAIT_TIMEOUT=30 wait_until log_done || fail "no finished crash log for $1"
+	tr -d '\r' <"$log" | grep -q "^tmux crashed: $2" ||
+	    fail "the log does not say $2"
+}
+crash_with abort abort 'exception 0xc0000005'
+crash_with _invalid_parameter_noinfo 'invalid argument to a C runtime function' abort
 
 echo PASS
 exit 0

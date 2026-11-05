@@ -1680,12 +1680,13 @@ upgrade_spawn(HANDLE state, HANDLE ack, PROCESS_INFORMATION *pi,
 
 	memset(&si, 0, sizeof si);
 	si.StartupInfo.cb = sizeof si;
-	InitializeProcThreadAttributeList(NULL, 1, 0, &size);
+	InitializeProcThreadAttributeList(NULL, 2, 0, &size);
 	si.lpAttributeList = xmalloc(size);
-	InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &size);
+	InitializeProcThreadAttributeList(si.lpAttributeList, 2, 0, &size);
 	UpdateProcThreadAttribute(si.lpAttributeList, 0,
 	    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherit, sizeof inherit, NULL,
 	    NULL);
+	win32_leave_package(si.lpAttributeList);
 
 	SetEnvironmentVariableA("TMUX_UPGRADE", env);
 	flags = DETACHED_PROCESS|CREATE_NO_WINDOW|EXTENDED_STARTUPINFO_PRESENT;
@@ -1840,6 +1841,7 @@ upgrade_run(char **cause)
 		 */
 		log_debug("upgrade: handed over to %s (pid %lu)", upgrade_exe,
 		    pi.dwProcessId);
+		flight_end("handed over to %lu", pi.dwProcessId);
 		TerminateProcess(GetCurrentProcess(), 0);
 	}
 
@@ -2017,6 +2019,7 @@ upgrade_run(char **cause)
 		 */
 		log_debug("upgrade: handed over to %s (pid %ld)", upgrade_exe,
 		    (long)pid);
+		flight_end("handed over to %ld", (long)pid);
 		_exit(0);
 	}
 	kill(pid, SIGKILL);
