@@ -65,6 +65,7 @@ CI runs on Forgejo (`.forgejo/workflows/ci.yml`). Its `build-and-test` job runs 
 - `win32-process-watch.sh` — the server sees every child it starts exit: 70 jobs at once, rounds of overlapping jobs that end oldest first, and a job and a pane started beside a program that keeps running (before TMUX-54 a table of 64 filled up and popups, jobs and panes stayed open after their program ended)
 - `win32-environment.sh` — changes to global and session environments reach background commands and pane pipes, including PATH lookup through a directory with spaces, removed variables and Unicode values; new panes receive the same values (TMUX-80)
 - `win32-child-path.sh` — direct pane and pipe programs resolve through their child environment's PATH, including directories with spaces, session overrides and removed paths (TMUX-86)
+- `win32-crash-log.sh` — run on the signed package: a server started through a junction that then moves to the next release, faulting in its own code (`win32-crash.ps1`, a thread started on `xstrdup`), writes a `tmux-crash-<pid>.log` naming function, file and line from the `tmux.pdb` beside the exe, with none at the build path stored in it (TMUX-114)
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)
 - `win32-popup-output.sh` — a pane changing behind a popup (erasing to the end of a line or the screen, deleting or inserting characters, scrolling part of its screen, overwriting half a wide character) leaves every popup row and its border alone and still changes beside the popup; a wide character of its own colour across the popup's edge no longer stops the server (TMUX-103; also run beside `conpty.dll`, which is what passes the delete and insert through to tmux)
@@ -109,7 +110,7 @@ directly, and a Forgejo commit GitHub lacks stops the sync until it moves to Git
 
 ## Publishing
 
-CI's `release` job makes every master commit whose run passed a Forgejo release, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and its `.sha256`.
+CI's `release` job makes every master commit whose run passed a Forgejo release, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with its `tmux.pdb`, `conpty.dll` and `OpenConsole.exe`) and its `.sha256`.
 
 After the complete release is published, CI starts home-sync on every PC. home-sync verifies the signed Windows package, switches `C:\Program Files\at-home\tmux\current`, and reconciles existing servers using `upgrade-server` while preserving their panes. The manual `publish.ps1` was retired by HOMECFG-110; merges need no separate publishing command.
 
