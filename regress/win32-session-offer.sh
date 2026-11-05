@@ -210,11 +210,14 @@ wait_until client_on_alpha || fail "first client not on the session it showed"
 sixth=$(sed -n "s/^start${T}//p" "$SNAP" | tr -d '\r')
 stop
 
-# 7. A restore that can't finish (here a layout that won't parse) leaves the
-# fresh session and the set, and the next server offers it rather than running
-# it again.
-sed -i "s/${T}[0-9a-f]\{4\},[0-9]*x[0-9]*,0,0\[/${T}bad,/" "$SNAP"
-$TMUX -f "$(cygpath -m "$OUT/reboot.conf")" new -d -s primary || fail "start seventh server"
+# 7. A restore that can't finish (here a window whose program can't start) leaves
+# the fresh session and the set, and the next server offers it rather than
+# running it again.
+cat >"$OUT/broken.conf" <<EOF
+source '$(cygpath -m "$OUT/reboot.conf")'
+set -g @session-set-restart-cmd 'no-such-program.exe argument'
+EOF
+$TMUX -f "$(cygpath -m "$OUT/broken.conf")" new -d -s primary || fail "start seventh server"
 wait_until messages_have "restore after a reboot failed" || fail "failure not recorded"
 wait_until sessions_are primary || fail "fresh session not back"
 snap_has "$PREVIOUS" "^start${T}$sixth$" || fail "failed restore lost its set"

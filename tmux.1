@@ -3653,7 +3653,7 @@ option has the same meaning as for the
 command.
 .It Xo Ic restore-set
 .Op Fl d
-.Ar file ...
+.Op Ar file ...
 .Xc
 Rebuild the sessions saved in each
 .Ar file ,
@@ -3673,11 +3673,33 @@ A session name already in use gets
 and up.
 The files are moved to
 .Pa archive/ ,
-where the newest 50 are kept.
+where the newest 50 are kept, when the restore ends.
 Unless
 .Fl d
 is given, the client is switched to the session the first snapshot's client
 showed.
+.Pp
+The windows are made one at a time with the server free between them.
+The client that ran the command waits for the end, and exits with an error
+naming any window that could not be made; the rest are made regardless.
+Other clients are answered meanwhile with the sessions as they stand, and
+attached clients show the progress.
+A command from a client that makes a session the restore is making, or a window
+in one, waits for the end, unless a hook's foreground
+.Ic run-shell
+is running, and a second
+.Ic restore-set
+is refused.
+.Ic restore-set
+with no
+.Ar file
+reports the restore running, or how the last one ended; the
+.Ic server_restore
+format holds the same progress.
+A server that ends during a restore leaves the files where they were.
+A restore of
+.Pa live/<socket>-previous.set
+leaves it to be offered again; any other leaves the server's windows to be offered.
 .Pp
 A server with
 .Ic @session-set-dir
@@ -6714,6 +6736,7 @@ The following variables are available, where appropriate:
 .It Li "selection_present" Ta "" Ta "1 if selection started in copy mode"
 .It Li "selection_start_x" Ta "" Ta "X position of the start of the selection"
 .It Li "selection_start_y" Ta "" Ta "Y position of the start of the selection"
+.It Li "server_restore" Ta "" Ta "Progress of a running restore-set, or empty"
 .It Li "server_sessions" Ta "" Ta "Number of sessions"
 .It Li "server_upgrade" Ta "" Ta "Waiting or failed upgrade-server, or empty"
 .It Li "session_active" Ta "" Ta "1 if session active"

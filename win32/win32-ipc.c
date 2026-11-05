@@ -26,17 +26,17 @@
 BOOLEAN NTAPI RtlGenRandom(PVOID RandomBuffer, ULONG RandomBufferLength);
 
 #define AUTH_TOKEN_LEN		32
-#define MAX_PENDING_NONCES	16
-#define NONCE_EXPIRY_MS		30000
+#define MAX_PENDING_NONCES	1024
 #define PIPE_WAIT_TIMEOUT_MS	5000
 
 struct pending_nonce {
-	char	nonce[AUTH_TOKEN_LEN * 2 + 1];	/* 64 hex chars + NUL */
-	DWORD	created;			/* GetTickCount() */
-	int	used;
+	char	 nonce[AUTH_TOKEN_LEN * 2 + 1];	/* 64 hex chars + NUL */
+	uint64_t created;			/* order of issue */
+	int	 used;
 };
 
 static struct pending_nonce	pending_nonces[MAX_PENDING_NONCES];
+static uint64_t			nonce_issued;
 static CRITICAL_SECTION		nonce_lock;
 static int			nonce_lock_init;
 
@@ -126,14 +126,19 @@ create_discovery_pipe(const char *pipe_name)
 /*
  * Generate a nonce and add it to the pending list.
  * Writes the hex string to nonce_out.
- * Returns 0 on success, -1 if the table is full or RNG fails.
+ *
+ * A pending nonce is a client waiting for the main thread, and each client has
+ * two, so it stays for however long the server is busy: neither time nor a full
+ * table may turn a client away. One left by a client that went away goes when
+ * the table needs its slot, oldest first.
+ *
+ * Returns 0 on success, -1 if RNG fails.
  */
 static int
 add_pending_nonce(char *nonce_out)
 {
 	unsigned char	random_bytes[AUTH_TOKEN_LEN];
-	int		i;
-	DWORD		now;
+	int		i, slot = -1;
 
 	if (!RtlGenRandom(random_bytes, sizeof random_bytes))
 		return (-1);
@@ -143,29 +148,21 @@ add_pending_nonce(char *nonce_out)
 	nonce_out[AUTH_TOKEN_LEN * 2] = '\0';
 
 	EnterCriticalSection(&nonce_lock);
-	now = GetTickCount();
-
-	/* Expire stale entries. */
-	for (i = 0; i < MAX_PENDING_NONCES; i++) {
-		if (pending_nonces[i].used &&
-		    (now - pending_nonces[i].created) > NONCE_EXPIRY_MS)
-			pending_nonces[i].used = 0;
-	}
-
-	/* Find a free slot. */
 	for (i = 0; i < MAX_PENDING_NONCES; i++) {
 		if (!pending_nonces[i].used) {
-			strlcpy(pending_nonces[i].nonce, nonce_out,
-			    sizeof pending_nonces[i].nonce);
-			pending_nonces[i].created = now;
-			pending_nonces[i].used = 1;
-			LeaveCriticalSection(&nonce_lock);
-			return (0);
+			slot = i;
+			break;
 		}
+		if (slot == -1 ||
+		    pending_nonces[i].created < pending_nonces[slot].created)
+			slot = i;
 	}
-
+	strlcpy(pending_nonces[slot].nonce, nonce_out,
+	    sizeof pending_nonces[slot].nonce);
+	pending_nonces[slot].created = ++nonce_issued;
+	pending_nonces[slot].used = 1;
 	LeaveCriticalSection(&nonce_lock);
-	return (-1); /* Table full. */
+	return (0);
 }
 
 /*
@@ -176,18 +173,11 @@ static int
 consume_pending_nonce(const char *nonce)
 {
 	int	i;
-	DWORD	now;
 
 	EnterCriticalSection(&nonce_lock);
-	now = GetTickCount();
-
 	for (i = 0; i < MAX_PENDING_NONCES; i++) {
 		if (!pending_nonces[i].used)
 			continue;
-		if ((now - pending_nonces[i].created) > NONCE_EXPIRY_MS) {
-			pending_nonces[i].used = 0;
-			continue;
-		}
 		if (strcmp(pending_nonces[i].nonce, nonce) == 0) {
 			pending_nonces[i].used = 0;
 			LeaveCriticalSection(&nonce_lock);
@@ -282,7 +272,9 @@ pipe_accept_thread(LPVOID arg)
 /*
  * Discover server via named pipe and establish a TCP connection.
  * Fills nonce_out with the nonce received from the server.
- * Returns a connected TCP SOCKET or INVALID_SOCKET on failure.
+ * Returns a connected TCP SOCKET, or INVALID_SOCKET with errno ECONNREFUSED if
+ * there is no pipe, so no server, or EBUSY if the pipe is there but the server
+ * didn't answer through it.
  */
 static SOCKET
 pipe_discover_and_connect(const char *label, char *nonce_out, size_t nonce_size)
@@ -311,13 +303,20 @@ pipe_discover_and_connect(const char *label, char *nonce_out, size_t nonce_size)
 		    0, NULL, OPEN_EXISTING, 0, NULL);
 		if (pipe != INVALID_HANDLE_VALUE)
 			break;
-		if (GetLastError() != ERROR_PIPE_BUSY)
+		if (GetLastError() != ERROR_PIPE_BUSY) {
+			errno = (GetLastError() == ERROR_FILE_NOT_FOUND ?
+			    ECONNREFUSED : EBUSY);
 			return (INVALID_SOCKET);
-		if (!WaitNamedPipeA(pipe_name, PIPE_WAIT_TIMEOUT_MS))
+		}
+		if (!WaitNamedPipeA(pipe_name, PIPE_WAIT_TIMEOUT_MS)) {
+			errno = (GetLastError() == ERROR_FILE_NOT_FOUND ?
+			    ECONNREFUSED : EBUSY);
 			return (INVALID_SOCKET);
+		}
 	}
 
 	/* Read "port:nonce\n" from pipe. */
+	errno = EBUSY;
 	if (!ReadFile(pipe, buf, sizeof buf - 1, &nread, NULL) || nread == 0) {
 		CloseHandle(pipe);
 		return (INVALID_SOCKET);
@@ -354,6 +353,7 @@ pipe_discover_and_connect(const char *label, char *nonce_out, size_t nonce_size)
 
 	if (connect(s, (struct sockaddr *)&addr, sizeof addr) != 0) {
 		closesocket(s);
+		errno = EBUSY;
 		return (INVALID_SOCKET);
 	}
 
@@ -459,10 +459,8 @@ win32_ipc_connect(const char *label)
 	win32_wsa_init();
 
 	s = pipe_discover_and_connect(label, nonce, sizeof nonce);
-	if (s == INVALID_SOCKET) {
-		errno = ECONNREFUSED;
+	if (s == INVALID_SOCKET)
 		return (-1);
-	}
 
 	/* Send nonce + newline. */
 	nlen = strlen(nonce);
@@ -686,8 +684,7 @@ win32_ipc_export(HANDLE child, uint64_t *pipe, uint16_t *port, char **nonces)
 		return (-1);
 	EnterCriticalSection(&nonce_lock);
 	for (i = 0; i < MAX_PENDING_NONCES; i++) {
-		if (!pending_nonces[i].used ||
-		    GetTickCount() - pending_nonces[i].created > NONCE_EXPIRY_MS)
+		if (!pending_nonces[i].used)
 			continue;
 		len += sprintf(*nonces + len, "%s%s", len == 0 ? "" : " ",
 		    pending_nonces[i].nonce);
@@ -717,7 +714,7 @@ win32_ipc_import(const char *label, uint64_t pipe, uint16_t port,
 			break;
 		memcpy(pending_nonces[i].nonce, p, AUTH_TOKEN_LEN * 2);
 		pending_nonces[i].nonce[AUTH_TOKEN_LEN * 2] = '\0';
-		pending_nonces[i].created = GetTickCount();
+		pending_nonces[i].created = ++nonce_issued;
 		pending_nonces[i].used = 1;
 		p += AUTH_TOKEN_LEN * 2;
 		i++;

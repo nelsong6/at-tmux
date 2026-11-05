@@ -43,6 +43,19 @@ static void	cmd_run_shell_callback(struct job *);
 static void	cmd_run_shell_free(void *);
 static void	cmd_run_shell_print(struct job *, const char *, int);
 
+/* The programs a run-shell on the global queue is waiting for. */
+static u_int	cmd_run_shell_holding;
+
+/*
+ * Whether the global queue is held by a program, which can be a client of this
+ * server: nothing it asks for may wait for the global queue.
+ */
+int
+cmd_run_shell_holding_queue(void)
+{
+	return (cmd_run_shell_holding != 0);
+}
+
 const struct cmd_entry cmd_run_shell_entry = {
 	.name = "run-shell",
 	.alias = "run",
@@ -68,6 +81,7 @@ struct cmd_run_shell_data {
 	int				 pressed;
 	struct event			 timer;
 	int				 flags;
+	int				 holding;
 };
 
 static enum args_parse_type
@@ -215,6 +229,10 @@ cmd_run_shell_timer(__unused int fd, __unused short events, void* arg)
 			cmd_run_shell_free(cdata);
 			return;
 		}
+		if (item != NULL && cmdq_get_client(item) == NULL) {
+			cdata->holding = 1;
+			cmd_run_shell_holding++;
+		}
 		if (job_run(cmd, 0, NULL, NULL, cdata->s, cdata->cwd, NULL,
 		    cmd_run_shell_callback, cmd_run_shell_free, cdata,
 		    cdata->flags, -1, -1, -1, -1) == NULL)
@@ -299,6 +317,8 @@ cmd_run_shell_free(void *data)
 {
 	struct cmd_run_shell_data	*cdata = data;
 
+	if (cdata->holding)
+		cmd_run_shell_holding--;
 	evtimer_del(&cdata->timer);
 	if (cdata->s != NULL)
 		session_remove_ref(cdata->s, __func__);

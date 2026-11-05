@@ -60,6 +60,7 @@ enum msgtype {
 	MSG_WAKEUP,
 	MSG_EXEC,
 	MSG_FLAGS,
+	MSG_HEARD,
 
 	MSG_READ_OPEN = 300,
 	MSG_READ,

@@ -34,6 +34,9 @@
 
 #include "tmux.h"
 
+extern const struct cmd_entry cmd_new_session_entry;
+extern const struct cmd_entry cmd_new_window_entry;
+
 /*
  * The session set: a server whose global option @session-set-dir names a
  * folder keeps live/<socket>.set there, everything needed to rebuild its
@@ -59,6 +62,12 @@
  * in place of the fresh session the client opened in; Escape archives it.
  * restore-set rebuilds any snapshot the same way, beside the server's own
  * sessions. archive/ keeps the last SESSION_SET_ARCHIVE_MAX.
+ *
+ * A restore is a job of steps, one a window, run off the global queue with a
+ * turn of the server's loop between them, so clients are answered while it
+ * runs; the client that asked waits for its end. A snapshot written meanwhile
+ * restoring the previous set says so, and that set goes to archive/ only at the
+ * end, so a server that dies part way through leaves it to be offered again.
  *
  * A set last saved before this Windows sign-in ended with the PC (a reboot, a
  * shutdown or a sign-out), so a new server rebuilds it with no offer, client or
@@ -94,10 +103,44 @@ static int		 ss_programs_pending;
 static int		 ss_stopped;
 static int		 ss_set_aside;
 static int		 ss_new_server;
-static int		 ss_restoring;
 static char		*ss_attached;
 static char		*ss_show;
 static char		*ss_last_sessions;
+
+/*
+ * A restore in progress: its commands, one step at a time, so the server goes
+ * round its loop between windows and clients are answered while it runs.
+ */
+struct ss_step {
+	char		*commands;
+	char		*session;	/* NULL if the step makes no window */
+	char		*name;
+	int		 idx;
+	u_int		 panes;
+};
+struct ss_job {
+	struct ss_step	 *steps;
+	u_int		  nsteps;
+	u_int		  next;
+	u_int		  total;
+	u_int		  done;
+	u_int		  failed;
+	struct evbuffer	 *failures;
+	char		**files;
+	struct ss_snap	**snaps;
+	u_int		  nfiles;
+	struct cmdq_item *item;
+	struct cmdq_item **held;
+	u_int		  nheld;
+	struct event	  timer;
+	int		  previous;	/* restoring the set offered */
+	char		 *fresh;	/* the session a restore with no offer replaces */
+};
+static struct ss_job	*ss_job;
+static char		*ss_job_last;
+
+static void	ss_job_end(int);
+static void	ss_flush(int, short, void *);
 
 /*
  * Windows is ending this session: panes die before the server does, so what is
@@ -524,6 +567,7 @@ struct ss_snap {
 	long long	 start;
 	long long	 seen;
 	long long	 closed;
+	long long	 restoring;
 	char		*attached;
 	char		*socket;
 	struct ss_line	*windows;
@@ -608,6 +652,8 @@ ss_snap_read(const char *path)
 				snap->seen = strtoll(f[1], NULL, 10);
 			else if (strcmp(f[0], "closed") == 0)
 				snap->closed = strtoll(f[1], NULL, 10);
+			else if (strcmp(f[0], "restoring") == 0)
+				snap->restoring = strtoll(f[1], NULL, 10);
 			else if (strcmp(f[0], "attached") == 0) {
 				free(snap->attached);
 				snap->attached = xstrdup(f[1]);
@@ -794,7 +840,8 @@ ss_take_earlier(const char *dir)
 		ss_new_server = 0;
 		if (ss_attached == NULL && *snap->attached != '\0')
 			ss_attached = xstrdup(snap->attached);
-	} else if (snap->closed != 0 || *snap->attached == '\0' || ss_tried(dir))
+	} else if (snap->restoring || snap->closed != 0 ||
+	    *snap->attached == '\0' || ss_tried(dir))
 		ss_archive(dir, path, snap);
 	else {
 		previous = ss_snapshot_path(dir, "-previous");
@@ -827,9 +874,9 @@ ss_write(const char *dir, const char *sessions, long long closed)
 	if (evb == NULL)
 		fatalx("out of memory");
 	evbuffer_add_printf(evb, SESSION_SET_VERSION "\nstart\t%lld\npid\t%ld"
-	    "\nseen\t%lld\nclosed\t%lld\nattached",
+	    "\nseen\t%lld\nclosed\t%lld\nrestoring\t%d\nattached",
 	    (long long)start_time.tv_sec, (long)getpid(), (long long)time(NULL),
-	    closed);
+	    closed, ss_job != NULL && ss_job->previous);
 	ss_field(evb, ss_attached);
 	evbuffer_add_printf(evb, "\nsocket");
 	ss_field(evb, socket_path);
@@ -845,7 +892,6 @@ ss_write(const char *dir, const char *sessions, long long closed)
 	return (retval);
 }
 
-static void	ss_flush(int, short, void *);
 
 static void
 ss_schedule(time_t seconds)
@@ -924,6 +970,7 @@ void
 session_set_stop(void)
 {
 	ss_stopped = 1;
+	ss_job_end(0);
 }
 
 /*
@@ -960,7 +1007,7 @@ session_set_window_destroyed(struct window *w)
 	char		*path, *old, *p, *data;
 	u_int		 kept = 0;
 
-	if (w->session_set_line == NULL)
+	if (w->session_set_line == NULL || ss_job != NULL)
 		return;
 	if (!ss_stopped && !ss_ending() && (dir = ss_dir()) != NULL) {
 		path = ss_closed_path(dir);
@@ -1246,8 +1293,9 @@ session_set_reopen(int show, char **cause)
 	argv[i++] = f[8];
 	start = ss_start_command(f[9], f[10]);
 	ss_add_command(evb, argv, i);
-	if (start != NULL)
+	if (start != NULL) {
 		ss_add_words(evb, start);
+	}
 	free(start);
 	free(idx);
 
@@ -1256,8 +1304,9 @@ session_set_reopen(int show, char **cause)
 		argv[0] = "split-window"; argv[1] = "-t"; argv[2] = target;
 		argv[3] = "-c"; argv[4] = f[8 + p * 3];
 		ss_add_command(evb, argv, 5);
-		if (start != NULL)
+		if (start != NULL) {
 			ss_add_words(evb, start);
+		}
 		free(start);
 	}
 	argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = target;
@@ -1351,19 +1400,46 @@ ss_lone_shell(struct session *s)
 	return (lone);
 }
 
-/* The commands that build one saved session's windows as session name. */
+/* The commands in evb become the job's next step, which leaves evb empty. */
 static void
-ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
-    const char *from, const char *name)
+ss_job_add(struct ss_job *job, struct evbuffer *evb, const char *session,
+    const char *name, int idx, u_int panes)
+{
+	struct ss_step	*step;
+
+	job->steps = xreallocarray(job->steps, job->nsteps + 1,
+	    sizeof *job->steps);
+	step = &job->steps[job->nsteps++];
+	memset(step, 0, sizeof *step);
+	step->commands = xmalloc(EVBUFFER_LENGTH(evb) + 1);
+	memcpy(step->commands, EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
+	step->commands[EVBUFFER_LENGTH(evb)] = '\0';
+	evbuffer_drain(evb, EVBUFFER_LENGTH(evb));
+	if (session != NULL) {
+		step->session = xstrdup(session);
+		step->name = xstrdup(name);
+		step->idx = idx;
+		step->panes = panes;
+		job->total++;
+	}
+}
+
+/*
+ * The steps that build one saved session's windows as session name, one step a
+ * window. Each window has its own number, so nothing a client does between
+ * steps can change where the next one goes.
+ */
+static void
+ss_restore_session(struct ss_job *job, struct evbuffer *evb,
+    struct ss_snap *snap, const char *from, const char *name)
 {
 	const char	*argv[12];
 	struct ss_line	*w;
-	char		*target, *idx, *start;
-	u_int		 i, p, panes, k = 0, active = 0, last = 0, first = 1;
+	char		*window, *idx, *start;
+	u_int		 i, p, panes, k = 0, active = 0, last = 0, first = 1, at;
 	long long	 base;
 
 	base = options_get_number(global_s_options, "base-index");
-	xasprintf(&target, "=%s:", name);
 	for (i = 0; i < snap->nwindows; i++) {
 		w = &snap->windows[i];
 		if (strcmp(w->f[4], from) != 0)
@@ -1386,34 +1462,38 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
 			active = k;
 		else if (atoi(w->f[1]) & SS_LAST)
 			last = k;
+		xasprintf(&window, "=%s:%lld", name, base + k);
 		panes = (w->n - 11) / 3;
 		start = ss_start_command(w->f[12], w->f[13]);
-		argv[0] = "new-window"; argv[1] = "-a"; argv[2] = "-t";
-		argv[3] = target; argv[4] = "-c"; argv[5] = w->f[11];
+		argv[0] = "new-window"; argv[1] = "-d"; argv[2] = "-t";
+		argv[3] = window; argv[4] = "-c"; argv[5] = w->f[11];
 		ss_add_command(evb, argv, 6);
-		if (start != NULL)
+		if (start != NULL) {
 			ss_add_words(evb, start);
+		}
 		free(start);
 		for (p = 1; p < panes; p++) {
 			start = ss_start_command(w->f[12 + p * 3],
 			    w->f[13 + p * 3]);
 			argv[0] = "split-window"; argv[1] = "-t";
-			argv[2] = target; argv[3] = "-c";
+			argv[2] = window; argv[3] = "-c";
 			argv[4] = w->f[11 + p * 3];
 			ss_add_command(evb, argv, 5);
-			if (start != NULL)
+			if (start != NULL) {
 				ss_add_words(evb, start);
+			}
 			free(start);
 		}
-		argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = target;
+		argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = window;
 		argv[3] = w->f[9];
 		ss_add_command(evb, argv, 4);
 		if (~atoi(w->f[7]) & SS_AUTONAME) {
 			argv[0] = "rename-window"; argv[1] = "-t";
-			argv[2] = target; argv[3] = w->f[8];
+			argv[2] = window; argv[3] = w->f[8];
 			ss_add_command(evb, argv, 4);
 		}
-		xasprintf(&idx, "=%s:.%lld", name, strtoll(w->f[10], NULL, 10) +
+		at = strtoul(w->f[10], NULL, 10);
+		xasprintf(&idx, "%s.%lld", window, (long long)at +
 		    options_get_number(global_w_options, "pane-base-index"));
 		argv[0] = "select-pane"; argv[1] = "-t"; argv[2] = idx;
 		ss_add_command(evb, argv, 3);
@@ -1423,32 +1503,40 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
 			ss_add_command(evb, argv, 4);
 		}
 		free(idx);
+		free(window);
+		ss_job_add(job, evb, name, w->f[8], (int)(base + k), panes);
 	}
 
-	/* The window shown before the current one, so last-window goes back. */
+	/*
+	 * The window shown before the current one, so last-window goes back,
+	 * then the current one and the stand-in's end: steps of their own, since
+	 * an error ends the rest of its step and either window may have failed.
+	 */
 	if (last != 0) {
 		xasprintf(&idx, "=%s:%lld", name, base + last);
 		argv[0] = "select-window"; argv[1] = "-t"; argv[2] = idx;
 		ss_add_command(evb, argv, 3);
 		free(idx);
+		ss_job_add(job, evb, NULL, NULL, 0, 0);
 	}
 	if (active != 0) {
 		xasprintf(&idx, "=%s:%lld", name, base + active);
 		argv[0] = "select-window"; argv[1] = "-t"; argv[2] = idx;
 		ss_add_command(evb, argv, 3);
 		free(idx);
+		ss_job_add(job, evb, NULL, NULL, 0, 0);
 	}
 	xasprintf(&idx, "=%s:%lld", name, base);
 	argv[0] = "kill-window"; argv[1] = "-t"; argv[2] = idx;
 	ss_add_command(evb, argv, 3);
 	free(idx);
-	free(target);
+	ss_job_add(job, evb, NULL, NULL, 0, 0);
 }
 
 /*
- * The commands that rebuild the saved servers in snaps in this server, beside
- * its own sessions, and show them on client c if it is not NULL: each session
- * with its windows, splits, layouts, folders and names, Claude Code resumed and
+ * The steps that rebuild the saved servers in snaps in this server, beside its
+ * own sessions, and show them on client c if it is not NULL: each session with
+ * its windows, splits, layouts, folders and names, Claude Code resumed and
  * programs started again. A session name already taken gets "-2" and up; each
  * snapshot's primary session is made first. replace is a session that goes
  * once the set is made, showing on c, if it is still a lone shell: it steps
@@ -1456,15 +1544,15 @@ ss_restore_session(struct evbuffer *evb, struct ss_snap *snap,
  * client, the first client to attach lands on the session to show, and a server
  * that goes before one attaches still has a set.
  */
-static char *
-ss_restore(struct ss_snap **snaps, u_int nsnaps, struct session *replace,
-    struct client *c)
+static void
+ss_restore(struct ss_job *job, struct ss_snap **snaps, u_int nsnaps,
+    struct session *replace, struct client *c)
 {
 	struct evbuffer	*evb;
 	struct ss_snap	*snap;
 	const char	*argv[6];
 	char		**made = NULL, **from = NULL, *aside = NULL, *name;
-	char		*show = NULL, *out, *target;
+	char		*show = NULL, *target;
 	u_int		 i, j, k, nmade = 0, nfrom;
 	int		 seen;
 
@@ -1481,6 +1569,7 @@ ss_restore(struct ss_snap **snaps, u_int nsnaps, struct session *replace,
 		argv[3] = aside;
 		ss_add_command(evb, argv, 4);
 		free(target);
+		ss_job_add(job, evb, NULL, NULL, 0, 0);
 	}
 
 	for (i = 0; i < nsnaps; i++) {
@@ -1517,7 +1606,7 @@ ss_restore(struct ss_snap **snaps, u_int nsnaps, struct session *replace,
 			if (show == NULL && i == 0 &&
 			    strcmp(from[k], snap->attached) == 0)
 				show = name;
-			ss_restore_session(evb, snap, from[k], name);
+			ss_restore_session(job, evb, snap, from[k], name);
 		}
 	}
 	free(from);
@@ -1534,6 +1623,7 @@ ss_restore(struct ss_snap **snaps, u_int nsnaps, struct session *replace,
 		argv[3] = "-t"; argv[4] = target;
 		ss_add_command(evb, argv, 5);
 		free(target);
+		ss_job_add(job, evb, NULL, NULL, 0, 0);
 	}
 	if (aside != NULL) {
 		xasprintf(&target, "=%s", aside);
@@ -1541,36 +1631,303 @@ ss_restore(struct ss_snap **snaps, u_int nsnaps, struct session *replace,
 		ss_add_command(evb, argv, 3);
 		free(target);
 		free(aside);
+		ss_job_add(job, evb, NULL, NULL, 0, 0);
 	}
 	for (i = 0; i < nmade; i++)
 		free(made[i]);
 	free(made);
-
-	out = xmalloc(EVBUFFER_LENGTH(evb) + 1);
-	memcpy(out, EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
-	out[EVBUFFER_LENGTH(evb)] = '\0';
 	evbuffer_free(evb);
-	return (out);
+}
+
+/* Show the restore's progress on every attached client. */
+static void
+ss_job_show(const char *status, int delay)
+{
+	struct client	*c;
+
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (c->session == NULL || (c->flags & CLIENT_CONTROL))
+			continue;
+		status_message_set(c, delay, 1, 0, 1, "%s", status);
+	}
+}
+
+/*
+ * The job is over: done means it ran to its end, so its snapshots go to the
+ * archive; a job ended by the server shutting down leaves them to be offered
+ * again. Everything waiting on it carries on.
+ */
+static void
+ss_job_end(int done)
+{
+	struct ss_job	*job = ss_job;
+	struct ss_step	*step;
+	struct client	*c;
+	const char	*dir;
+	char		*result;
+	u_int		 i;
+	int		 undone;
+
+	if (job == NULL)
+		return;
+	ss_job = NULL;
+	evtimer_del(&job->timer);
+	undone = (job->fresh != NULL && job->failed != 0);
+
+	if (job->failed != 0) {
+		xasprintf(&result, "restored %u of %u windows, failed: %.*s",
+		    job->total - job->failed, job->total,
+		    (int)EVBUFFER_LENGTH(job->failures),
+		    EVBUFFER_DATA(job->failures));
+	} else {
+		xasprintf(&result, "restored %u of %u windows", job->total,
+		    job->total);
+	}
+	if (done) {
+		free(ss_job_last);
+		ss_job_last = xstrdup(result);
+		server_add_message("restore-set: %s", result);
+		if (job->failed != 0)
+			log_message(result);
+		ss_job_show(result, -1);
+		if ((dir = ss_dir()) != NULL && !undone) {
+			for (i = 0; i < job->nfiles; i++)
+				ss_archive(dir, job->files[i], job->snaps[i]);
+		}
+		if (job->fresh != NULL) {
+			server_add_message("session-set: %s", undone ?
+			    "restore after a reboot failed" :
+			    "restored after a reboot");
+			session_set_offer_soon();
+		}
+	}
+
+	if (job->item != NULL) {
+		c = cmdq_get_client(job->item);
+		if (done && job->failed != 0 && (~c->flags & CLIENT_DEAD))
+			cmdq_error(job->item, "%s", result);
+		cmdq_continue(job->item);
+	}
+	for (i = 0; i < job->nheld; i++)
+		cmdq_continue(job->held[i]);
+	free(job->held);
+	free(result);
+
+	for (i = 0; i < job->nsteps; i++) {
+		step = &job->steps[i];
+		free(step->commands);
+		free(step->session);
+		free(step->name);
+	}
+	free(job->steps);
+	for (i = 0; i < job->nfiles; i++) {
+		ss_snap_free(job->snaps[i]);
+		free(job->files[i]);
+	}
+	free(job->snaps);
+	free(job->files);
+	evbuffer_free(job->failures);
+	free(job->fresh);
+	free(job);
+
+	ss_written = 0;
+	session_set_changed();
+}
+
+/* Whether a step's window is there, with all its panes. */
+static int
+ss_step_made(struct ss_step *step)
+{
+	struct session	*s;
+	struct winlink	*wl;
+
+	if ((s = session_find(step->session)) == NULL)
+		return (0);
+	if ((wl = winlink_find_by_index(&s->windows, step->idx)) == NULL)
+		return (0);
+	return (window_count_panes(wl->window) == step->panes);
+}
+
+/* Queue commands of the job's on the global queue. */
+static void
+ss_job_queue(const char *commands)
+{
+	struct cmdq_state	*state;
+	char			*error = NULL;
+
+	state = cmdq_new_state(NULL, NULL, 0);
+	if (cmd_parse_and_append(commands, NULL, NULL, state, &error) ==
+	    CMD_PARSE_ERROR) {
+		log_debug("session-set: %s", error);
+		free(error);
+	}
+	cmdq_free_state(state);
+}
+
+/* The undoing of a restore with no offer has run. */
+static enum cmd_retval
+ss_job_undone(__unused struct cmdq_item *item, __unused void *data)
+{
+	ss_job_end(1);
+	return (CMD_RETURN_NORMAL);
+}
+
+/*
+ * A restore with no offer lost a window, so it stops: the fresh session comes
+ * back, what was made goes, and the set stays for the offer.
+ */
+static void
+ss_job_undo(struct ss_job *job)
+{
+	struct evbuffer	*evb;
+	struct session	*s;
+	const char	*argv[4];
+	char		*aside, *target, *commands;
+
+	free(ss_attached);
+	ss_attached = NULL;
+	free(ss_show);
+	ss_show = NULL;
+
+	evb = evbuffer_new();
+	if (evb == NULL)
+		fatalx("out of memory");
+	xasprintf(&aside, "restoring-%ld", (long)getpid());
+	RB_FOREACH(s, sessions, &sessions) {
+		if (strcmp(s->name, aside) == 0)
+			continue;
+		xasprintf(&target, "=%s", s->name);
+		argv[0] = "kill-session"; argv[1] = "-t"; argv[2] = target;
+		ss_add_command(evb, argv, 3);
+		free(target);
+	}
+	xasprintf(&target, "=%s", aside);
+	argv[0] = "rename-session"; argv[1] = "-t"; argv[2] = target;
+	argv[3] = job->fresh;
+	ss_add_command(evb, argv, 4);
+	free(target);
+	free(aside);
+	commands = xmalloc(EVBUFFER_LENGTH(evb) + 1);
+	memcpy(commands, EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
+	commands[EVBUFFER_LENGTH(evb)] = '\0';
+	evbuffer_free(evb);
+	ss_job_queue(commands);
+	free(commands);
+	cmdq_append(NULL, cmdq_get_callback(ss_job_undone, NULL));
+}
+
+/* A step's commands have run: count it, and let the server go round. */
+static enum cmd_retval
+ss_job_stepped(__unused struct cmdq_item *item, __unused void *data)
+{
+	struct ss_job	*job = ss_job;
+	struct ss_step	*step;
+	struct timeval	 tv = { 0, 0 };
+	char		*status;
+
+	if (job == NULL)
+		return (CMD_RETURN_NORMAL);
+	step = &job->steps[job->next - 1];
+	if (step->session != NULL) {
+		job->done++;
+		if (!ss_step_made(step)) {
+			job->failed++;
+			evbuffer_add_printf(job->failures, "%s%s:%d (%s)",
+			    job->failed == 1 ? "" : ", ", step->session,
+			    step->idx, step->name);
+		}
+		status = session_set_restore_status();
+		ss_job_show(status, 0);
+		free(status);
+		if (job->fresh != NULL && job->failed != 0) {
+			ss_job_undo(job);
+			return (CMD_RETURN_NORMAL);
+		}
+	}
+	evtimer_add(&job->timer, &tv);
+	return (CMD_RETURN_NORMAL);
+}
+
+/* Run the job's next step, or end it. */
+static void
+ss_job_step(__unused int fd, __unused short events, __unused void *data)
+{
+	struct ss_job	*job = ss_job;
+
+	if (job == NULL)
+		return;
+	if (job->next == job->nsteps) {
+		ss_job_end(1);
+		return;
+	}
+	ss_job_queue(job->steps[job->next++].commands);
+	cmdq_append(NULL, cmdq_get_callback(ss_job_stepped, NULL));
+}
+
+/* Start a job that rebuilds snaps, which it takes with files. */
+static void
+ss_job_start(struct ss_snap **snaps, char **files, u_int nfiles,
+    struct session *replace, struct client *c, struct cmdq_item *item,
+    int silent)
+{
+	struct ss_job	*job;
+	struct timeval	 tv = { 0, 0 };
+	const char	*dir;
+	char		*path;
+	u_int		 i;
+
+	job = xcalloc(1, sizeof *job);
+	job->snaps = snaps;
+	job->files = files;
+	job->nfiles = nfiles;
+	job->item = item;
+	if (silent)
+		job->fresh = xstrdup(replace->name);
+	if ((dir = ss_dir()) != NULL) {
+		path = ss_snapshot_path(dir, "-previous");
+		for (i = 0; i < nfiles; i++) {
+			if (strcmp(files[i], path) == 0)
+				job->previous = 1;
+		}
+		free(path);
+	}
+	job->failures = evbuffer_new();
+	if (job->failures == NULL)
+		fatalx("out of memory");
+	ss_restore(job, snaps, nfiles, replace, c);
+	evtimer_set(&job->timer, ss_job_step, NULL);
+	ss_job = job;
+	server_add_message("restore-set: restoring %u windows", job->total);
+
+	/* Marked now, so a crash from here leaves the previous set offered. */
+	ss_written = 0;
+	ss_flush(-1, 0, NULL);
+	evtimer_add(&job->timer, &tv);
 }
 
 /*
  * Rebuild saved servers (snapshot files, a relative path under
  * @session-set-dir) in this server, beside its own sessions, and show them on
- * client c if it is not NULL. The files go to archive/. Returns the commands
- * that do it, or NULL with cause.
+ * client c if it is not NULL. This starts the restore and returns: item, if it
+ * is not NULL, carries on when the restore has ended. Returns 0, or -1 with
+ * cause.
  */
-char *
+int
 session_set_restore(const char **paths, u_int npaths, struct client *c,
-    char **cause)
+    struct cmdq_item *item, char **cause)
 {
 	const char	 *dir;
 	struct ss_snap	**snaps;
-	char		**files, *out;
-	u_int		  i, n;
+	char		**files;
+	u_int		  i;
 
 	if ((dir = ss_dir()) == NULL) {
 		*cause = xstrdup("@session-set-dir is not set");
-		return (NULL);
+		return (-1);
+	}
+	if (ss_job != NULL) {
+		*cause = session_set_restore_status();
+		return (-1);
 	}
 	snaps = xcalloc(npaths, sizeof *snaps);
 	files = xcalloc(npaths, sizeof *files);
@@ -1586,40 +1943,95 @@ session_set_restore(const char **paths, u_int npaths, struct client *c,
 			break;
 		}
 	}
-	n = i;
-	out = NULL;
-	if (n == npaths) {
-		out = ss_restore(snaps, n, NULL, c);
-		for (i = 0; i < n; i++)
-			ss_archive(dir, files[i], snaps[i]);
+	if (i != npaths) {
+		for (i = 0; i < npaths; i++) {
+			ss_snap_free(snaps[i]);
+			free(files[i]);
+		}
+		free(snaps);
+		free(files);
+		return (-1);
 	}
-	for (i = 0; i < npaths; i++) {
-		ss_snap_free(snaps[i]);
-		free(files[i]);
+	ss_job_start(snaps, files, npaths, NULL, c, item, 0);
+	return (0);
+}
+
+/* What the restore has done so far, or the empty string with none running. */
+char *
+session_set_restore_status(void)
+{
+	char	*status;
+
+	if (ss_job == NULL)
+		return (xstrdup(""));
+	xasprintf(&status, "restoring %u of %u windows", ss_job->done,
+	    ss_job->total);
+	return (status);
+}
+
+/* What the last restore this server ran did, or NULL if it has run none. */
+const char *
+session_set_restore_last(void)
+{
+	return (ss_job_last);
+}
+
+/* Whether a restore is running. */
+int
+session_set_restoring(void)
+{
+	return (ss_job != NULL);
+}
+
+/*
+ * Whether a client's command that makes a session or a window (CMD_WAITS_RESTORE)
+ * has to wait, so it can't take a name or a place the restore has still to make:
+ * only one naming a session the restore is making does. It carries on when the
+ * restore ends. Only a client's own queue may wait here: the restore runs on the
+ * global queue, which must never stop for it, and that queue is stopped while a
+ * hook's run-shell runs a program that can be the client asking.
+ */
+int
+session_set_hold(struct cmdq_item *item, struct cmd *cmd, struct client *c)
+{
+	const struct cmd_entry	*entry = cmd_get_entry(cmd);
+	struct args		*args = cmd_get_args(cmd);
+	const char		*target = NULL;
+	char			*name, *end;
+	u_int			 i;
+	int			 hold = 0;
+
+	if (ss_job == NULL || cmd_run_shell_holding_queue())
+		return (0);
+	if (entry == &cmd_new_session_entry)
+		target = args_get(args, 's');
+	else if (entry == &cmd_new_window_entry) {
+		target = args_get(args, 't');
+		if (target == NULL && c != NULL && c->session != NULL)
+			target = c->session->name;
+	} else
+		hold = 1;
+	if (target != NULL) {
+		name = xstrdup(target + (*target == '='));
+		if ((end = strchr(name, ':')) != NULL)
+			*end = '\0';
+		for (i = 0; i < ss_job->nsteps && !hold; i++) {
+			if (ss_job->steps[i].session != NULL &&
+			    strcmp(ss_job->steps[i].session, name) == 0)
+				hold = 1;
+		}
+		free(name);
 	}
-	free(snaps);
-	free(files);
-	return (out);
+	if (!hold)
+		return (0);
+	ss_job->held = xreallocarray(ss_job->held, ss_job->nheld + 1,
+	    sizeof *ss_job->held);
+	ss_job->held[ss_job->nheld++] = item;
+	return (1);
 }
 
 static struct event	 ss_offer_timer;
 static struct client	*ss_offer_client;
-
-/* Queue the commands a restore returned, on c or the global queue. */
-static void
-ss_append(const char *commands, struct client *c)
-{
-	struct cmdq_state	*state;
-	char			*error;
-
-	state = cmdq_new_state(NULL, NULL, 0);
-	if (cmd_parse_and_append(commands, NULL, c, state, &error) ==
-	    CMD_PARSE_ERROR) {
-		cmdq_append(c, cmdq_get_error(error));
-		free(error);
-	}
-	cmdq_free_state(state);
-}
 
 /* A client's choice in the offer: Enter restores, Escape archives. */
 static void
@@ -1627,9 +2039,9 @@ ss_offer_choice(__unused struct menu *menu, u_int idx, key_code key,
     void *data)
 {
 	struct client		*c = data;
-	struct ss_snap		*snap;
+	struct ss_snap		*snap, **snaps;
 	const char		*dir;
-	char			*previous, *commands;
+	char			*previous, **files, *status;
 
 	ss_offer_client = NULL;
 	log_debug("session-set: offer closed, item %d key %llx", (int)idx,
@@ -1641,12 +2053,18 @@ ss_offer_choice(__unused struct menu *menu, u_int idx, key_code key,
 		free(previous);
 		return;
 	}
-	if (key == '\r' && c->session != NULL) {
-		commands = ss_restore(&snap, 1, c->session, c);
-		ss_append(commands, c);
-		free(commands);
-	}
-	if (key == '\r' || key == '\033')
+	if (key == '\r' && ss_job != NULL) {
+		status = session_set_restore_status();
+		status_message_set(c, -1, 1, 0, 0, "%s", status);
+		free(status);
+	} else if (key == '\r' && c->session != NULL) {
+		snaps = xcalloc(1, sizeof *snaps);
+		files = xcalloc(1, sizeof *files);
+		snaps[0] = snap;
+		files[0] = previous;
+		ss_job_start(snaps, files, 1, c->session, c, NULL, 0);
+		return;
+	} else if (key == '\r' || key == '\033')
 		ss_archive(dir, previous, snap);
 	ss_snap_free(snap);
 	free(previous);
@@ -1801,75 +2219,16 @@ ss_fresh_session(void)
 }
 
 /*
- * A silent restore's commands have run. Any that fails drops the rest, so the
- * fresh session still being aside means it didn't finish: that session comes
- * back, what was made goes, and the set stays for the offer.
+ * Rebuild the previous set in place of a new server's session s, unasked. The
+ * restore takes snap unless this fails.
  */
-static enum cmd_retval
-ss_restored(__unused struct cmdq_item *item, void *data)
-{
-	struct evbuffer	*evb;
-	struct session	*s;
-	struct ss_snap	*snap;
-	const char	*dir, *argv[4];
-	char		*fresh = data, *aside, *previous, *target, *commands;
-
-	ss_restoring = 0;
-	xasprintf(&aside, "restoring-%ld", (long)getpid());
-	if (session_find(aside) == NULL) {
-		if ((dir = ss_dir()) != NULL) {
-			previous = ss_snapshot_path(dir, "-previous");
-			snap = ss_snap_read(previous);
-			ss_archive(dir, previous, snap);
-			ss_snap_free(snap);
-			free(previous);
-		}
-		server_add_message("session-set: restored after a reboot");
-	} else {
-		free(ss_attached);
-		ss_attached = NULL;
-		free(ss_show);
-		ss_show = NULL;
-
-		evb = evbuffer_new();
-		if (evb == NULL)
-			fatalx("out of memory");
-		RB_FOREACH(s, sessions, &sessions) {
-			if (strcmp(s->name, aside) == 0)
-				continue;
-			xasprintf(&target, "=%s", s->name);
-			argv[0] = "kill-session"; argv[1] = "-t"; argv[2] = target;
-			ss_add_command(evb, argv, 3);
-			free(target);
-		}
-		xasprintf(&target, "=%s", aside);
-		argv[0] = "rename-session"; argv[1] = "-t"; argv[2] = target;
-		argv[3] = fresh;
-		ss_add_command(evb, argv, 4);
-		free(target);
-		commands = xmalloc(EVBUFFER_LENGTH(evb) + 1);
-		memcpy(commands, EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
-		commands[EVBUFFER_LENGTH(evb)] = '\0';
-		evbuffer_free(evb);
-		ss_append(commands, NULL);
-		free(commands);
-		server_add_message("session-set: restore after a reboot failed");
-	}
-	free(aside);
-	free(fresh);
-	ss_written = 0;
-	session_set_changed();
-	session_set_offer_soon();
-	return (CMD_RETURN_NORMAL);
-}
-
-/* Rebuild the previous set in place of a new server's session s, unasked. */
 static int
 ss_restore_silent(const char *dir, struct ss_snap *snap, struct session *s,
     struct client *c)
 {
-	char	*tried, *commands;
-	int	 retval;
+	struct ss_snap	**snaps;
+	char		**files, *tried;
+	int		  retval;
 
 	tried = ss_tried_path(dir);
 	retval = ss_write_file(tried, "1\n", 2);
@@ -1877,11 +2236,11 @@ ss_restore_silent(const char *dir, struct ss_snap *snap, struct session *s,
 	if (retval != 0)
 		return (-1);
 
-	ss_restoring = 1;
-	commands = ss_restore(&snap, 1, s, c);
-	ss_append(commands, NULL);
-	free(commands);
-	cmdq_append(NULL, cmdq_get_callback(ss_restored, xstrdup(s->name)));
+	snaps = xcalloc(1, sizeof *snaps);
+	files = xcalloc(1, sizeof *files);
+	snaps[0] = snap;
+	files[0] = ss_snapshot_path(dir, "-previous");
+	ss_job_start(snaps, files, 1, s, c, NULL, 1);
 	return (0);
 }
 
@@ -1905,7 +2264,7 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 	u_int		 w, h, px, py;
 	int		 new_server, lost;
 
-	if (ss_stopped || ss_offer_client != NULL || ss_restoring ||
+	if (ss_stopped || ss_offer_client != NULL || ss_job != NULL ||
 	    (dir = ss_dir()) == NULL || RB_EMPTY(&sessions))
 		return;
 	if (!ss_set_aside)
@@ -1936,10 +2295,8 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 	lost = (snap->seen >= ss_signed_in());
 	if (new_server && !lost && snap->nwindows != 0 && !ss_tried(dir) &&
 	    (s = ss_fresh_session()) != NULL &&
-	    ss_restore_silent(dir, snap, s, c) == 0) {
-		ss_snap_free(snap);
+	    ss_restore_silent(dir, snap, s, c) == 0)
 		return;
-	}
 	if (c == NULL) {
 		ss_snap_free(snap);
 		return;

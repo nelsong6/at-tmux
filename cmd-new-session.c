@@ -49,7 +49,7 @@ const struct cmd_entry cmd_new_session_entry = {
 
 	.target = { 't', CMD_FIND_SESSION, CMD_FIND_CANFAIL },
 
-	.flags = CMD_STARTSERVER,
+	.flags = CMD_STARTSERVER|CMD_WAITS_RESTORE,
 	.exec = cmd_new_session_exec
 };
 

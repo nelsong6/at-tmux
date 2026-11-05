@@ -1366,6 +1366,8 @@ upgrade_busy(void)
 	struct window_pane	*wp;
 	char			*reason = NULL;
 
+	if (session_set_restoring())
+		return (xstrdup("a restore is running"));
 #ifdef _WIN32
 	if (!win32_pty_can_export())
 		return (xstrdup("panes use Windows' own console, not conpty.dll"));

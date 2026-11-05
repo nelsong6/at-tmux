@@ -47,7 +47,7 @@ const struct cmd_entry cmd_new_window_entry = {
 
 	.target = { 't', CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX },
 
-	.flags = 0,
+	.flags = CMD_WAITS_RESTORE,
 	.exec = cmd_new_window_exec
 };
 

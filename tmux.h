@@ -1899,6 +1899,7 @@ struct cmd_entry {
 #define CMD_CLIENT_CFLAG 0x8
 #define CMD_CLIENT_TFLAG 0x10
 #define CMD_CLIENT_CANFAIL 0x20
+#define CMD_WAITS_RESTORE 0x40
 	int		 flags;
 
 	enum cmd_retval	 (*exec)(struct cmd *, struct cmdq_item *);
@@ -3649,7 +3650,15 @@ void	 session_set_stop(void);
 void	 session_set_closed(void);
 void	 session_set_window_destroyed(struct window *);
 char	*session_set_reopen(int, char **);
-char	*session_set_restore(const char **, u_int, struct client *, char **);
+int	 session_set_restore(const char **, u_int, struct client *,
+	     struct cmdq_item *, char **);
+char	*session_set_restore_status(void);
+const char *session_set_restore_last(void);
+int	 session_set_restoring(void);
+int	 session_set_hold(struct cmdq_item *, struct cmd *, struct client *);
+
+/* cmd-run-shell.c */
+int	 cmd_run_shell_holding_queue(void);
 void	 session_set_offer_soon(void);
 
 /* flight.c */

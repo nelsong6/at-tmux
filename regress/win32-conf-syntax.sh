@@ -20,24 +20,23 @@ server_gone() {
 	exit 1
 }
 
+$TMUX -fNUL start \; set -s exit-empty off </dev/null ||
+    { echo "FAIL: the server didn't start"; exit 1; }
+
 COUNT=0
 for i in regress/conf/*.conf; do
 	BASENAME=$(basename "$i")
 	echo "Parsing $BASENAME"
-	ERR=$($TMUX -fNUL start \; source-file -n "$(cygpath -ma "$i")" </dev/null 2>&1)
+	ERR=$($TMUX source-file -n "$(cygpath -ma "$i")" </dev/null 2>&1)
 	RC=$?
 	if [ $RC -ne 0 ]; then
 		echo "FAIL: $BASENAME (parse exited $RC: $ERR)"
 		exit 1
 	fi
-	$TMUX kill-server 2>/dev/null
-	RC=$?
-	if [ $RC -ne 0 ] && [ $RC -ne 1 ]; then
-		echo "FAIL: $BASENAME (kill-server exited $RC)"
-		exit 1
-	fi
-	wait_gone || { echo "FAIL: $BASENAME (server did not exit)"; exit 1; }
 	COUNT=$((COUNT + 1))
 done
+
+$TMUX kill-server 2>/dev/null
+wait_gone || { echo "FAIL: server did not exit"; exit 1; }
 
 echo "ALL $COUNT CONFIG SYNTAX TESTS PASSED"
