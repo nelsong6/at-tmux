@@ -2443,6 +2443,7 @@ struct winlink		**sort_get_winlinks_session(struct session *, u_int *,
 #define FORMAT_NOJOBS 0x4
 #define FORMAT_VERBOSE 0x8
 #define FORMAT_LAST 0x10
+#define FORMAT_JOBEVENT 0x20
 #define FORMAT_NONE 0
 #define FORMAT_PANE 0x80000000U
 #define FORMAT_WINDOW 0x40000000U

@@ -5178,6 +5178,14 @@ Mouse bindings use the Footer suffix, for example
 .Ic MouseDown1Footer ;
 .Ql #{mouse_status_range}
 reports its user range.
+A
+.Ql #()
+command here runs when first shown, when its text changes and on
+.Ic refresh-client
+.Fl S ,
+never on
+.Ic status-interval
+or another redraw, so what changes its output must say so.
 .It Ic status-footer-condition Ar format
 Show the footer only when
 .Ar format

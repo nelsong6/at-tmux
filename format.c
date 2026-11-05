@@ -407,7 +407,8 @@ format_job_get(struct format_expand_state *es, const char *cmd)
 	t = time(NULL);
 	if (force && fj->job != NULL)
 	       job_free(fj->job);
-	if (force || (fj->job == NULL && fj->last != t)) {
+	if (force || (fj->job == NULL && fj->last != t &&
+	    (~ft->flags & FORMAT_JOBEVENT))) {
 		fj->job = job_run(expanded, 0, NULL, NULL, NULL,
 		    server_client_get_cwd(ft->client, NULL), format_job_update,
 		    format_job_complete, NULL, fj, JOB_NOWAIT, -1, -1, -1,
@@ -420,6 +421,8 @@ format_job_get(struct format_expand_state *es, const char *cmd)
 		fj->updated = 0;
 	} else if (fj->job != NULL && (t - fj->last) > 1 && fj->out == NULL)
 		xasprintf(&fj->out, "<'%s' not ready>", fj->cmd);
+	else if (fj->job == NULL) /* still on show, so the tidy keeps it */
+		fj->last = t;
 	free(expanded);
 
 	if (ft->flags & FORMAT_STATUS)
