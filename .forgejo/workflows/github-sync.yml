@@ -1,38 +1,54 @@
 name: GitHub sync
 
-# GitHub holds this repo's history. Forgejo builds the signed Windows release, so its
-# master follows GitHub's here, and that push runs CI. A commit made on Forgejo alone
-# stops the sync: move it to GitHub.
+# A push to master here fast-forwards GitHub's, so the work machines see it. Nothing is
+# ever forced: master moving on both sides fails the job and alerts. The other direction
+# is .github/workflows/forgejo-sync.yml.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
-  workflow_dispatch:
+  push:
+    branches: [master]
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Resolve Forgejo on the home network
+      - name: Resolve home services on the home network
         env:
           HOME_FORGEJO_IP: ${{ vars.HOME_FORGEJO_IP }}
         run: |
           if [ -n "$HOME_FORGEJO_IP" ]; then
-            printf '%s forgejo.romaine.life\n' "$HOME_FORGEJO_IP" | sudo tee -a /etc/hosts >/dev/null
+            printf '%s forgejo.romaine.life ntfy.home.romaine.life\n' "$HOME_FORGEJO_IP" | sudo tee -a /etc/hosts >/dev/null
           fi
 
-      - name: Fast-forward master
+      - name: Fast-forward GitHub
         env:
-          TOKEN: ${{ secrets.AT_TMUX_SYNC_TOKEN }}
+          GITHUB_PUSH_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
+          FORGEJO_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          forgejo="https://nelson:$TOKEN@forgejo.romaine.life/nelsong6/at-tmux.git"
+          export GIT_CONFIG_COUNT=2
+          export GIT_CONFIG_KEY_0=http.https://forgejo.romaine.life/.extraheader
+          export GIT_CONFIG_VALUE_0="Authorization: token $FORGEJO_TOKEN"
+          export GIT_CONFIG_KEY_1=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_1="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_PUSH_TOKEN" | base64 -w0)"
+          github=https://github.com/nelsong6/at-tmux.git
           git init -q sync && cd sync
-          git fetch -q https://github.com/nelsong6/at-tmux.git master
-          upstream=$(git rev-parse FETCH_HEAD)
-          git fetch -q "$forgejo" master
-          current=$(git rev-parse FETCH_HEAD)
-          [ "$upstream" = "$current" ] && exit 0
-          git merge-base --is-ancestor "$current" "$upstream"
-          git push -q "$forgejo" "$upstream:refs/heads/master"
-          echo "master moved to $upstream"
+          git fetch -q https://forgejo.romaine.life/nelsong6/at-tmux.git master
+          ours=$(git rev-parse FETCH_HEAD)
+          git fetch -q "$github" master
+          theirs=$(git rev-parse FETCH_HEAD)
+          [ "$ours" = "$theirs" ] && exit 0
+          # GitHub is ahead: its own sync carries that.
+          git merge-base --is-ancestor "$ours" "$theirs" && exit 0
+          git merge-base --is-ancestor "$theirs" "$ours"
+          git push -q "$github" "$ours:refs/heads/master"
+          echo "GitHub's master moved to $ours"
+
+      - name: Alert
+        if: failure()
+        env:
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: |
+          printf 'header = "Authorization: Bearer %s"\n' "$NTFY_TOKEN" |
+            curl -sS -m 15 -K - -o /dev/null -H "Title: at-tmux didn't sync to GitHub" \
+              -d "If master moved on both sides, a session has to merge them." https://ntfy.home.romaine.life/alerts

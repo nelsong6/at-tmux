@@ -98,14 +98,9 @@ They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after
 
 ## Where changes land
 
-GitHub (https://github.com/nelsong6/at-tmux) holds this repo's history, on every machine:
-branch from its master, open the PR there and merge it there, so the work Mac and Linux
-machine can change tmux too. `git config core.hooksPath .githooks` makes a push on a Mac
-or Linux machine build and run the tests CI's `linux` job lists.
+GitHub (https://github.com/nelsong6/at-tmux) and Forgejo stay in step, so a change can land on either, and the work Mac and Linux machine land theirs on GitHub. `git config core.hooksPath .githooks` makes a push on a Mac or Linux machine build and run the tests CI's `linux` job lists.
 
-Forgejo's `master` only follows GitHub's: `.forgejo/workflows/github-sync.yml` fast-forwards
-it every five minutes, and that push runs CI and the release. Nothing is committed to Forgejo
-directly, and a Forgejo commit GitHub lacks stops the sync until it moves to GitHub. The job signs in with the repo secret `AT_TMUX_SYNC_TOKEN`, a `write:repository` token of `nelson`, the one account allowed to push to protected `master`.
+A push to `master` on either side fast-forwards the other: `.github/workflows/forgejo-sync.yml` on the NAS's sync runner, because Forgejo is closed to the internet, and `.forgejo/workflows/github-sync.yml`, which signs in to GitHub with the repo secret `GH_SYNC_TOKEN`. Forgejo's push runs CI and the release. Nothing is forced: if `master` moves on both sides, the sync fails and sends an alert, and a session merges them.
 
 ## Publishing
 
