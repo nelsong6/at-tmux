@@ -2446,6 +2446,7 @@ struct winlink		**sort_get_winlinks_session(struct session *, u_int *,
 #define FORMAT_NOJOBS 0x4
 #define FORMAT_VERBOSE 0x8
 #define FORMAT_LAST 0x10
+#define FORMAT_JOBEVENT 0x20
 #define FORMAT_NONE 0
 #define FORMAT_PANE 0x80000000U
 #define FORMAT_WINDOW 0x40000000U
@@ -3048,6 +3049,7 @@ const char *server_client_get_key_table(struct client *);
 int	 server_client_check_nested(struct client *);
 int	 server_client_handle_key(struct client *, struct key_event *);
 struct client *server_client_create(int);
+void	 server_client_set_name(struct client *);
 int	 server_client_open(struct client *, char **);
 void	 server_client_unref(struct client *);
 void	 server_client_set_session(struct client *, struct session *);

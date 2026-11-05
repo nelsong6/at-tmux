@@ -102,6 +102,7 @@ $OUTER send-keys -tout "set TMUX=" Enter \
     "\"$EXE\" -L$TEST_SOCKET attach -tup" Enter
 wait_until client_count_is 1 || { fail "client never attached"; exit 1; }
 wait_until outer_has BEFORE_MARK || fail "client never drew the pane"
+CLIENT_PID=$($TMUX list-clients -F '#{client_pid}' | tr -d '\r')
 
 # The client's pane asks for focus reports, as Claude Code and spotify_player
 # do, and the client's terminal has lost focus: taking the client over must
@@ -140,6 +141,8 @@ $TMUX list-keys -T root F11 | grep -q "clock-mode -t up:0.0" ||
 [ "$($TMUX display -tup:1 -p '#{window_name}' | tr -d '\r')" = second ] ||
 	fail "window name lost"
 client_count_is 1 || fail "client lost"
+[ "$($TMUX display -c "client-$CLIENT_PID" -p '#{client_pid}' | tr -d '\r')" = "$CLIENT_PID" ] ||
+	fail "client name lost: $($TMUX list-clients -F '#{client_name}')"
 [ "$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')" = "up3 up up2 " ] ||
 	fail "sessions row order lost"
 $TMUX new -d -sup4 < /dev/null
@@ -149,7 +152,7 @@ $TMUX kill-session -t =up4
 client_unfocused || fail "the upgrade changed the client's focus"
 $OUTER send-keys -tout -H 1b 5b 49
 wait_until client_focused || fail "focus-in lost after the upgrade"
-echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys, session order and client, with focus reports on"
+echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys, session order and client, its name too, with focus reports on"
 
 # --- Test 1b: the environment is the one before, less TMUX_UPGRADE ---
 $TMUX show-environment -g TMUX_UPGRADE >/dev/null 2>&1 &&

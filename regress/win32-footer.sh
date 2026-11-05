@@ -81,6 +81,27 @@ upgraded() { [ "$($TMUX display -p '#{pid}' | tr -d '\r')" != "$old" ]; }
 wait_until upgraded || exit 1
 [ "$panes" = "$($TMUX list-panes -a -F '#{pane_id}|#{pane_pid}')" ] || exit 1
 wait_until drawn BOTTOM_ || exit 1
+# A footer job runs when told or when its command changes, not on a redraw.
+{
+    echo '@echo run>>"%~dp0runs"'
+    echo '@echo JOB_ROW'
+} >"$OUT/row.cmd"
+runs() { [ "$(wc -l <"$OUT/runs" | tr -d ' ')" = "$1" ]; }
+$TMUX set -g status-interval 1
+$TMUX set -g status-footer "#(call \"$(cygpath -m "$OUT")/row.cmd\" #{@footer-arg})"
+wait_until drawn JOB_ROW || { echo 'footer job did not draw'; exit 1; }
+before=$(wc -l <"$OUT/runs" | tr -d ' ')
+for title in one two three; do
+    $TMUX select-pane -T "$title"
+    sleep 1.2
+done
+runs "$before" || { echo 'a redraw ran the footer job again'; exit 1; }
+$TMUX refresh-client -S -t "$($TMUX list-clients -F '#{client_name}' | tr -d '\r')"
+told() { runs $((before + 1)); }
+wait_until told || { echo 'refresh-client -S did not run the footer job once'; exit 1; }
+$TMUX set -g @footer-arg changed
+changed() { runs $((before + 2)); }
+wait_until changed || { echo 'a new command did not run the footer job'; exit 1; }
 $TMUX set -g status-footer ''
 removed() { [ "$($TMUX display -p '#{pane_height}' | tr -d '\r')" = 18 ]; }
 wait_until removed || exit 1
