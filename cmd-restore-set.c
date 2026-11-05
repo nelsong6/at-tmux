@@ -48,7 +48,7 @@ cmd_restore_set_exec(struct cmd *self, struct cmdq_item *item)
 	const char	**files, *last;
 	char		*status, *cause = NULL;
 	u_int		 i, n = args_count(args);
-	int		 failed;
+	int		 failed, wait = (cmdq_get_client(item) != NULL);
 
 	if (n == 0) {
 		status = session_set_restore_status();
@@ -68,12 +68,12 @@ cmd_restore_set_exec(struct cmd *self, struct cmdq_item *item)
 	files = xcalloc(n, sizeof *files);
 	for (i = 0; i < n; i++)
 		files[i] = args_string(args, i);
-	failed = session_set_restore(files, n, tc, item, &cause);
+	failed = session_set_restore(files, n, tc, wait ? item : NULL, &cause);
 	free(files);
 	if (failed != 0) {
 		cmdq_error(item, "%s", cause);
 		free(cause);
 		return (CMD_RETURN_ERROR);
 	}
-	return (CMD_RETURN_WAIT);
+	return (wait ? CMD_RETURN_WAIT : CMD_RETURN_NORMAL);
 }
