@@ -10,8 +10,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # A PR run keeps its package under its tree, so a merge with that tree releases
-  # that package, with no Windows job to wait for. Tests don't hold a change back:
+  # A PR run keeps its package under its tree, so a merge with that tree could release
+  # that package; a job's token can't download it yet (TMUX-134), so it builds.
+  # Tests don't hold a change back:
   # they run on their own in tests.yml and report to Alerts.
   tested:
     runs-on: ubuntu-latest

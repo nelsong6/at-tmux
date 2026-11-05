@@ -112,7 +112,7 @@ A push to `master` on either side fast-forwards the other: `.github/workflows/fo
 
 ## Publishing
 
-A master commit gets a Forgejo release from CI's `release` job, on a Linux runner, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with its `tmux.pdb`, `conpty.dll` and `OpenConsole.exe`) and its `.sha256`. A PR run keeps its signed package on the draft release `tested`, under its tree's hash, the newest 20 of them. A merge with that tree releases that package, skipping `build`; any other tree builds first. The `tested` release is never published, so `releases/latest` and home-sync don't see it.
+A master commit gets a Forgejo release from CI's `release` job, on a Linux runner, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with its `tmux.pdb`, `conpty.dll` and `OpenConsole.exe`) and its `.sha256`. A PR run keeps its signed package on the draft release `tested`, under its tree's hash, the newest 20 of them. A master run finds that package by its tree, but its job token gets 404 downloading it, so today every merge builds (TMUX-134). The `tested` release is never published, so `releases/latest` and home-sync don't see it.
 
 Tests don't hold a change back (Nelson's decision, TMUX-128: one user). `ci.yml` only builds, signs and releases; `tests.yml` runs every test against master nightly, or on dispatch, and a failure shows in Alerts.
 
