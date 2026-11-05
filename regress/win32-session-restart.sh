@@ -131,11 +131,10 @@ $TMUX -f "$CONF" new -d -s primary || fail "start after a second restart"
 wait_until sessions_are "main other" || fail "lost with no client ever attached"
 wait_until done_restoring || fail "second restore never ended"
 
-# 4. The first client lands on the session the set showed, with no menu. Opening
-# at-terminal creates primary only if it isn't there, so this asks for it the
-# way at-terminal does.
-attach "new -A -s other"
-wait_until shows other || fail "first client not on the saved session"
+# 4. The first client lands on the session the set showed, with no menu, wherever
+# it asked to go, as at-terminal always asks for primary. A later client stays.
+attach "new -A -s main"
+wait_until shows other || fail "first client not moved to the saved session"
 said "offered as" && fail "offered after a restart"
 detach
 attach "new -A -s main"
@@ -186,8 +185,10 @@ $TMUX -f "$CONF" new -d -s primary || fail "start with every window failing"
 wait_until said "restored 0 of" || fail "total failure not recorded"
 wait_until done_restoring || fail "total failure never ended"
 sessions_are primary || fail "the fresh session didn't stay"
+test -f "$PREVIOUS" || fail "a restore that made nothing lost its set"
 attach
 wait_until drawn "restored 0 of" || fail "total failure never shown"
+wait_until drawn "Previous session set" || fail "the kept set wasn't offered"
 stop
 config 4000000000
 cp "$OUT/saved" "$SNAP" || fail "put the set back"
@@ -241,10 +242,32 @@ sed "s/^restoring${T}0/restoring${T}1/" "$SNAP" >"$OUT/restoring" &&
 $TMUX -f "$CONF" new -d -s primary || fail "start after dying in a restore"
 sleep 1
 sessions_are primary || fail "restored again after dying in a restore"
+# A server no client saw changes nothing: the next still asks.
+wait_until snap_has "$(snap)" "${T}primary${T}" || fail "server not saved"
+stop
+$TMUX -f "$CONF" new -d -s primary || fail "start again with no client seen"
+sleep 1
+sessions_are primary || fail "restored unasked once no client had seen the death"
 attach
 wait_until drawn "Crash recovery" || fail "death in a restore not called a crash"
 $TMUX send-keys -K -c "$CLIENT" Escape
 wait_until sh -c "! test -f '$PREVIOUS'" || fail "Escape did not archive"
+
+# A server that has been running, as one that learns its folder late has, asks
+# after a restart rather than replace a session it can't vouch for.
+wait_until snap_has "$(snap)" "^attached" || fail "not saved"
+stop
+cp "$OUT/saved" "$SNAP" || fail "put the set back"
+printf 'set -g @session-set-young 0\n' >>"$OUT/test.conf"
+$TMUX -f "$CONF" new -d -s primary || fail "start an old server"
+wait_until test -f "$PREVIOUS" || fail "set not set aside"
+sleep 1
+sessions_are primary || fail "a server past its start restored unasked"
+attach
+wait_until drawn "Previous session set" || fail "an old server didn't offer"
+$TMUX send-keys -K -c "$CLIENT" Escape
+wait_until sh -c "! test -f '$PREVIOUS'" || fail "Escape did not archive"
+config 4000000000
 
 # 11. An upgraded server is not a new one: a set still waiting is offered, never
 # restored into what is running.

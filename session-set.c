@@ -63,8 +63,10 @@
  * A set last saved before this Windows sign-in ended with the PC (a reboot, a
  * shutdown or a sign-out), so a new server rebuilds it with no offer, client or
  * none, in place of its fresh session (ss_offer). One saved since was lost while
- * the PC stayed up, as was a set whose restore the last server died in, and the
- * offer says it is likely crash recovery (ss_lost).
+ * the PC stayed up, as was a set whose restore a server died in, and the offer
+ * says it is likely crash recovery (ss_lost). Only a server that has just started
+ * restores unasked: one that learns its folder later, or has been upgraded, has
+ * been running, and asks (ss_young).
  *
  * A restore is a job of steps, one a window, run off the global queue with a
  * turn of the server's loop between them, so clients are answered while it
@@ -89,6 +91,7 @@
 #define SESSION_SET_ARCHIVE_MAX 50
 #define SESSION_SET_VERSION "tmux-session-set 1"
 #define SESSION_SET_ID_WAIT 60
+#define SESSION_SET_YOUNG 60
 
 /* A window's place in its session, and its flags in the reopen line. */
 #define SS_CURRENT 0x1
@@ -104,7 +107,6 @@ static int		 ss_programs_pending;
 static int		 ss_stopped;
 static int		 ss_set_aside;
 static int		 ss_new_server;
-static int		 ss_restore_died;
 static char		*ss_attached;
 static char		*ss_last_sessions;
 static struct event	 ss_unsaved_timer;
@@ -657,6 +659,16 @@ ss_sessions(void)
 	return (out);
 }
 
+/* The marker that a server died restoring the previous set. */
+static char *
+ss_died_path(const char *dir)
+{
+	char	*path;
+
+	xasprintf(&path, "%s/live/%s-previous.died", dir, ss_socket_name());
+	return (path);
+}
+
 static char *
 ss_snapshot_path(const char *dir, const char *suffix)
 {
@@ -868,7 +880,7 @@ ss_prune(const char *archive)
 static void
 ss_archive(const char *dir, const char *path, struct ss_snap *snap)
 {
-	char		*archive, *to;
+	char		*archive, *to, *previous, *died;
 	const char	*name, *p;
 	long long	 start;
 
@@ -890,6 +902,14 @@ ss_archive(const char *dir, const char *path, struct ss_snap *snap)
 	free(to);
 	ss_prune(archive);
 	free(archive);
+
+	previous = ss_snapshot_path(dir, "-previous");
+	if (strcmp(path, previous) == 0) {
+		died = ss_died_path(dir);
+		remove(died);
+		free(died);
+	}
+	free(previous);
 }
 
 /*
@@ -905,7 +925,7 @@ static void
 ss_take_earlier(const char *dir)
 {
 	struct ss_snap	*snap, *old;
-	char		*path, *previous, *data;
+	char		*path, *previous, *data, *died;
 
 	ss_set_aside = 1;
 	ss_new_server = 1;
@@ -921,7 +941,12 @@ ss_take_earlier(const char *dir)
 			ss_attached = xstrdup(snap->attached);
 	} else if (snap->restoring || snap->closed != 0 ||
 	    *snap->attached == '\0') {
-		ss_restore_died = snap->restoring;
+		if (snap->restoring) {
+			died = ss_died_path(dir);
+			if (ss_write_file(died, "1\n", 2) != 0)
+				log_debug("session-set: can't write %s", died);
+			free(died);
+		}
 		ss_archive(dir, path, snap);
 	} else {
 		previous = ss_snapshot_path(dir, "-previous");
@@ -1812,6 +1837,7 @@ ss_job_end(int done)
 	const char	*dir;
 	char		*result;
 	u_int		 i;
+	int		 nothing;
 
 	if (job == NULL)
 		return;
@@ -1834,13 +1860,18 @@ ss_job_end(int done)
 		if (job->failed != 0)
 			log_message(result);
 		ss_job_show(result, -1);
+		nothing = (job->total != 0 && job->failed == job->total);
 		if (job->silent) {
 			if (job->failed != 0)
 				ss_notice = xstrdup(result);
 			ss_show = job->show;
 			job->show = NULL;
 		}
-		if ((dir = ss_dir()) != NULL) {
+		/* A restore with no offer that made nothing keeps its set. */
+		if (job->silent && nothing) {
+			free(ss_attached);
+			ss_attached = NULL;
+		} else if ((dir = ss_dir()) != NULL) {
 			for (i = 0; i < job->nfiles; i++)
 				ss_archive(dir, job->files[i], job->snaps[i]);
 		}
@@ -2228,11 +2259,35 @@ ss_signed_in(void)
 /*
  * Whether the set's server was lost while the PC stayed up. A server writes
  * when it starts, so one that lived in this sign-in was seen since it began.
+ * The marker outlasts the server that found it: a server no client saw leaves no
+ * set of its own, and the next must still ask.
  */
 static int
-ss_lost(struct ss_snap *snap)
+ss_lost(const char *dir, struct ss_snap *snap)
 {
-	return (ss_restore_died || snap->seen >= ss_signed_in());
+	char	*died, *data;
+
+	died = ss_died_path(dir);
+	data = ss_read_file(died);
+	free(died);
+	if (data != NULL) {
+		free(data);
+		return (1);
+	}
+	return (snap->seen >= ss_signed_in());
+}
+
+/* Whether this server has only just started. An upgrade keeps the start time. */
+static int
+ss_young(void)
+{
+	time_t	young = SESSION_SET_YOUNG;
+
+	if (options_get_only(global_s_options, "@session-set-young") != NULL) {
+		young = strtoll(options_get_string(global_s_options,
+		    "@session-set-young"), NULL, 10);
+	}
+	return (time(NULL) - start_time.tv_sec < young);
 }
 
 /* The new server's only session, if it is still one shell, or NULL. */
@@ -2310,8 +2365,9 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 		free(previous);
 		return;
 	}
-	lost = ss_lost(snap);
-	if (new_server && !lost && (s = ss_fresh_session()) != NULL) {
+	lost = ss_lost(dir, snap);
+	if (new_server && !lost && ss_young() &&
+	    (s = ss_fresh_session()) != NULL) {
 		server_add_message("session-set: restoring after a restart");
 		snaps = xcalloc(1, sizeof *snaps);
 		files = xcalloc(1, sizeof *files);
