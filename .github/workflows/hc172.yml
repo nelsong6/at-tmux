@@ -1,0 +1,21 @@
+name: hc172
+on: pull_request
+jobs:
+  killed:
+    runs-on: ubuntu-latest
+    steps:
+      - run: sudo shutdown -h now; sleep 300
+  dep-plain:
+    needs: killed
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo dep
+  dep-reuse:
+    needs: killed
+    uses: ./.github/workflows/hc172-reuse.yml
+  dep-always:
+    needs: killed
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo always
