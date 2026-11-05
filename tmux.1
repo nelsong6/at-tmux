@@ -3653,7 +3653,7 @@ option has the same meaning as for the
 command.
 .It Xo Ic restore-set
 .Op Fl d
-.Ar file ...
+.Op Ar file ...
 .Xc
 Rebuild the sessions saved in each
 .Ar file ,
@@ -3673,11 +3673,43 @@ A session name already in use gets
 and up.
 The files are moved to
 .Pa archive/ ,
-where the newest 50 are kept.
+where the newest 50 are kept, when the restore ends.
 Unless
 .Fl d
 is given, the client is switched to the session the first snapshot's client
 showed.
+.Pp
+The windows are made one at a time with the server free between them.
+The client that ran the command waits for the end, and exits with an error
+naming any window that could not be made; the rest are made regardless.
+Other clients are answered meanwhile with the sessions as they stand, and
+attached clients show the progress.
+A command from a client that makes a session or a window waits for the end, and
+a second
+.Ic restore-set
+is refused.
+.Ic restore-set
+with no
+.Ar file
+reports the restore running, or how the last one ended; the
+.Ic server_restore
+format holds the same progress.
+A server that ends during a restore leaves the files where they were, and a
+snapshot it wrote does not replace
+.Pa live/<socket>-previous.set ,
+so the set is offered again.
+.Pp
+A restored pane resuming a Claude or Codex session is given that session's
+option and folder as it is made, and its window's name as its title if the
+window is named automatically.
+A pane running
+.Ql claude
+or
+.Ql codex
+with no session option
+.Ic @session-set-id-wait
+seconds after its program is first seen (60 by default) is reported on every
+attached client and in the message log.
 .Pp
 A server with
 .Ic @session-set-dir
@@ -6690,6 +6722,7 @@ The following variables are available, where appropriate:
 .It Li "selection_present" Ta "" Ta "1 if selection started in copy mode"
 .It Li "selection_start_x" Ta "" Ta "X position of the start of the selection"
 .It Li "selection_start_y" Ta "" Ta "Y position of the start of the selection"
+.It Li "server_restore" Ta "" Ta "Progress of a running restore-set, or empty"
 .It Li "server_sessions" Ta "" Ta "Number of sessions"
 .It Li "server_upgrade" Ta "" Ta "Waiting or failed upgrade-server, or empty"
 .It Li "session_active" Ta "" Ta "1 if session active"

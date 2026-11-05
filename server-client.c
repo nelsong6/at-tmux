@@ -3913,6 +3913,7 @@ server_client_dispatch_identify(struct client *c, struct imsg *imsg)
 	if (imsg->hdr.type != MSG_IDENTIFY_DONE)
 		return (0);
 	c->flags |= CLIENT_IDENTIFIED;
+	proc_send(c->peer, MSG_HEARD, -1, NULL, 0);
 
 	if (c->term_name == NULL || *c->term_name == '\0') {
 		free(c->term_name);

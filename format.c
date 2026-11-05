@@ -635,6 +635,13 @@ format_cb_session_attached_list(struct format_tree *ft)
 	return (value);
 }
 
+/* Callback for server_restore. */
+static void *
+format_cb_server_restore(__unused struct format_tree *ft)
+{
+	return (session_set_restore_status());
+}
+
 /* Callback for session_alert. */
 static void *
 format_cb_session_alert(struct format_tree *ft)
@@ -3505,6 +3512,9 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "scroll_region_upper", FORMAT_TABLE_STRING,
 	  format_cb_scroll_region_upper
+	},
+	{ "server_restore", FORMAT_TABLE_STRING,
+	  format_cb_server_restore
 	},
 	{ "server_sessions", FORMAT_TABLE_STRING,
 	  format_cb_server_sessions

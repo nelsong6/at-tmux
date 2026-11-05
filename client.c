@@ -68,6 +68,7 @@ static const char	*client_execshell;
 static const char	*client_execcmd;
 static int		 client_attached;
 static struct client_files client_files = RB_INITIALIZER(&client_files);
+static struct event	 client_answer_timer;
 
 static __dead void	 client_exec(const char *,const char *);
 static int		 client_get_lock(char *);
@@ -79,11 +80,15 @@ static void		 client_signal(int);
 static void		 client_dispatch(struct imsg *, void *);
 static void		 client_dispatch_attached(struct imsg *);
 static void		 client_dispatch_wait(struct imsg *);
+static void		 client_unanswered(int, short, void *);
 static const char	*client_exit_message(void);
 #ifdef _WIN32
 static void		 client_start_tty_relay(void);
 static void		 client_stop_tty_relay(void);
 #endif
+
+/* Seconds a client waits to hear from the server before saying so. */
+#define CLIENT_ANSWER_WAIT 10
 
 /*
  * Get server create lock. If already held then server start is happening in
@@ -116,6 +121,15 @@ client_get_lock(char *lockfile)
 	return (lockfd);
 }
 
+/* The server hasn't taken this client up yet. */
+static void
+client_unanswered(__unused int fd, __unused short events,
+    __unused void *data)
+{
+	fprintf(stderr, "%s has not answered for %d seconds, still waiting\n",
+	    socket_path, CLIENT_ANSWER_WAIT);
+}
+
 /* Connect client to server. */
 static int
 client_connect(struct event_base *base, const char *path, uint64_t flags)
@@ -135,6 +149,8 @@ client_connect(struct event_base *base, const char *path, uint64_t flags)
 		return (fd);
 	}
 
+	if (errno != ECONNREFUSED)
+		return (-1);
 	log_debug("connect failed, starting server");
 
 	if (flags & CLIENT_NOSTARTSERVER)
@@ -372,6 +388,9 @@ client_main(struct event_base *base, int argc, char **argv, uint64_t flags,
 		if (errno == ECONNREFUSED) {
 			fprintf(stderr, "no server running on %s\n",
 			    socket_path);
+		} else if (errno == EBUSY) {
+			fprintf(stderr, "%s is running but not answering\n",
+			    socket_path);
 		} else {
 			fprintf(stderr, "error connecting to %s (%s)\n",
 			    socket_path, strerror(errno));
@@ -490,6 +509,14 @@ client_main(struct event_base *base, int argc, char **argv, uint64_t flags,
 	if (client_flags & CLIENT_CONTROL)
 		client_start_tty_relay();
 #endif
+
+	/* A client that hears nothing says so, and goes on waiting. */
+	evtimer_set(&client_answer_timer, client_unanswered, NULL);
+	{
+		struct timeval tv = { CLIENT_ANSWER_WAIT, 0 };
+
+		evtimer_add(&client_answer_timer, &tv);
+	}
 
 	/* Start main loop. */
 	proc_loop(client_proc, NULL);
@@ -866,6 +893,7 @@ client_dispatch(struct imsg *imsg, __unused void *arg)
 		return;
 	}
 
+	evtimer_del(&client_answer_timer);
 	if (client_attached)
 		client_dispatch_attached(imsg);
 	else

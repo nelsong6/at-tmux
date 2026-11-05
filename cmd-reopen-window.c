@@ -35,7 +35,7 @@ const struct cmd_entry cmd_reopen_window_entry = {
 	.args = { "d", 0, 0, NULL },
 	.usage = "[-d]",
 
-	.flags = 0,
+	.flags = CMD_WAITS_RESTORE,
 	.exec = cmd_reopen_window_exec
 };
 

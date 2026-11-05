@@ -218,6 +218,18 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-session-offer.sh
 
+      - name: Run restore-set tests
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-restore-set.sh
+
+      - name: Run busy server tests
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-busy-server.sh
+
       - name: Run new-window -W tests
         shell: bash
         timeout-minutes: 5

@@ -771,6 +771,12 @@ cmdq_next(struct client *c)
 		 * waiting flag can only be cleared by an external event.
 		 */
 		if (~item->flags & CMDQ_FIRED) {
+			if (c != NULL && item->type == CMDQ_COMMAND &&
+			    (cmd_get_entry(item->cmd)->flags & CMD_WAITS_RESTORE) &&
+			    session_set_hold(item)) {
+				item->flags |= CMDQ_WAITING;
+				goto waiting;
+			}
 			item->time = time(NULL);
 			item->number = ++number;
 

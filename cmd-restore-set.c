@@ -22,7 +22,8 @@
 
 /*
  * Rebuild saved servers (session-set snapshots) in this server, beside its own
- * sessions, and show them.
+ * sessions, and show them. The server stays free while it does: the client that
+ * asked waits for the end. With no files, say how a restore is going.
  */
 
 static enum cmd_retval	cmd_restore_set_exec(struct cmd *,
@@ -32,8 +33,8 @@ const struct cmd_entry cmd_restore_set_entry = {
 	.name = "restore-set",
 	.alias = NULL,
 
-	.args = { "d", 1, -1, NULL },
-	.usage = "[-d] file ...",
+	.args = { "d", 0, -1, NULL },
+	.usage = "[-d] [file ...]",
 
 	.flags = 0,
 	.exec = cmd_restore_set_exec
@@ -44,29 +45,35 @@ cmd_restore_set_exec(struct cmd *self, struct cmdq_item *item)
 {
 	struct args	*args = cmd_get_args(self);
 	struct client	*tc = cmdq_get_target_client(item);
-	const char	**files;
-	char		*commands, *cause = NULL;
+	const char	**files, *last;
+	char		*status, *cause = NULL;
 	u_int		 i, n = args_count(args);
+	int		 failed;
+
+	if (n == 0) {
+		status = session_set_restore_status();
+		last = session_set_restore_last();
+		if (*status != '\0')
+			cmdq_print(item, "%s", status);
+		else if (last != NULL)
+			cmdq_print(item, "no restore running; last %s", last);
+		else
+			cmdq_print(item, "no restore running");
+		free(status);
+		return (CMD_RETURN_NORMAL);
+	}
 
 	if (args_has(args, 'd') || tc == NULL || tc->session == NULL)
 		tc = NULL;
 	files = xcalloc(n, sizeof *files);
 	for (i = 0; i < n; i++)
 		files[i] = args_string(args, i);
-	commands = session_set_restore(files, n, tc, &cause);
+	failed = session_set_restore(files, n, tc, item, &cause);
 	free(files);
-	if (commands == NULL) {
+	if (failed != 0) {
 		cmdq_error(item, "%s", cause);
 		free(cause);
 		return (CMD_RETURN_ERROR);
 	}
-	if (cmd_parse_and_insert(commands, NULL, item, cmdq_get_state(item),
-	    &cause) != CMD_PARSE_SUCCESS) {
-		cmdq_error(item, "%s", cause);
-		free(cause);
-		free(commands);
-		return (CMD_RETURN_ERROR);
-	}
-	free(commands);
-	return (CMD_RETURN_NORMAL);
+	return (CMD_RETURN_WAIT);
 }
