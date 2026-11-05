@@ -47,7 +47,7 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
 ## Test Suite
 
-CI runs on Forgejo (`.forgejo/workflows/ci.yml`). Its `build-and-test` job runs on upstairspc's runner (host mode, label `windows-latest`): Visual Studio Build Tools' CMake and vcpkg, libevent from `vcpkg.json` (manifest mode, VS's vcpkg has none other) with a binary cache in the runner's folder, and Git Bash for the tests. It runs these test scripts from `regress/`, each through `win32-run.sh`:
+The tests run on Forgejo (`.forgejo/workflows/tests.yml`), never ahead of a change reaching the PCs. Its `build-and-test` job runs on upstairspc's runner (host mode, label `windows-latest`): Visual Studio Build Tools' CMake and vcpkg, libevent from `vcpkg.json` (manifest mode, VS's vcpkg has none other) with a binary cache in the runner's folder, and Git Bash for the tests. It runs these test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-message-log.sh` — failed launches keep their caller errors and make no pane, failed program exits are recorded, and error history survives server shutdown, rotates and expires old files (TMUX-41)
 - `win32-run-shell-background.sh` — a `run-shell -b` started by a command-line client, a config file or a hook puts its output and failed exit in the message log (the failure in the error log too), never into whichever pane is current, even with a client attached; one started by a key press shows in that client's pane, and one with `-t` in its pane (TMUX-101)
 - `win32-basic.sh` — core session/window/pane operations
@@ -112,7 +112,9 @@ A push to `master` on either side fast-forwards the other: `.github/workflows/fo
 
 ## Publishing
 
-CI's `release` job makes every master commit whose run passed a Forgejo release, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with its `tmux.pdb`, `conpty.dll` and `OpenConsole.exe`) and its `.sha256`.
+A master commit gets a Forgejo release from CI's `release` job, on a Linux runner, tagged `git describe --tags --always --exclude '*-g*'` (the exclude keeps one release's tag from being the next one's base), holding `tmux-windows-<tag>.zip` (the signed Release `tmux.exe` with its `tmux.pdb`, `conpty.dll` and `OpenConsole.exe`) and its `.sha256`. A PR run keeps its signed package on the draft release `tested`, under its tree's hash, the newest 20 of them. A merge with that tree releases that package, skipping `build`; any other tree builds first. The `tested` release is never published, so `releases/latest` and home-sync don't see it.
+
+Tests don't hold a change back (Nelson's decision, TMUX-128: one user). `ci.yml` only builds, signs and releases; `tests.yml` runs every test against master nightly, or on dispatch, and a failure shows in Alerts.
 
 A master run the runner dropped leaves that commit with no release. Start it again with `POST /api/v1/repos/nelsong6/at-tmux/actions/workflows/ci.yml/dispatches` and the body `{"ref":"master"}`: it runs and publishes as the push would have. Forgejo's API has no rerun of its own (TMUX-114).
 

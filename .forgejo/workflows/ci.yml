@@ -10,12 +10,56 @@ on:
   workflow_dispatch:
 
 jobs:
+  # A PR run keeps its package under its tree, so a merge with that tree releases
+  # that package, with no Windows job to wait for. Tests don't hold a change back:
+  # they run on their own in tests.yml and report to Alerts.
+  tested:
+    runs-on: ubuntu-latest
+    outputs:
+      found: ${{ steps.find.outputs.found }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the package already built from this tree
+        id: find
+        if: github.event_name != 'pull_request'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          tree=$(git rev-parse 'HEAD^{tree}')
+          code=$(curl -sS -o tested.json -w '%{http_code}' -H "Authorization: token $TOKEN" "$api/releases/tags/tested")
+          if [ "$code" != 200 ] && [ "$code" != 404 ]; then
+            echo "::error::reading the tested packages returned $code"
+            exit 1
+          fi
+          url=$(jq -r --arg name "$tree.zip" '.assets[]? | select(.name == $name) | .browser_download_url' tested.json)
+          if [ -z "$url" ]; then
+            echo "$tree has no package; this run builds it"
+            exit 0
+          fi
+          curl -fsSL -H "Authorization: token $TOKEN" -o tested.zip "$url"
+          unzip -q tested.zip -d package
+          echo "$tree was built in a PR run; releasing its package"
+          echo found=true >> "$GITHUB_OUTPUT"
+
+      - name: Make it this run's package
+        if: steps.find.outputs.found == 'true'
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: tmux-windows
+          path: package/
+
   # upstairspc, host mode: the job uses the machine's Visual Studio Build Tools
   # and Git for Windows and installs nothing system-wide.
-  build-and-test:
+  build:
+    needs: tested
+    if: needs.tested.outputs.found != 'true'
     runs-on: windows-latest
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows-static
+      _CL_: /MP4
       # tmux.exe loads conpty.dll and OpenConsole.exe from its own folder
       # (the pseudoconsole Windows Terminal ships); the package carries them.
       CONPTY_VERSION: 1.25.260930003
@@ -49,265 +93,14 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static
 
-      - name: Build Debug
-        run: |
-          cmake --build build --config Debug
-
       - name: Build Release
         run: |
           cmake --build build --config Release
-
-      - name: Run key trace tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-key-trace.sh
-
-      - name: Run basic regression tests
-        shell: bash
-        run: |
-          [ -n "$MSYSTEM" ] || { echo "::error::bash is not Git Bash: $(command -v bash)"; exit 1; }
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
-
-      - name: Run Claude swarm simulation tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-claude-swarm.sh
-
-      - name: Run format string tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-format-strings.sh
-
-      - name: Run config syntax tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-conf-syntax.sh
-
-      - name: Run config line ending tests
-        shell: bash
-        timeout-minutes: 5
-        run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh conf-crlf.sh
-
-      - name: Run console shutdown tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-pty-close.sh
-
-      - name: Run key handling tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-keys.sh
-
-      - name: Run kitty key form tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-csi-u.sh
-
-      - name: Run has-session tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-has-session.sh
-
-      - name: Run file tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-file.sh
-
-      - name: Run strftime tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-strftime.sh
-
-      - name: Run respawn-failed tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-respawn-failed.sh
-
-      - name: Run persistent error log tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-message-log.sh
-
-      - name: Run background run-shell tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-run-shell-background.sh
-
-      - name: Run layout tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-layout.sh
-
-      - name: Run control client tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-control-client.sh
-
-      - name: Run attach size tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-attach-size.sh
-
-      - name: Run wrap tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-wrap.sh
-
-      - name: Client name tests
-        shell: bash
-        timeout-minutes: 3
-        run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-client-name.sh
-
-      - name: Keep clears within Windows panes
-        shell: bash
-        timeout-minutes: 5
-        run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-pane-clear.sh
-
-      - name: Keep pane output out of a popup
-        shell: bash
-        timeout-minutes: 5
-        run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-popup-output.sh
-
-      - name: Run line size tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-linesize.sh
-
-      - name: Run palette tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-palette.sh
-
-      - name: Run process watch tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-process-watch.sh
-
-      - name: Run child environment tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-environment.sh
-
-      - name: Run child executable path tests
-        shell: bash
-        timeout-minutes: 5
-        run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-child-path.sh
-
-      - name: Run keep-alive tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-keep-alive.sh
-
-      - name: Run set-status tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-set-status.sh
-
-      - name: Run caller and play-sound tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-caller.sh
-
-      - name: Run reorder-session tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-reorder-session.sh
-
-      - name: Run session-set tests
-        shell: bash
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-session-set.sh
-
-      - name: Run session-set offer tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-session-offer.sh
-
-      - name: Run restore-set tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-restore-set.sh
-
-      - name: Run busy server tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-busy-server.sh
-
-      - name: Run new-window -W tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-new-window-draw.sh
-
-      - name: Run new-window -o tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-new-window-options.sh
-
-      - name: Run global key foreground tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-global-foreground.sh
-
-      - name: Run start-program tests
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-start-program.sh
 
       - name: Fetch ConPTY
         run: |
           Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Windows.Console.ConPTY/$env:CONPTY_VERSION" -OutFile conpty.zip
           Expand-Archive conpty.zip conpty
-
-      # A console changes hands only through conpty.dll, so the Debug build
-      # runs here beside it, as a release does.
-      - name: Run upgrade tests
-        shell: bash
-        run: |
-          mkdir -p build/upgrade
-          cp build/Debug/tmux.exe conpty/runtimes/win-x64/native/conpty.dll conpty/build/native/runtimes/x64/OpenConsole.exe build/upgrade/
-          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pty-close.sh || exit 1
-          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pane-clear.sh || exit 1
-          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-popup-output.sh || exit 1
-          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade.sh
-          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh panel.sh
-
-      - name: Run independent footer tests
-        shell: bash
-        run: TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-footer.sh
-
-      - name: Run flight record tests
-        shell: bash
-        run: TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-flight.sh
-
-      - name: Build cross-version key fixtures
-        run: ./regress/build-upgrade-key-fixtures.ps1
-
-      - name: Run cross-version key upgrades
-        shell: bash
-        timeout-minutes: 5
-        run: TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade-keys.sh
-
-      - name: Upload build artifacts
-        if: success()
-        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
-        with:
-          name: tmux-windows-debug
-          path: |
-            build/Debug/tmux.exe
 
       - name: Package Release with ConPTY
         run: |
@@ -331,11 +124,9 @@ jobs:
             & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD package/tmux.exe package/conpty.dll package/OpenConsole.exe
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           } finally { Remove-Item cert.pfx }
-
-      - name: Run crash log tests
-        timeout-minutes: 5
-        shell: bash
-        run: TEST_TMUX=./package/tmux.exe bash regress/win32-run.sh win32-crash-log.sh
+          $signature = Get-AuthenticodeSignature package/tmux.exe
+          if (-not $signature.SignerCertificate -or $signature.Status -eq 'HashMismatch') { throw 'tmux.exe has no intact Authenticode signature' }
+          Write-Host "Signer $($signature.SignerCertificate.Thumbprint)"
 
       - name: Upload Release package
         uses: https://data.forgejo.org/forgejo/upload-artifact@v4
@@ -343,64 +134,15 @@ jobs:
           name: tmux-windows
           path: package/
 
-  # Nelson's Linux machine runs this fork too: tmux's own Unix build, with the
-  # Linux keyboard (osdep-linux-keys.c, evdev) for -H and the global table.
-  # CI has no keyboard, so hold.sh sees no modifier held, as on macOS.
-  linux:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y autoconf automake pkg-config bison libevent-dev libncurses-dev libutf8proc-dev
-
-      - name: Build
-        run: |
-          sh autogen.sh
-          ./configure --enable-utf8proc
-          make -j"$(nproc)"
-
-      # The job runs as root, and a login sh as root takes /etc/profile's "# "
-      # prompt, which the tests don't wait for: they run as an unprivileged
-      # user, as on GitHub's runner.
-      - name: Run config line ending tests
-        timeout-minutes: 5
-        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/conf-crlf.sh
-
-      - name: Run palette tests
-        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/palette.sh
-
-      - name: Run side panel tests
-        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/panel.sh
-
-      - name: Run hold tests
-        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/hold.sh
-
-      - name: Run upgrade tests
-        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/upgrade.sh
-
-      - name: Test the flight record
-        timeout-minutes: 5
-        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/flight.sh
-
-      - name: Run play-sound tests
-        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/play-sound.sh
-
-      - name: Upload Linux build
-        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
-        with:
-          name: tmux-linux
-          path: tmux
-
+  # The package arrives signed, so nothing here needs Windows or waits for
+  # upstairspc's slots.
   release:
-    needs: [build-and-test, linux]
+    needs: [tested, build]
+    # build is skipped when tested found the package.
+    if: ${{ !failure() && !cancelled() }}
     outputs:
       release-tag: ${{ steps.release.outputs.tag || 'validation-only' }}
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: pwsh -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; . ([scriptblock]::Create([IO.File]::ReadAllText('{0}'))); if (Test-Path variable:LASTEXITCODE) { exit $LASTEXITCODE }"
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -410,9 +152,8 @@ jobs:
       - name: Version
         run: |
           # A release's own tag is never the base of the next release.
-          $version = git describe --tags --always --exclude '*-g*'
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          "VERSION=$version" | Add-Content $env:GITHUB_ENV
+          version=$(git describe --tags --always --exclude '*-g*')
+          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - uses: https://data.forgejo.org/forgejo/download-artifact@v4
         with:
@@ -421,16 +162,14 @@ jobs:
 
       - name: Package
         run: |
-          foreach ($f in 'tmux.exe', 'tmux.pdb', 'conpty.dll', 'OpenConsole.exe') {
-            if (-not (Test-Path "package/$f")) { throw "package/$f is missing" }
-          }
-          $signature = Get-AuthenticodeSignature package/tmux.exe
-          if (-not $signature.SignerCertificate -or $signature.Status -eq 'HashMismatch') { throw 'tmux.exe has no intact Authenticode signature' }
-          $zip = "tmux-windows-$env:VERSION.zip"
-          Compress-Archive -Path package/tmux.exe, package/tmux.pdb, package/conpty.dll, package/OpenConsole.exe -DestinationPath $zip
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $zip" | Set-Content -Encoding utf8 "$zip.sha256"
-          Write-Host "Packaged $zip; SHA256 $hash; signer $($signature.SignerCertificate.Thumbprint)"
+          for f in tmux.exe tmux.pdb conpty.dll OpenConsole.exe; do
+            [ -f "package/$f" ] || { echo "::error::package/$f is missing"; exit 1; }
+          done
+          zip="tmux-windows-$VERSION.zip"
+          (cd package && zip -q "../$zip" tmux.exe tmux.pdb conpty.dll OpenConsole.exe)
+          hash=$(sha256sum "$zip" | cut -d' ' -f1)
+          echo "$hash  $zip" > "$zip.sha256"
+          echo "Packaged $zip; SHA256 $hash"
 
       # A describe-shaped name resolves as a revision even without a tag ref.
       # Create the exact ref explicitly, then verify the server advertises it.
@@ -439,27 +178,24 @@ jobs:
         env:
           PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
         run: |
-          $sha = git rev-parse HEAD
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $tagRef = "refs/tags/$env:VERSION"
-          git show-ref --verify --quiet $tagRef
-          if ($LASTEXITCODE -eq 1) {
-            git tag $env:VERSION $sha
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          } elseif ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $target = git rev-parse "$tagRef^{}"
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if ($target -ne $sha) { throw "$tagRef points to $target instead of $sha" }
-          if ($env:PUBLISH -eq 'true') {
-            git push origin $tagRef
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            $remote = git ls-remote origin $tagRef
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            $object = git rev-parse $tagRef
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            if ((($remote -split '\s+')[0]) -ne $object) { throw "$tagRef was not published" }
-          }
-          Write-Host "$tagRef points to $sha (publish=$env:PUBLISH)"
+          sha=$(git rev-parse HEAD)
+          tag_ref="refs/tags/$VERSION"
+          git show-ref --verify --quiet "$tag_ref" || git tag "$VERSION" "$sha"
+          target=$(git rev-parse "$tag_ref^{}")
+          if [ "$target" != "$sha" ]; then
+            echo "::error::$tag_ref points to $target instead of $sha"
+            exit 1
+          fi
+          if [ "$PUBLISH" = true ]; then
+            git push origin "$tag_ref"
+            remote=$(git ls-remote origin "$tag_ref" | cut -f1)
+            object=$(git rev-parse "$tag_ref")
+            if [ "$remote" != "$object" ]; then
+              echo "::error::$tag_ref was not published"
+              exit 1
+            fi
+          fi
+          echo "$tag_ref points to $sha (publish=$PUBLISH)"
 
       - name: Release
         id: release
@@ -467,25 +203,57 @@ jobs:
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $api = "$env:GITHUB_SERVER_URL/api/v1/repos/$env:GITHUB_REPOSITORY"
-          $headers = @{ Authorization = "token $env:TOKEN" }
-          $zip = "tmux-windows-$env:VERSION.zip"
-          $release = Invoke-RestMethod "$api/releases/tags/$env:VERSION" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
-          if ($code -eq 404) {
-            $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-            $body = @{ tag_name = $env:VERSION; target_commitish = $env:GITHUB_SHA; name = $env:VERSION; body = "Commit $env:GITHUB_SHA`n`nSHA256 of ${zip}: $hash"; draft = $true } | ConvertTo-Json
-            $release = Invoke-RestMethod -Method Post "$api/releases" -Headers $headers -ContentType application/json -Body $body
-          } elseif ($code -ne 200) { throw "reading release $env:VERSION returned $code" }
-          foreach ($f in $zip, "$zip.sha256") {
-            if ($release.assets | Where-Object name -eq $f) {
-              Write-Host "$f is already on release $env:VERSION"
-            } else {
-              Invoke-RestMethod -Method Post "$api/releases/$($release.id)/assets?name=$f" -Headers $headers -Form @{ attachment = Get-Item $f } | Out-Null
-              Write-Host "uploaded $f"
-            }
-          }
-          Write-Host "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/$env:VERSION"
-          "tag=$env:VERSION" | Add-Content $env:GITHUB_OUTPUT
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          auth="Authorization: token $TOKEN"
+          zip="tmux-windows-$VERSION.zip"
+          code=$(curl -sS -o release.json -w '%{http_code}' -H "$auth" "$api/releases/tags/$VERSION")
+          if [ "$code" = 404 ]; then
+            hash=$(sha256sum "$zip" | cut -d' ' -f1)
+            body=$(printf 'Commit %s\n\nSHA256 of %s: %s' "$GITHUB_SHA" "$zip" "$hash")
+            jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" --arg body "$body" \
+              '{tag_name: $tag, target_commitish: $sha, name: $tag, body: $body, draft: true}' |
+              curl -fsS -H "$auth" -H 'Content-Type: application/json' -d @- -o release.json "$api/releases"
+          elif [ "$code" != 200 ]; then
+            echo "::error::reading release $VERSION returned $code"
+            exit 1
+          fi
+          id=$(jq -r .id release.json)
+          for f in "$zip" "$zip.sha256"; do
+            if jq -e --arg f "$f" 'any(.assets[]?; .name == $f)' release.json > /dev/null; then
+              echo "$f is already on release $VERSION"
+            else
+              curl -fsS -H "$auth" -F "attachment=@$f" -o /dev/null "$api/releases/$id/assets?name=$f"
+              echo "uploaded $f"
+            fi
+          done
+          echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$VERSION"
+          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # The draft "tested" release is never published, and keeps the newest 20.
+      - name: Keep the package for this tree's merge
+        if: github.event_name == 'pull_request'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          auth="Authorization: token $TOKEN"
+          tree=$(git rev-parse 'HEAD^{tree}')
+          code=$(curl -sS -o tested.json -w '%{http_code}' -H "$auth" "$api/releases/tags/tested")
+          if [ "$code" = 404 ]; then
+            curl -fsS -H "$auth" -H 'Content-Type: application/json' -o tested.json "$api/releases" \
+              -d '{"tag_name": "tested", "target_commitish": "master", "name": "Packages built by PR runs", "draft": true}'
+          elif [ "$code" != 200 ]; then
+            echo "::error::reading the tested packages returned $code"
+            exit 1
+          fi
+          id=$(jq -r .id tested.json)
+          if ! jq -e --arg name "$tree.zip" 'any(.assets[]?; .name == $name)' tested.json > /dev/null; then
+            curl -fsS -H "$auth" -F "attachment=@tmux-windows-$VERSION.zip" -o /dev/null "$api/releases/$id/assets?name=$tree.zip"
+          fi
+          for old in $(jq -r '.assets // [] | sort_by(.created_at) | reverse | .[20:][] | .id' tested.json); do
+            curl -sS -X DELETE -H "$auth" -o /dev/null "$api/releases/$id/assets/$old"
+          done
+          echo "$tree kept on release $id"
 
   home-sync:
     needs: release
