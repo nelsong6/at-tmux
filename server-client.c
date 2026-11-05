@@ -442,6 +442,26 @@ server_client_create(int fd)
 	return (c);
 }
 
+/*
+ * Name a client after its terminal, or after its process if it has none of its
+ * own. Every Windows console reports the same terminal, so it names no client.
+ */
+void
+server_client_set_name(struct client *c)
+{
+	const char	*tty = c->ttyname;
+
+#ifdef _WIN32
+	if (tty != NULL && strcmp(tty, _PATH_TTY) == 0)
+		tty = NULL;
+#endif
+	if (tty != NULL && *tty != '\0')
+		c->name = xstrdup(tty);
+	else
+		xasprintf((char **)&c->name, "client-%ld", (long)c->pid);
+	log_debug("client %p name is %s", c, c->name);
+}
+
 /* Open client terminal if needed. */
 int
 server_client_open(struct client *c, char **cause)
@@ -3799,7 +3819,6 @@ server_client_dispatch_identify(struct client *c, struct imsg *imsg)
 	size_t		 datalen;
 	int		 flags, feat;
 	uint64_t	 longflags;
-	char		*name;
 
 	if (c->flags & CLIENT_IDENTIFIED)
 		return (-1);
@@ -3919,12 +3938,7 @@ server_client_dispatch_identify(struct client *c, struct imsg *imsg)
 		c->term_name = xstrdup("unknown");
 	}
 
-	if (c->ttyname == NULL || *c->ttyname != '\0')
-		name = xstrdup(c->ttyname);
-	else
-		xasprintf(&name, "client-%ld", (long)c->pid);
-	c->name = name;
-	log_debug("client %p name is %s", c, c->name);
+	server_client_set_name(c);
 
 #ifdef __CYGWIN__
 	c->fd = open(c->ttyname, O_RDWR|O_NOCTTY);

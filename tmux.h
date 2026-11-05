@@ -3046,6 +3046,7 @@ const char *server_client_get_key_table(struct client *);
 int	 server_client_check_nested(struct client *);
 int	 server_client_handle_key(struct client *, struct key_event *);
 struct client *server_client_create(int);
+void	 server_client_set_name(struct client *);
 int	 server_client_open(struct client *, char **);
 void	 server_client_unref(struct client *);
 void	 server_client_set_session(struct client *, struct session *);

@@ -1310,10 +1310,7 @@ upgrade_restore_client(struct upgrade_reader *r)
 	c->pause_age = upr_u32(&o);
 	if (c->term_name == NULL)
 		c->term_name = xstrdup("unknown");
-	if (c->ttyname != NULL && *c->ttyname != '\0')
-		c->name = xstrdup(c->ttyname);
-	else
-		xasprintf((char **)&c->name, "client-%ld", (long)c->pid);
+	server_client_set_name(c);
 	if (c->cwd == NULL)
 		c->cwd = xstrdup(find_home() == NULL ? "/" : find_home());
 
