@@ -43,6 +43,7 @@ CONF=$(cygpath -m "$OUT/test.conf")
 cat >"$OUT/outer.conf" <<EOF
 set -g default-shell "$PS"
 set -g status off
+set -g remain-on-exit on
 EOF
 OUTER_CONF=$(cygpath -m "$OUT/outer.conf")
 EXE=$(cygpath -ma "$TEST_TMUX")
@@ -56,12 +57,22 @@ fail() {
 	exit 1
 }
 
-# attach [ARGS]: a client in a pane of the outer server. "attach" by default.
-attach() {
+# outer_stop: ends the outer server and waits for it to go, so a new one isn't
+# started into the one going away.
+outer_stop() {
 	$OUTER kill-server 2>/dev/null
-	$OUTER -f "$OUTER_CONF" new -d -x100 -y30 \
-	    "& '$EXE' -L$TEST_SOCKET ${1:-attach}" </dev/null ||
-	    fail "start outer server"
+	wait_until outer_gone || fail "outer server never went"
+}
+outer_gone() {
+	! $OUTER has-session 2>/dev/null
+}
+
+# attach [ARGS]: a client in a pane of the outer server, started directly, since a
+# shell's profile can outlast the wait on a loaded PC. "attach" by default.
+attach() {
+	outer_stop
+	$OUTER -f "$OUTER_CONF" new -d -x100 -y30 "$EXE" -L$TEST_SOCKET \
+	    ${1:-attach} </dev/null || fail "start outer server"
 	wait_until attached || fail "client never attached"
 	CLIENT=$($TMUX list-clients -F '#{client_name}' | tr -d '\r' | head -1)
 }
@@ -72,14 +83,14 @@ drawn() {
 	$OUTER capture-pane -p 2>/dev/null | tr -d '\r' | grep -q -- "$1"
 }
 detach() {
-	$OUTER kill-server 2>/dev/null
+	outer_stop
 	wait_until sh -c "[ -z \"\$($TMUX list-clients 2>/dev/null)\" ]" ||
 	    fail "client never went"
 }
 
 # stop: kill-server, as a crash or a reboot ends one (its snapshot stays open).
 stop() {
-	$OUTER kill-server 2>/dev/null
+	outer_stop
 	$TMUX kill-server
 	wait_gone
 	sleep 1.1
@@ -145,11 +156,18 @@ shows main || fail "only the first client is moved"
 # client there from the start.
 $TMUX switch-client -c "$CLIENT" -t =other || fail "show other"
 wait_until snap_has "$(snap)" "^attached${T}other$" || fail "other not saved"
+earlier=$(sed -n "s/^start${T}//p" "$(snap)" | tr -d '\r')
+SNAP=$(snap)
 stop
-$OUTER -f "$OUTER_CONF" new -d -x100 -y30 \
-    "& '$EXE' -L$TEST_SOCKET -f '$CONF' new -A -s primary" </dev/null ||
-    fail "start outer server"
-wait_until attached || fail "client never attached"
+$OUTER -f "$OUTER_CONF" new -d -x100 -y30 "$EXE" -L$TEST_SOCKET -f "$CONF" \
+    new -A -s primary </dev/null || fail "start outer server"
+# Read the file, not the server: a command that reaches a starting server before
+# the client that started it can end it (HOMECFG-187).
+started() {
+	[ -f "$SNAP" ] && ! grep -q "^start${T}$earlier" "$SNAP"
+}
+wait_until started || fail "the client never started the server"
+wait_until attached || fail "client never attached (a client starting the server)"
 CLIENT=$($TMUX list-clients -F '#{client_name}' | tr -d '\r' | head -1)
 wait_until sessions_are "main other" || fail "not restored under a client"
 wait_until shows other || fail "client not on the saved session"
@@ -253,21 +271,27 @@ wait_until drawn "Crash recovery" || fail "death in a restore not called a crash
 $TMUX send-keys -K -c "$CLIENT" Escape
 wait_until sh -c "! test -f '$PREVIOUS'" || fail "Escape did not archive"
 
-# A server that has been running, as one that learns its folder late has, asks
-# after a restart rather than replace a session it can't vouch for.
+# A server that learns its folder late, with a program running in its shell, asks
+# after a restart: it has no record of the program, so it must look.
 wait_until snap_has "$(snap)" "^attached" || fail "not saved"
 stop
 cp "$OUT/saved" "$SNAP" || fail "put the set back"
-printf 'set -g @session-set-young 0\n' >>"$OUT/test.conf"
-$TMUX -f "$CONF" new -d -s primary || fail "start an old server"
+config 4000000000
+grep -v session-set-dir "$OUT/test.conf" >"$OUT/late.conf"
+$TMUX -f "$(cygpath -m "$OUT/late.conf")" new -d -s primary || fail "start with no folder"
+$TMUX send-keys -t =primary: "$LONG" Enter || fail "run a program in the shell"
+running() {
+	[ "$($TMUX display -p -t =primary: '#{pane_current_command}' | tr -d '\r')" != cmd ]
+}
+wait_until running || fail "the program never started"
+$TMUX set -g @session-set-dir "$(cygpath -m "$OUT")" || fail "set the folder late"
 wait_until test -f "$PREVIOUS" || fail "set not set aside"
 sleep 1
-sessions_are primary || fail "a server past its start restored unasked"
+sessions_are primary || fail "a shell running a program was replaced"
 attach
-wait_until drawn "Previous session set" || fail "an old server didn't offer"
+wait_until drawn "Previous session set" || fail "a late server didn't offer"
 $TMUX send-keys -K -c "$CLIENT" Escape
 wait_until sh -c "! test -f '$PREVIOUS'" || fail "Escape did not archive"
-config 4000000000
 
 # 11. An upgraded server is not a new one: a set still waiting is offered, never
 # restored into what is running.

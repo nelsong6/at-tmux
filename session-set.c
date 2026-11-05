@@ -64,9 +64,8 @@
  * shutdown or a sign-out), so a new server rebuilds it with no offer, client or
  * none, in place of its fresh session (ss_offer). One saved since was lost while
  * the PC stayed up, as was a set whose restore a server died in, and the offer
- * says it is likely crash recovery (ss_lost). Only a server that has just started
- * restores unasked: one that learns its folder later, or has been upgraded, has
- * been running, and asks (ss_young).
+ * says it is likely crash recovery (ss_lost). It replaces only what can't be
+ * missed: one shell in one pane, with nothing running in it now (ss_fresh_session).
  *
  * A restore is a job of steps, one a window, run off the global queue with a
  * turn of the server's loop between them, so clients are answered while it
@@ -91,7 +90,6 @@
 #define SESSION_SET_ARCHIVE_MAX 50
 #define SESSION_SET_VERSION "tmux-session-set 1"
 #define SESSION_SET_ID_WAIT 60
-#define SESSION_SET_YOUNG 60
 
 /* A window's place in its session, and its flags in the reopen line. */
 #define SS_CURRENT 0x1
@@ -2277,20 +2275,36 @@ ss_lost(const char *dir, struct ss_snap *snap)
 	return (snap->seen >= ss_signed_in());
 }
 
-/* Whether this server has only just started. An upgrade keeps the start time. */
+/*
+ * Whether the pane's shell has nothing running in it now. What ss_programs saved
+ * can't say: it stays empty until a folder is set and is lost in an upgrade.
+ */
 static int
-ss_young(void)
+ss_shell_idle(struct window_pane *wp)
 {
-	time_t	young = SESSION_SET_YOUNG;
+	char	*name, *shell;
+	int	 idle;
+#ifdef _WIN32
+	pid_t	 pid = wp->pid;
+	char	*names[1] = { NULL };
 
-	if (options_get_only(global_s_options, "@session-set-young") != NULL) {
-		young = strtoll(options_get_string(global_s_options,
-		    "@session-set-young"), NULL, 10);
+	win32_pane_commands(&pid, 1, names);
+	name = names[0];
+#else
+	name = ss_format("#{pane_current_command}", NULL, NULL, wp);
+#endif
+	if (name == NULL || wp->shell == NULL) {
+		free(name);
+		return (0);
 	}
-	return (time(NULL) - start_time.tv_sec < young);
+	shell = ss_program_name(wp->shell);
+	idle = (strcasecmp(name, shell) == 0);
+	free(shell);
+	free(name);
+	return (idle);
 }
 
-/* The new server's only session, if it is still one shell, or NULL. */
+/* The new server's only session, if it is one idle shell, or NULL. */
 static struct session *
 ss_fresh_session(void)
 {
@@ -2298,7 +2312,8 @@ ss_fresh_session(void)
 
 	s = RB_MIN(sessions, &sessions);
 	if (s == NULL || RB_NEXT(sessions, &sessions, s) != NULL ||
-	    !ss_lone_shell(s))
+	    !ss_lone_shell(s) ||
+	    !ss_shell_idle(TAILQ_FIRST(&s->curw->window->panes)))
 		return (NULL);
 	return (s);
 }
@@ -2366,8 +2381,7 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 		return;
 	}
 	lost = ss_lost(dir, snap);
-	if (new_server && !lost && ss_young() &&
-	    (s = ss_fresh_session()) != NULL) {
+	if (new_server && !lost && (s = ss_fresh_session()) != NULL) {
 		server_add_message("session-set: restoring after a restart");
 		snaps = xcalloc(1, sizeof *snaps);
 		files = xcalloc(1, sizeof *files);

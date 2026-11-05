@@ -3723,14 +3723,12 @@ A snapshot of a server that ended with its last session, or that no client
 ever showed, is archived without an offer.
 .Pp
 On Windows, a snapshot last saved before this sign-in began ended with the
-computer, so a server that has just started rebuilds it with no offer in place of
-its one session, if that is still one shell, whether or not a client is attached;
+computer, so a new server rebuilds it with no offer in place of its one session,
+if that is one shell with nothing running in it, whether or not a client is attached;
 the first client to attach is switched to the session it showed, and told of any
 window that could not be made.
 A snapshot none of whose windows could be made stays to be offered.
-A server with a session in use, or running for over
-.Ic @session-set-young
-seconds (60 by default), offers it instead.
+With anything else in use, it is offered instead.
 A snapshot saved since, or one whose restore the last server died in, was lost
 while the computer stayed up, and the offer says it is likely crash recovery.
 .Ic @session-set-signin
