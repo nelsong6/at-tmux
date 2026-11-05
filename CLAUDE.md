@@ -101,7 +101,7 @@ They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after
 
 GitHub (https://github.com/nelsong6/at-tmux) and Forgejo stay in step, so a change can land on either, and the work Mac and Linux machine land theirs on GitHub. `git config core.hooksPath .githooks` makes a push on a Mac or Linux machine build and run the tests CI's `linux` job lists.
 
-A push to `master` on either side fast-forwards the other: `.github/workflows/forgejo-sync.yml` on the NAS's sync runner, because Forgejo is closed to the internet, and `.forgejo/workflows/github-sync.yml`, which signs in to GitHub with the repo secret `GH_SYNC_TOKEN`. Forgejo's push runs CI and the release. Nothing is forced: if `master` moves on both sides, the sync fails and sends an alert, and a session merges them.
+A push to `master` on either side fast-forwards the other: `.github/workflows/forgejo-sync.yml` on the NAS's sync runner, because Forgejo is closed to the internet, and `.forgejo/workflows/github-sync.yml`, which signs in to GitHub with the repo secret `GH_SYNC_TOKEN`. Forgejo's push runs CI and the release. Nothing is forced: if `master` moves on both sides, the sync fails and shows in Alerts, and a session merges them.
 
 ## Publishing
 
