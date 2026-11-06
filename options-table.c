@@ -226,6 +226,16 @@ static const char *options_table_allow_passthrough_list[] = {
 		"#[pop-default]" \
 		"#[norange list=on default] " \
 	"}"
+/*
+ * A Claude window's state as a colour, unless @claude-style says otherwise: blue
+ * while working, amber while it needs the user (waiting or attention).
+ */
+#define OPTIONS_TABLE_CLAUDE_STYLE \
+	"#{?@claude-style,#{E:@claude-style}," \
+	"#{?#{==:#{@claude},working},#[fg=#39bae6]," \
+	"#{?#{||:#{==:#{@claude},waiting},#{==:#{@claude},attention}}," \
+	"#[fg=#ffb454],}}}"
+
 #define OPTIONS_TABLE_STATUS_SESSIONS_FORMAT \
 	"#[align=centre list=on]" \
 	"#[list=left-marker]\xe2\x97\x80 #[list=right-marker] \xe2\x96\xb6" \
@@ -233,7 +243,7 @@ static const char *options_table_allow_passthrough_list[] = {
 	"#{S:" \
 		"#[range=session|#{session_id} fg=#8a8f98] " \
 		"#{W:#{?#{||:#{==:#{@claude},attention}," \
-			"#{==:#{@claude},waiting}},#{E:@claude-style},}}" \
+			"#{==:#{@claude},waiting}}," OPTIONS_TABLE_CLAUDE_STYLE ",}}" \
 		"#{?session_alerts,#[fg=#e05252 bold],}" \
 		"#S#[none bg=default fg=#8a8f98] " \
 		"#[norange default]" \
@@ -433,7 +443,7 @@ const struct options_table_entry options_table[] = {
 	{ .name = "focus-events",
 	  .type = OPTIONS_TABLE_FLAG,
 	  .scope = OPTIONS_TABLE_SERVER,
-	  .default_num = 0,
+	  .default_num = 1,
 	  .text = "Whether to send focus events to applications."
 	},
 
@@ -1570,7 +1580,7 @@ const struct options_table_entry options_table[] = {
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
 	  .default_str = "#[bg=#3e4b59 fg=#e6e1cf bold]"
-			 "#{E:@claude-style}[#W]#[none bg=default]"
+			 OPTIONS_TABLE_CLAUDE_STYLE "[#W]#[none bg=default]"
 			 "#{?window_zoomed_flag,#[fg=#39bae6] \xef\x81\xa5,}",
 	  .text = "Format of the current window in the status line."
 	},
@@ -1587,7 +1597,7 @@ const struct options_table_entry options_table[] = {
 	{ .name = "window-status-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_str = "#{E:@claude-style} "
+	  .default_str = OPTIONS_TABLE_CLAUDE_STYLE " "
 			 "#{?window_bell_flag,#[fg=#e05252 bold],}"
 			 "#W#[none bg=default] ",
 	  .text = "Format of windows in the status line, except the current "

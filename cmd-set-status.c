@@ -106,7 +106,33 @@ cmd_set_status_exec(struct cmd *self, struct cmdq_item *item)
 	return (CMD_RETURN_NORMAL);
 }
 
-/* Clear attention from every window a focused client is looking at. */
+/* The client looking at a window: it is current on a client that has focus. */
+static struct window *
+window_seen_by(struct client *c)
+{
+	if (c->session == NULL || c->session->curw == NULL)
+		return (NULL);
+	if (c->flags & (CLIENT_SUSPENDED|CLIENT_EXIT|CLIENT_CONTROL))
+		return (NULL);
+	if (~c->flags & CLIENT_FOCUSED)
+		return (NULL);
+	return (c->session->curw->window);
+}
+
+/* Whether any client is looking at a window. */
+int
+window_seen(struct window *w)
+{
+	struct client	*c;
+
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (window_seen_by(c) == w)
+			return (1);
+	}
+	return (0);
+}
+
+/* Clear attention from every window a client is looking at. */
 void
 window_status_seen(void)
 {
@@ -116,13 +142,8 @@ window_status_seen(void)
 	const char		*state;
 
 	TAILQ_FOREACH(c, &clients, entry) {
-		if (c->session == NULL || c->session->curw == NULL)
+		if ((w = window_seen_by(c)) == NULL)
 			continue;
-		if (c->flags & (CLIENT_SUSPENDED|CLIENT_EXIT|CLIENT_CONTROL))
-			continue;
-		if (~c->flags & CLIENT_FOCUSED)
-			continue;
-		w = c->session->curw->window;
 		o = options_get_only(w->options, SET_STATUS_OPTION);
 		if (o == NULL)
 			continue;

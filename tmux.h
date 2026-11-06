@@ -3414,6 +3414,7 @@ int		 window_set_active_pane(struct window *, struct window_pane *,
 void		 window_update_focus(struct window *);
 
 /* cmd-set-status.c */
+int		 window_seen(struct window *);
 void		 window_status_seen(void);
 void		 window_pane_update_focus(struct window_pane *);
 void		 window_redraw_active_switch(struct window *,

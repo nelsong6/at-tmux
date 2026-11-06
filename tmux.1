@@ -4505,9 +4505,15 @@ Claude Code's hooks set the same option, and the default
 .Ic window-status-format
 and
 .Ic window-status-current-format
-colour the window by it through
-.Ic @claude-style ,
-and the default
+colour the window by it: blue while
+.Ar working ,
+amber while
+.Ar waiting
+or
+.Ar attention ,
+or as the user option
+.Ic @claude-style
+says when it is set; and the default
 .Ic status-sessions-format
 colours a session's name the same way while any of its windows is
 .Ar waiting
@@ -4515,9 +4521,9 @@ or
 .Ar attention .
 .Ar attention
 is the user's move and is unset once the window is seen: when it is the
-current window of a client that has focus (which needs
+current window of a client that has focus (which
 .Ic focus-events
-to know when the terminal does).
+tells).
 .Ar waiting
 stays until it is changed.
 .El
@@ -4670,7 +4676,12 @@ when set to
 .Xc
 When enabled, focus events are requested from the terminal if supported and
 passed through to applications running in
-.Nm .
+.Nm ,
+which also learns from them when a window is seen (see
+.Ic set-window-status
+and
+.Ic play-sound ) .
+The default is on.
 Attached clients should be detached and attached again after changing this
 option.
 .It Xo Ic focus-follows-mouse
@@ -7385,11 +7396,18 @@ changes the confirmation key to
 .Ar confirm-key ;
 the default is
 .Ql y .
-.It Ic play-sound Ar path
+.It Xo Ic play-sound
+.Op Fl t Ar target-pane
+.Ar path
+.Xc
 Play the sound file
 .Ar path
 from the server, without waiting for it to finish; a sound already playing is
 stopped.
+With
+.Fl t ,
+the sound is for that pane's window and is not played while the window is
+seen, the current window of a client that has focus.
 macOS plays it with
 .Xr afplay 1 ;
 other Unix systems use the first of
