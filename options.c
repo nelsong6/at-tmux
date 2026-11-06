@@ -1291,9 +1291,69 @@ options_remove_or_default(struct options_entry *o, int idx, char **cause)
 
 #ifdef HAVE_SERVER_UPGRADE
 /*
+ * The global options as this build started, before any configuration. The
+ * global trees hold every option, so one still at its starting value is left
+ * out of an upgrade and takes the new build's own.
+ */
+static char	**options_upgrade_start[3];
+
+static int
+options_upgrade_tree(struct options *oo)
+{
+	if (oo == global_options)
+		return (0);
+	if (oo == global_s_options)
+		return (1);
+	if (oo == global_w_options)
+		return (2);
+	return (-1);
+}
+
+void
+options_upgrade_baseline(void)
+{
+	struct options		*trees[] = {
+		global_options, global_s_options, global_w_options
+	};
+	struct options_entry	*oe;
+	u_int			 i, n = 0;
+
+	while (options_table[n].name != NULL)
+		n++;
+	for (i = 0; i < nitems(trees); i++) {
+		options_upgrade_start[i] = xcalloc(n, sizeof (char *));
+		RB_FOREACH(oe, options_tree, &trees[i]->tree) {
+			if (oe->tableentry != NULL)
+				options_upgrade_start[i][oe->tableentry -
+				    options_table] = options_to_string(oe, -1, 0);
+		}
+	}
+}
+
+static int
+options_upgrade_unchanged(struct options *oo, struct options_entry *oe)
+{
+	char	*start, *value;
+	int	 tree, same;
+
+	tree = options_upgrade_tree(oo);
+	if (tree == -1 || options_upgrade_start[tree] == NULL ||
+	    oe->tableentry == NULL)
+		return (0);
+	start = options_upgrade_start[tree][oe->tableentry - options_table];
+	if (start == NULL)
+		return (0);
+	value = options_to_string(oe, -1, 0);
+	same = (strcmp(value, start) == 0);
+	free(value);
+	return (same);
+}
+
+/*
  * Save the options set at this level (not inherited ones) for the server's
- * replacement. Numbers go as numbers; strings, array items and commands go as
- * text, which is how they are set.
+ * replacement, less global ones still as this build started. Numbers go as
+ * numbers; strings, array items and commands go as text, which is how they
+ * are set.
  */
 void
 options_upgrade_save(struct evbuffer *evb, struct options *oo)
@@ -1304,10 +1364,14 @@ options_upgrade_save(struct evbuffer *evb, struct options *oo)
 	char				*s;
 	u_int				 n = 0;
 
-	RB_FOREACH(oe, options_tree, &oo->tree)
-		n++;
+	RB_FOREACH(oe, options_tree, &oo->tree) {
+		if (!options_upgrade_unchanged(oo, oe))
+			n++;
+	}
 	upw_u32(o, n);
 	RB_FOREACH(oe, options_tree, &oo->tree) {
+		if (options_upgrade_unchanged(oo, oe))
+			continue;
 		upw_str(o, oe->name);
 		if (OPTIONS_IS_ARRAY(oe)) {
 			upw_u32(o, 3);

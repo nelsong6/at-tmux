@@ -655,6 +655,9 @@ main(int argc, char **argv)
 		options_set_number(global_s_options, "status-keys", keys);
 		options_set_number(global_w_options, "mode-keys", keys);
 	}
+#ifdef HAVE_SERVER_UPGRADE
+	options_upgrade_baseline();
+#endif
 
 	/*
 	 * If socket is specified on the command-line with -S or -L, it is
