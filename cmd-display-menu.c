@@ -170,7 +170,7 @@ cmd_display_menu_get_pos(struct client *tc, struct cmdq_item *item,
 				    "%u", line + 1 + h);
 			} else {
 				format_add(ft, "popup_window_status_line_y",
-				    "%u", tty->sy - status_footer_size(tc) - lines + line);
+				    "%u", tty->sy - lines + line);
 			}
 		}
 
@@ -178,7 +178,7 @@ cmd_display_menu_get_pos(struct client *tc, struct cmdq_item *item,
 			format_add(ft, "popup_status_line_y", "%u", lines + h);
 		else {
 			format_add(ft, "popup_status_line_y", "%u",
-			    tty->sy - status_footer_size(tc) - lines);
+			    tty->sy - lines);
 		}
 	} else
 		top = 0;

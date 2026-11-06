@@ -39,9 +39,8 @@ panel_width(struct client *c)
 {
 	struct window_pane *wp;
 
-	/* Footer formats query this width, so use the cached footer size. */
 	if (c->panel == NULL || c->session == NULL || c->session->curw == NULL ||
-	    c->tty.sx < 50 || c->tty.sy < status_line_size(c) + c->status.footer_size + 6)
+	    c->tty.sx < 50 || c->tty.sy < status_line_size(c) + 6)
 		return (0);
 	wp = window_pane_find_by_id(c->panel->source);
 	if (wp == NULL || wp->window != c->session->curw->window)
@@ -151,7 +150,7 @@ panel_open(struct client *c, struct menu *menu, struct window_pane *wp,
 		menu_free(menu);
 		return (1);
 	}
-	if (c->tty.sx < 50 || c->tty.sy < status_reserved_size(c) + 6)
+	if (c->tty.sx < 50 || c->tty.sy < status_line_size(c) + 6)
 		return (-1);
 	if (c->panel == NULL) {
 		c->panel = xcalloc(1, sizeof *c->panel);
@@ -188,7 +187,7 @@ panel_draw(struct client *c)
 	if (width == 0)
 		return;
 	panel_reflow(c);
-	height = c->tty.sy - status_reserved_size(c);
+	height = c->tty.sy - status_line_size(c);
 	top = status_at_line(c) == 0 ? status_line_size(c) : 0;
 	screen_resize(&pd->screen, width, height, 0);
 	pd->screen.mode = MODE_MOUSE_ALL|MODE_MOUSE_BUTTON;
@@ -261,7 +260,7 @@ panel_key(struct client *c, struct key_event *event)
 	if (width == 0)
 		return (0);
 	panel_reflow(c);
-	height = c->tty.sy - status_reserved_size(c);
+	height = c->tty.sy - status_line_size(c);
 	top = status_at_line(c) == 0 ? status_line_size(c) : 0;
 	rows = height - 2 - (pd->tabs != 0);
 	if (KEYC_IS_MOUSE(key)) {

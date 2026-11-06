@@ -944,10 +944,7 @@ have_event:
 	/* Is this on the status line? */
 	m->statusat = status_at_line(c);
 	m->statuslines = status_line_size(c);
-	if (status_footer_size(c) && y == c->tty.sy - 1) {
-		footer = 1;
-		where = STATUS_DEFAULT;
-	} else if (m->statusat != -1 &&
+	if (m->statusat != -1 &&
 	    y >= (u_int)m->statusat &&
 	    y < m->statusat + m->statuslines) {
 		sr = status_get_range(c, x, y - m->statusat);
@@ -3178,7 +3175,7 @@ server_client_reset_state(struct client *c)
 		if (n == 0)
 			cy = status_prompt_line_at(c);
 		else {
-			n = status_reserved_size(c) - status_prompt_line_at(c);
+			n = status_line_size(c) - status_prompt_line_at(c);
 			if (n <= tty->sy)
 				cy = tty->sy - n;
 			else
@@ -3377,11 +3374,6 @@ server_client_check_redraw(struct client *c)
 		return;
 	if (c->session != NULL)
 		window_update_pane_footers(c->session->curw->window);
-	if (c->status.footer_size != status_footer_size(c)) {
-		c->status.footer_size = status_footer_size(c);
-		recalculate_sizes_now(1);
-		server_redraw_client(c);
-	}
 	if (c->flags & CLIENT_ALLREDRAWFLAGS) {
 		log_debug("%s: redraw%s%s%s%s%s%s", c->name,
 		    (c->flags & CLIENT_REDRAWWINDOW) ? " window" : "",

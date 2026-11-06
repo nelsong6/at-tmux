@@ -1219,7 +1219,6 @@ options_push_changes(const char *name)
 		}
 	}
 	if (strcmp(name, "status") == 0 ||
-	    strcmp(name, "status-footer") == 0 ||
 	    strcmp(name, "pane-footer") == 0 ||
 	    strcmp(name, "status-interval") == 0)
 		status_timer_start_all();

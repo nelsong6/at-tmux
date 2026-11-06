@@ -83,16 +83,40 @@ $TMUX set -p -t %0 pane-footer "#(cat '$(cygpath -m "$OUT/row.txt")')"
 row_is() { screen | tail -1 | grep -q "^$1"; }
 wait_until row_is first || { echo 'a #() row did not run'; screen; exit 1; }
 echo second >"$OUT/row.txt"
-$TMUX refresh-client -S -t "$($TMUX list-clients -F '#{client_name}' | tr -d '')"
+$TMUX refresh-client -S -t "$($TMUX list-clients -F '#{client_name}' | tr -d '\r')"
 wait_until row_is second || { echo 'refresh-client -S did not rerun the row'; screen; exit 1; }
 $TMUX set -pu -t %0 pane-footer
 wait_until row_is ROW_%0_ || { echo 'the row did not go back'; screen; exit 1; }
 
+# A row's job runs when told or when its command changes, not on a redraw (TMUX-112).
+{
+    echo '@echo run>>"%~dp0runs"'
+    echo '@echo JOB_ROW'
+} >"$OUT/row.cmd"
+runs() { [ "$(wc -l <"$OUT/runs" | tr -d ' ')" = "$1" ]; }
+$TMUX set -g status-interval 1
+$TMUX set -p -t %0 pane-footer "#(call \"$(cygpath -m "$OUT")/row.cmd\" #{@row-arg})"
+wait_until row_is JOB_ROW || { echo 'row job did not draw'; screen; exit 1; }
+before=$(wc -l <"$OUT/runs" | tr -d ' ')
+for title in one two three; do
+    $TMUX select-pane -t %0 -T "$title"
+    sleep 1.2
+done
+runs "$before" || { echo 'a redraw ran the row job again'; exit 1; }
+$TMUX refresh-client -S -t "$($TMUX list-clients -F '#{client_name}' | tr -d '\r')"
+told() { runs $((before + 1)); }
+wait_until told || { echo 'refresh-client -S did not run the row job once'; exit 1; }
+$TMUX set -p -t %0 @row-arg changed
+changed() { runs $((before + 2)); }
+wait_until changed || { echo 'a new command did not run the row job'; exit 1; }
+$TMUX set -pu -t %0 pane-footer
+wait_until row_is ROW_%0_ || { echo 'the row did not go back'; screen; exit 1; }
+
 # It survives an upgrade: same panes, same rows.
-old=$($TMUX display -p '#{pid}' | tr -d '')
+old=$($TMUX display -p '#{pid}' | tr -d '\r')
 panes=$($TMUX list-panes -a -F '#{pane_id}|#{pane_pid}')
 $TMUX upgrade-server "$(cygpath -w "$TEST_TMUX")" || exit 1
-upgraded() { [ "$($TMUX display -p '#{pid}' | tr -d '')" != "$old" ]; }
+upgraded() { [ "$($TMUX display -p '#{pid}' | tr -d '\r')" != "$old" ]; }
 wait_until upgraded || exit 1
 [ "$panes" = "$($TMUX list-panes -a -F '#{pane_id}|#{pane_pid}')" ] || exit 1
 wait_until row_is ROW_%0_ || { echo 'footer did not survive an upgrade'; screen; exit 1; }

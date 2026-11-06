@@ -214,8 +214,7 @@ status_timer_start(struct client *c)
 	else
 		evtimer_set(&c->status.timer, status_timer_callback, c);
 
-	if (s != NULL && (options_get_number(s->options, "status") ||
-	    *options_get_string(s->options, "status-footer") != '\0'))
+	if (s != NULL && options_get_number(s->options, "status"))
 		status_timer_callback(-1, 0, c);
 }
 
@@ -301,7 +300,7 @@ status_at_line(struct client *c)
 		return (-1);
 	if (s->statusat != 1)
 		return (s->statusat);
-	return (c->tty.sy - status_reserved_size(c));
+	return (c->tty.sy - status_line_size(c));
 }
 
 /* Get size of status line for client's session. 0 means off. */
@@ -315,69 +314,6 @@ status_line_size(struct client *c)
 	if (s == NULL)
 		return (options_get_number(global_s_options, "status"));
 	return (s->statuslines);
-}
-
-/* Keep at least one pane row; the footer is independent of the main bars. */
-static u_int
-status_footer_size_for_window(struct client *c, struct window *w)
-{
-	struct format_tree	*ft;
-	struct window_pane	*wp;
-	struct winlink		*wl;
-	const char		*condition;
-	char			*expanded;
-	u_int			 visible;
-
-	if (c->session == NULL ||
-	    (c->flags & (CLIENT_STATUSOFF|CLIENT_CONTROL)) ||
-	    c->tty.sy <= status_line_size(c) + 1)
-		return (0);
-	if (*options_get_string(c->session->options, "status-footer") == '\0')
-		return (0);
-	condition = options_get_string(c->session->options, "status-footer-condition");
-	if (strcmp(condition, "1") == 0)
-		return (1);
-	if (w == NULL)
-		w = c->session->curw->window;
-	wp = w == c->session->curw->window ? server_client_get_pane(c) : w->active;
-	wl = winlink_find_by_window(&c->session->windows, w);
-	ft = format_create(c, NULL, FORMAT_NONE, FORMAT_NOJOBS);
-	format_defaults(ft, c, c->session, wl, wp);
-	expanded = format_expand(ft, condition);
-	visible = format_true(expanded);
-	free(expanded);
-	format_free(ft);
-	return (visible);
-}
-
-u_int
-status_footer_size(struct client *c)
-{
-	return (status_footer_size_for_window(c, NULL));
-}
-
-u_int
-status_reserved_size(struct client *c)
-{
-	return (status_line_size(c) + status_footer_size(c));
-}
-
-u_int
-status_reserved_size_for_window(struct client *c, struct window *w)
-{
-	return (status_line_size(c) + status_footer_size_for_window(c, w));
-}
-
-struct style_range *
-status_footer_get_range(struct client *c, u_int x)
-{
-	struct style_range *sr;
-
-	TAILQ_FOREACH(sr, &c->status.footer_entry.ranges, entry) {
-		if (x >= sr->start && x < sr->end)
-			return (sr);
-	}
-	return (NULL);
 }
 
 /* Get the prompt line number for client's session. 1 means at the bottom. */
@@ -462,8 +398,6 @@ status_init(struct client *c)
 
 	screen_init(&sl->screen, c->tty.sx, 1, 0);
 	sl->active = &sl->screen;
-	screen_init(&sl->footer, c->tty.sx, 1, 0);
-	TAILQ_INIT(&sl->footer_entry.ranges);
 }
 
 /* Free status line. */
@@ -486,53 +420,6 @@ status_free(struct client *c)
 		free(sl->active);
 	}
 	screen_free(&sl->screen);
-	screen_free(&sl->footer);
-	status_free_ranges(&sl->footer_entry.ranges);
-	free(sl->footer_entry.expanded);
-}
-
-int
-status_footer_redraw(struct client *c)
-{
-	struct status_line	*sl = &c->status;
-	struct status_line_entry *sle = &sl->footer_entry;
-	struct screen_write_ctx	 ctx;
-	struct grid_cell	 gc;
-	struct format_tree	*ft;
-	char			*expanded;
-	u_int			 n, width = c->tty.sx;
-	int			 flags = FORMAT_STATUS|FORMAT_JOBEVENT, force;
-
-	if (width == 0 || !status_footer_size(c))
-		return (0);
-	if (c->flags & CLIENT_STATUSFORCE)
-		flags |= FORMAT_FORCE;
-	ft = format_create(c, NULL, FORMAT_NONE, flags);
-	format_defaults(ft, c, NULL, NULL, server_client_get_pane(c));
-	style_apply(&gc, c->session->options, "status-footer-style", ft);
-	expanded = format_expand_time(ft,
-	    options_get_string(c->session->options, "status-footer"));
-	force = screen_size_x(&sl->footer) != width ||
-	    !grid_cells_equal(&gc, &sl->footer_style);
-	format_free(ft);
-	if (!force && sle->expanded != NULL &&
-	    strcmp(expanded, sle->expanded) == 0) {
-		free(expanded);
-		return (0);
-	}
-	screen_resize(&sl->footer, width, 1, 0);
-	memcpy(&sl->footer_style, &gc, sizeof gc);
-	screen_write_start(&ctx, &sl->footer);
-	screen_write_cursormove(&ctx, 0, 0, 0);
-	for (n = 0; n < width; n++)
-		screen_write_putc(&ctx, &gc, ' ');
-	screen_write_cursormove(&ctx, 0, 0, 0);
-	status_free_ranges(&sle->ranges);
-	format_draw(&ctx, &gc, width, expanded, &sle->ranges, 0);
-	screen_write_stop(&ctx);
-	free(sle->expanded);
-	sle->expanded = expanded;
-	return (1);
 }
 
 /* Draw status line for client. */

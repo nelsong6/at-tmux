@@ -20,8 +20,8 @@ set -g default-shell "$PS"
 set -g status off
 set -g mouse on
 set -g @show-footer 1
-set -g status-footer 'PANEL_FOOTER_#{client_panel_width}_#{client_panel_focused}'
-set -g status-footer-condition '#{==:#{@show-footer},1}'
+set -g pane-footer 'PANEL_FOOTER_#{client_panel_width}_#{client_panel_focused}'
+set -g pane-footer-condition '#{==:#{@show-footer},1}'
 EOF
 cat >"$OUT/outer.conf" <<EOF
 set -g default-shell "$PS"
@@ -52,9 +52,6 @@ $TMUX send-keys -K -c "$CLIENT" x
 wait_until option_is @picked yes || { echo 'action failed'; exit 1; }
 wait_until width_is 80 || exit 1
 wait_until contains PANEL_FOOTER_40_1 || { echo 'conditional footer lost panel formats'; exit 1; }
-# Footer conditions may themselves inspect the panel without reentering layout.
-$TMUX set -g status-footer-condition '#{>:#{client_panel_width},0}'
-wait_until contains PANEL_FOOTER_40_1 || exit 1
 $TMUX send-keys -K -c "$CLIENT" Tab
 focused_is() { [ "$($TMUX display -c "$CLIENT" -p '#{client_panel_focused}' | tr -d '\r')" = "$1" ]; }
 wait_until focused_is 0 || exit 1

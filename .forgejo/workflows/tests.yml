@@ -287,9 +287,7 @@ jobs:
 
       - name: Run independent footer tests
         shell: bash
-        run: |
-          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-footer.sh || exit 1
-          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pane-footer.sh
+        run: TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pane-footer.sh
 
       - name: Run flight record tests
         shell: bash

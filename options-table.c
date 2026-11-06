@@ -871,28 +871,6 @@ const struct options_table_entry options_table[] = {
 		  "deprecated, use 'status-style' instead."
 	},
 
-	{ .name = "status-footer",
-	  .type = OPTIONS_TABLE_STRING,
-	  .scope = OPTIONS_TABLE_SESSION,
-	  .default_str = "",
-	  .text = "Format of an independent bottom status row. Empty disables it."
-	},
-
-	{ .name = "status-footer-style",
-	  .type = OPTIONS_TABLE_STRING,
-	  .scope = OPTIONS_TABLE_SESSION,
-	  .flags = OPTIONS_TABLE_IS_STYLE,
-	  .default_str = "bg=default,fg=default",
-	  .text = "Style of the independent bottom status row."
-	},
-
-	{ .name = "status-footer-condition",
-	  .type = OPTIONS_TABLE_STRING,
-	  .scope = OPTIONS_TABLE_SESSION,
-	  .default_str = "1",
-	  .text = "Format deciding whether the current pane has a bottom status row."
-	},
-
 	{ .name = "status-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SESSION,
