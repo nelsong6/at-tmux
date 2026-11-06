@@ -7442,6 +7442,7 @@ Start
 from the server with no shell and no pane, without waiting for it.
 It keeps running if the server ends.
 .It Xo Ic display-palette
+.Op Fl b Ar border-lines
 .Op Fl c Ar target-client
 .Op Fl h Ar height
 .Op Fl t Ar target-pane
@@ -7483,6 +7484,12 @@ Nothing runs if
 .Ar program
 exits with another status.
 .Pp
+.Fl b
+sets the type of characters used for the popup's border, as for
+.Ic display-popup ;
+.Ql none
+leaves any frame to
+.Ar program .
 .Fl w
 and
 .Fl h

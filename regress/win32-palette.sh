@@ -26,6 +26,7 @@ set -g default-shell "$PS"
 set -g status off
 bind -n F5 display-palette -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
 bind -N 'Rename the window' n command-prompt -I'#W' { rename-window -- '%%' }
+bind -n F7 display-palette -b none -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
 bind -n M-w display-menu Split s { split-window } '' "#{?#{==:1,0},Never,}" x { kill-server } Last l { last-window }
 set -g @go-menu 'display-menu -T go "#{session_name}" g "select-window -t first"'
 set -s command-alias[100] 'go-to=run-shell -C "#{E:@go-menu}"'
@@ -199,6 +200,24 @@ sleep 1
 [ -e "$OUT/done" ] && { echo "a failed picker's popup closed by itself"; exit 1; }
 $TMUX send-keys -K -c "$CLIENT" q
 palette pick=nothing
+
+# -b none gives the picker the border's cells: two more each way than the
+# default. A border type tmux doesn't know opens nothing.
+rm -f "$OUT/size"
+palette pick=nothing size=1
+framed=$(cat "$OUT/size")
+rm -f "$OUT/size" "$OUT/done"
+printf '%s
+' pick=nothing size=1 >"$OUT/pick"
+$TMUX send-keys -K -c "$CLIENT" F7
+wait_until picker_done || { echo "picker never ran with -b none"; exit 1; }
+bare=$(cat "$OUT/size")
+[ "$(echo "$framed" | awk '{print $1 + 2, $2 + 2}')" = "$bare" ] ||
+    { echo "-b none gave $bare, the default $framed"; exit 1; }
+out=$($TMUX display-palette -b nonsense -c "$CLIENT" cmd 2>&1) &&
+    { echo "a bad border type was accepted"; exit 1; }
+echo "$out" | grep -q 'popup-border-lines' ||
+    { echo "a bad border type said: $out"; exit 1; }
 
 # reorder-session with no place is a folder of the places, and a pick moves
 # the session of the tab it runs on; from a key it shows them in a menu

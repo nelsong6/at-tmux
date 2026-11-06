@@ -4,7 +4,8 @@
 # (under the top-level row named under, when given), with a tab and text when
 # text is given, and exits with status. Dir/done appears as it exits. With
 # stderr given, it saves its standard error handle's kind to Dir/stderr
-# (console, invalid, or another type) and writes the text there first.
+# (console, invalid, or another type) and writes the text there first. With
+# size given, it saves its console's columns and rows to Dir/size.
 param(
     [Parameter(Mandatory)][string]$Dir
 )
@@ -31,6 +32,26 @@ if ($spec.ContainsKey('stderr')) {
         elseif ([PalettePick.Std]::GetFileType($h) -eq 2) { 'console' } else { 'other' }
     [IO.File]::WriteAllText("$Dir/stderr", $kind, $utf8)
     [Console]::Error.WriteLine($spec.stderr)
+}
+
+if ($spec.ContainsKey('size')) {
+    Add-Type -Namespace PalettePick -Name Size -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)] struct Info {
+    public short X, Y, CurX, CurY; public ushort Attr;
+    public short Left, Top, Right, Bottom, MaxX, MaxY;
+}
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateFile(
+    string name, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+[DllImport("kernel32.dll", SetLastError = true)] static extern bool GetConsoleScreenBufferInfo(IntPtr h, out Info i);
+public static string Read() {
+    IntPtr h = CreateFile("CONOUT$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+    Info i;
+    if (!GetConsoleScreenBufferInfo(h, out i))
+        return "failed " + Marshal.GetLastWin32Error();
+    return (i.Right - i.Left + 1) + " " + (i.Bottom - i.Top + 1);
+}
+'@
+    [IO.File]::WriteAllText("$Dir/size", [PalettePick.Size]::Read(), $utf8)
 }
 
 $parent = $null

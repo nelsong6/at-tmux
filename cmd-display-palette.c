@@ -49,8 +49,9 @@ const struct cmd_entry cmd_display_palette_entry = {
 	.name = "display-palette",
 	.alias = NULL,
 
-	.args = { "c:h:t:w:", 1, -1, NULL },
-	.usage = "[-c target-client] [-h height] " CMD_TARGET_PANE_USAGE
+	.args = { "b:c:h:t:w:", 1, -1, NULL },
+	.usage = "[-b border-lines] [-c target-client] [-h height] "
+		 CMD_TARGET_PANE_USAGE
 		 " [-w width] program [argument ...]",
 
 	.target = { 't', CMD_FIND_PANE, 0 },
@@ -981,7 +982,11 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	struct cmd_find_state	*target = cmdq_get_target(item);
 	struct client		*tc = cmdq_get_target_client(item);
 	struct tty		*tty = &tc->tty;
+	struct options		*o = target->s->curw->window->options;
+	struct options_entry	*oe;
 	struct palette		*p;
+	enum box_lines		 lines = BOX_LINES_DEFAULT;
+	const char		*value;
 	char			*cause = NULL, **argv = NULL;
 	int			 argc = 0, in[2], out[2];
 	u_int			 w, h;
@@ -1003,6 +1008,18 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 		w = args_percentage(args, 'w', 3, tty->sx, tty->sx, &cause);
 		if (cause != NULL) {
 			cmdq_error(item, "width %s", cause);
+			free(cause);
+			return (CMD_RETURN_ERROR);
+		}
+	}
+
+	value = args_get(args, 'b');
+	if (value != NULL) {
+		oe = options_get(o, "popup-border-lines");
+		lines = options_find_choice(options_table_entry(oe), value,
+		    &cause);
+		if (cause != NULL) {
+			cmdq_error(item, "popup-border-lines %s", cause);
 			free(cause);
 			return (CMD_RETURN_ERROR);
 		}
@@ -1039,7 +1056,7 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	 */
 	args_to_vector(args, &argc, &argv);
 	if (popup_display(POPUP_CLOSEEXITCANCEL|POPUP_CLOSEANYKEY,
-	    BOX_LINES_DEFAULT, item,
+	    lines, item,
 	    (tty->sx - w) / 2, (tty->sy - h) / 2, w, h, NULL, NULL, argc, argv,
 	    server_client_get_cwd(tc, target->s), NULL, tc, target->s, NULL,
 	    NULL, cmd_display_palette_close, p, in[0], out[1]) != 0) {
