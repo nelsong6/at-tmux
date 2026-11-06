@@ -76,9 +76,9 @@ $TMUX display -p -t b:b1 '#{E:window-status-format}' | tr -d '\r' |
 # The current window and session are marked by brackets alone: colour is the
 # state's, so a finished one draws in the grey of every other finished name.
 $TMUX display -p -t b:b1 '#{T:window-status-current-format}' | tr -d '\r' |
-    grep -Fqx '#[bold][b1]#[none]' || fail "current window not plain brackets"
+    grep -Fqx '[b1]#[none]' || fail "current window not plain brackets"
 $TMUX show -gv status-sessions-format | tr -d '\r' |
-    grep -Fq 'list=focus]#[fg=#8a8f98 bold][#S]' ||
+    grep -Fq 'list=focus]#[fg=#8a8f98][#S]' ||
     fail "current session not plain brackets"
 
 $TMUX kill-server 2>/dev/null

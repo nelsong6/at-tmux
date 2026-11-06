@@ -250,7 +250,7 @@ static const char *options_table_allow_passthrough_list[] = {
 		"#{?loop_last_flag,,#[fg=#8a8f98]\xe2\x80\xa2}" \
 	"," \
 		"#[range=session|#{session_id} list=focus]" \
-		"#[fg=#8a8f98 bold][#S]" \
+		"#[fg=#8a8f98][#S]" \
 		"#[norange none]" \
 		"#{?loop_last_flag,,#[fg=#8a8f98]\xe2\x80\xa2}" \
 	"}"
@@ -1579,8 +1579,7 @@ const struct options_table_entry options_table[] = {
 	{ .name = "window-status-current-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_str = "#[bold]"
-			 OPTIONS_TABLE_CLAUDE_STYLE "[#W]#[none]"
+	  .default_str = OPTIONS_TABLE_CLAUDE_STYLE "[#W]#[none]"
 			 "#{?window_zoomed_flag,#[fg=#39bae6] \xef\x81\xa5,}",
 	  .text = "Format of the current window in the status line."
 	},
