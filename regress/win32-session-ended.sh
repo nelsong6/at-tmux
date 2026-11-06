@@ -1,8 +1,9 @@
 #!/bin/sh
 
 # The session set's offer says how the server that saved the set really ended:
-# told to exit, killed from outside, crashed, or nothing says, each with its own
-# title, and the answer is that server's even with others come and gone since.
+# told to exit, killed from outside, crashed, with Windows, or nothing says, each
+# with its own title, and the answer is that server's even with others come and
+# gone since.
 # The client runs in a pane of a second server, whose copy shows what it drew.
 
 PATH=/bin:/usr/bin
@@ -161,6 +162,41 @@ sed 's/^ended: .*/ended:        crashed: bad #{pid} #[bold] text/' \
     "$OUT/flight/ended/tmux-$dead.log" >"$OUT/edited"
 cat "$OUT/edited" >"$OUT/flight/ended/tmux-$dead.log"
 offered 'crashed: bad #{pid} #\[bold\] text'
+detach
+stopped
+
+# Windows ended it. A set from before this sign-in never gets here, so this is
+# a set the sign-in time doesn't place, which @session-set-signin 0 stands for.
+shown
+windows_ended() {
+	"$powershell" -NoProfile -ExecutionPolicy Bypass \
+	    -File "$(cygpath -aw "$(dirname "$0")/win32-endsession.ps1")" \
+	    -Id "$pid" 2>/dev/null
+}
+wait_until windows_ended || fail 'the server did not take the end of the session'
+kill_it
+dead=$pid
+started
+offered ' Ended with Windows ' 'Windows ended the session' \
+    "ended/tmux-$dead.log"
+not_offered 'killed'
+messages_have 'offered after Windows ended the session' ||
+    fail 'not logged as Windows ending'
+detach
+stopped
+
+# Before this sign-in with no word from Windows: not called a kill.
+shown
+kill_it
+dead=$pid
+TMUX_FLIGHT_SIGNIN=9999999999
+export TMUX_FLIGHT_SIGNIN
+started
+unset TMUX_FLIGHT_SIGNIN
+offered ' Previous session set ' 'ended before this' "ended/tmux-$dead.log"
+not_offered 'killed'
+messages_have 'offered after an end before this sign-in' ||
+    fail 'not logged as before this sign-in'
 detach
 stopped
 

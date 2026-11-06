@@ -26,6 +26,7 @@
 #include <time.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <wtsapi32.h>
 #include <direct.h>
 #else
 #include <sys/file.h>
@@ -47,16 +48,19 @@
  * however it goes, so the next server tells a dead server's record from a live
  * one's without any timer, and a server handing over leaves its successor
  * nothing to clear. A clean end removes the file, so one left behind by a dead
- * server is a server that ended without saying so.
+ * server is a server that ended without saying so, or one Windows took with it
+ * (flight_window).
  */
 
-#define FLIGHT_MAGIC "tmuxfl1"
+#define FLIGHT_MAGIC "tmuxfl2"
 #define FLIGHT_EVENTS 256
 #define FLIGHT_TEXT 120
 
 /* A report's line saying how its server ended; flight_ended reads it. */
 #define FLIGHT_ENDED "ended:        "
 #define FLIGHT_CRASHED "crashed: "
+#define FLIGHT_WINDOWS "with Windows: "
+#define FLIGHT_SIGNED_IN "before this Windows sign-in: "
 
 struct flight_event {
 	int64_t	 at;
@@ -68,6 +72,7 @@ struct flight_record {
 	int64_t			pid;
 	int64_t			started;
 	int64_t			worked;
+	int64_t			windows;
 	char			build[64];
 	char			socket[256];
 	char			origin[256];
@@ -83,9 +88,19 @@ static char			*flight_pending;
 #ifdef _WIN32
 static HANDLE			 flight_file = INVALID_HANDLE_VALUE;
 static HANDLE			 flight_map;
+static SRWLOCK			 flight_lock = SRWLOCK_INIT;
 #else
 static int			 flight_fd = -1;
 #endif
+
+/* What the status message and show-messages say of each way of ending. */
+static const char *flight_how_text[] = {
+	[FLIGHT_HOW_KILLED] = "was killed from outside",
+	[FLIGHT_HOW_CRASHED] = "crashed",
+	[FLIGHT_HOW_WINDOWS] = "ended with Windows",
+	[FLIGHT_HOW_SIGNED_IN] = "ended before this Windows sign-in, with no "
+	    "word from Windows",
+};
 
 static void
 flight_mkdir(const char *path)
@@ -192,6 +207,31 @@ flight_lost_at(const char *path, int64_t started)
 	return (first);
 }
 
+/* When this Windows sign-in began, or 0 if that can't be told. */
+int64_t
+flight_signed_in(void)
+{
+	const char	*signin;
+#ifdef _WIN32
+	LPWSTR		 buffer;
+	DWORD		 size;
+	long long	 ticks;
+#endif
+
+	if ((signin = getenv("TMUX_FLIGHT_SIGNIN")) != NULL && *signin != '\0')
+		return (strtoll(signin, NULL, 10));
+#ifdef _WIN32
+	if (!WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE,
+	    WTS_CURRENT_SESSION, WTSSessionInfo, &buffer, &size))
+		return (0);
+	ticks = ((WTSINFOW *)buffer)->LogonTime.QuadPart;
+	WTSFreeMemory(buffer);
+	if (ticks > 0)
+		return (ticks / 10000000 - 11644473600LL);
+#endif
+	return (0);
+}
+
 /* Turn a dead server's record into a report anyone can read. */
 static void
 flight_report_one(const char *dir, const char *path, const char *lost)
@@ -199,11 +239,12 @@ flight_report_one(const char *dir, const char *path, const char *lost)
 	struct flight_record	*r;
 	struct flight_event	*e;
 	FILE			*f;
-	char			*ended, *report;
+	char			*ended, *report, *line;
 	char			 started[32], worked[32], at[32], now[32];
 	int64_t			 lost_at;
 	uint32_t		 i, n, first;
 	size_t			 got;
+	enum flight_how		 how;
 
 	r = xcalloc(1, sizeof *r);
 	if ((f = fopen(path, "rb")) == NULL) {
@@ -246,9 +287,20 @@ flight_report_one(const char *dir, const char *path, const char *lost)
 	flight_stamp(now, sizeof now, time(NULL));
 
 	fprintf(f, "tmux server %lld on %s\n", (long long)r->pid, r->socket);
-	if (*r->crash != '\0')
+	if (*r->crash != '\0') {
+		how = FLIGHT_HOW_CRASHED;
 		fprintf(f, FLIGHT_ENDED FLIGHT_CRASHED "%s\n", r->crash);
-	else {
+	} else if (r->windows != 0) {
+		how = FLIGHT_HOW_WINDOWS;
+		flight_stamp(at, sizeof at, r->windows);
+		fprintf(f, FLIGHT_ENDED FLIGHT_WINDOWS "Windows ended the "
+		    "session at %s\n", at);
+	} else if (r->worked < flight_signed_in()) {
+		how = FLIGHT_HOW_SIGNED_IN;
+		fprintf(f, FLIGHT_ENDED FLIGHT_SIGNED_IN "no word from "
+		    "Windows: a power cut, Windows failing, or a kill\n");
+	} else {
+		how = FLIGHT_HOW_KILLED;
 		fprintf(f, FLIGHT_ENDED "with no record of why: killed from "
 		    "outside, or a failure nothing in it could catch\n");
 	}
@@ -274,11 +326,16 @@ flight_report_one(const char *dir, const char *path, const char *lost)
 
 	remove(path);
 
-	free(flight_pending);
-	xasprintf(&flight_pending, "The last tmux server %s. Report: %s",
-	    *r->crash != '\0' ? "crashed" : "ended without saying why", report);
-	log_message(flight_pending);
-	server_add_message("%s", flight_pending);
+	xasprintf(&line, "The last tmux server %s. Report: %s",
+	    flight_how_text[how], report);
+	log_message(line);
+	server_add_message("%s", line);
+	if (how == FLIGHT_HOW_WINDOWS)
+		free(line);
+	else {
+		free(flight_pending);
+		flight_pending = line;
+	}
 	free(report);
 	free(r);
 }
@@ -332,6 +389,52 @@ flight_report(const char *dir, const char *label)
 	free(lost);
 }
 
+#ifdef _WIN32
+/*
+ * Windows ending the session says so to every top-level window, hidden ones
+ * too, and to nothing else in a process with user32 loaded: the console control
+ * events for sign-out and shutdown are not sent to it. The answer to the first
+ * message can still be overruled, so only the second, which also says whether
+ * the end went ahead, is believed. Windows may end the process as soon as it
+ * returns, and this isn't the server's thread, so the mark goes straight to
+ * disk. An installer closing the server is not the session ending.
+ */
+static LRESULT CALLBACK
+flight_window(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+	if (message != WM_ENDSESSION)
+		return (DefWindowProcW(window, message, wparam, lparam));
+	if (wparam && (lparam & ENDSESSION_CLOSEAPP) == 0) {
+		AcquireSRWLockExclusive(&flight_lock);
+		if (flight != NULL) {
+			flight->windows = (int64_t)time(NULL);
+			FlushViewOfFile(flight, sizeof *flight);
+			FlushFileBuffers(flight_file);
+		}
+		ReleaseSRWLockExclusive(&flight_lock);
+	}
+	return (0);
+}
+
+static DWORD WINAPI
+flight_window_thread(__unused LPVOID arg)
+{
+	WNDCLASSW	window = { 0 };
+	MSG		message;
+
+	window.lpfnWndProc = flight_window;
+	window.hInstance = GetModuleHandleW(NULL);
+	window.lpszClassName = L"tmux-flight";
+	if (RegisterClassW(&window) == 0 ||
+	    CreateWindowExW(0, window.lpszClassName, NULL, WS_POPUP, 0, 0, 0, 0,
+	    NULL, NULL, window.hInstance, NULL) == NULL)
+		return (0);
+	while (GetMessageW(&message, NULL, 0, 0) > 0)
+		DispatchMessageW(&message);
+	return (0);
+}
+#endif
+
 /* Map this server's record. */
 static int
 flight_open(const char *dir, const char *label)
@@ -376,6 +479,9 @@ void
 flight_start(void)
 {
 	char	*dir, *label;
+#ifdef _WIN32
+	HANDLE	 thread;
+#endif
 
 	if ((dir = flight_dir()) == NULL)
 		return;
@@ -394,6 +500,12 @@ flight_start(void)
 		    (long)getppid());
 #endif
 		flight_note("server started");
+#ifdef _WIN32
+		thread = CreateThread(NULL, 0, flight_window_thread, NULL, 0,
+		    NULL);
+		if (thread != NULL)
+			CloseHandle(thread);
+#endif
 	}
 	free(label);
 	free(dir);
@@ -458,60 +570,72 @@ flight_end(const char *fmt, ...)
 	free(why);
 
 #ifdef _WIN32
+	AcquireSRWLockExclusive(&flight_lock);
 	UnmapViewOfFile(flight);
 	CloseHandle(flight_map);
 	CloseHandle(flight_file);
+	flight = NULL;
+	ReleaseSRWLockExclusive(&flight_lock);
 #else
 	munmap(flight, sizeof *flight);
 	close(flight_fd);
-#endif
 	flight = NULL;
+#endif
 	remove(flight_path);
 	free(flight_path);
 	flight_path = NULL;
 }
 
 /*
- * Read how server pid ended from its report: 1 if one was written at or after
+ * Read how server pid ended from its report, if one was written at or after
  * since, setting its path and, if the server crashed, the reason (NULL if not),
  * for the caller to free. Reports go by pid and pids come round again, so an
  * older one is another server's, and in a file of several the last counts.
  */
-int
+enum flight_how
 flight_ended(long long pid, time_t since, char **report, char **crash)
 {
 	struct stat	 sb;
 	FILE		*f;
-	char		*dir, *path, line[512], *how;
-	int		 found = 0;
+	char		*dir, *path, line[512], *ended;
+	enum flight_how	 how = FLIGHT_HOW_UNKNOWN;
 
 	*report = *crash = NULL;
 	if ((dir = flight_dir()) == NULL)
-		return (0);
+		return (FLIGHT_HOW_UNKNOWN);
 	xasprintf(&path, "%s/ended/tmux-%lld.log", dir, pid);
 	free(dir);
 	if (stat(path, &sb) != 0 || sb.st_mtime < since ||
 	    (f = fopen(path, "r")) == NULL) {
 		free(path);
-		return (0);
+		return (FLIGHT_HOW_UNKNOWN);
 	}
 	while (fgets(line, sizeof line, f) != NULL) {
 		if (strncmp(line, FLIGHT_ENDED, strlen(FLIGHT_ENDED)) != 0)
 			continue;
-		found = 1;
 		free(*crash);
 		*crash = NULL;
 		line[strcspn(line, "\r\n")] = '\0';
-		how = line + strlen(FLIGHT_ENDED);
-		if (strncmp(how, FLIGHT_CRASHED, strlen(FLIGHT_CRASHED)) == 0)
-			*crash = xstrdup(how + strlen(FLIGHT_CRASHED));
+		ended = line + strlen(FLIGHT_ENDED);
+		if (strncmp(ended, FLIGHT_CRASHED,
+		    strlen(FLIGHT_CRASHED)) == 0) {
+			how = FLIGHT_HOW_CRASHED;
+			*crash = xstrdup(ended + strlen(FLIGHT_CRASHED));
+		} else if (strncmp(ended, FLIGHT_WINDOWS,
+		    strlen(FLIGHT_WINDOWS)) == 0)
+			how = FLIGHT_HOW_WINDOWS;
+		else if (strncmp(ended, FLIGHT_SIGNED_IN,
+		    strlen(FLIGHT_SIGNED_IN)) == 0)
+			how = FLIGHT_HOW_SIGNED_IN;
+		else
+			how = FLIGHT_HOW_KILLED;
 	}
 	fclose(f);
-	if (found)
+	if (how != FLIGHT_HOW_UNKNOWN)
 		*report = path;
 	else
 		free(path);
-	return (found);
+	return (how);
 }
 
 /* Tell the first client to attach how the last server went. */

@@ -3679,13 +3679,21 @@ void	 key_trace_sent(struct window_pane *);
 void	 key_trace_print(struct cmdq_item *);
 
 /* flight.c */
+enum flight_how {
+	FLIGHT_HOW_UNKNOWN,
+	FLIGHT_HOW_KILLED,
+	FLIGHT_HOW_CRASHED,
+	FLIGHT_HOW_WINDOWS,
+	FLIGHT_HOW_SIGNED_IN
+};
+int64_t	 flight_signed_in(void);
 void	 flight_start(void);
 void printflike(1, 2) flight_note(const char *, ...);
 void	 flight_worked(time_t);
 void	 flight_expanding(const char *);
 void	 flight_crashed(const char *);
 void printflike(1, 2) flight_end(const char *, ...);
-int	 flight_ended(long long, time_t, char **, char **);
+enum flight_how flight_ended(long long, time_t, char **, char **);
 void	 flight_tell(struct client *);
 void	 flight_lost_server(void);
 

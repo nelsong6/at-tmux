@@ -9,17 +9,23 @@ timer: the server stamps it while doing its normal work.
 
 A clean end (`kill-server`, the last session closing, `upgrade-server`) writes a line
 to `~/.tmux/errors/tmux-<pid>.log` and removes the record. So a record left by a dead
-server means the server ended without saying so. The system drops a server's hold on
-its file when the process goes, which is how the next server on that socket tells a
-dead server's record from a live one's.
+server means the server ended without saying so, unless Windows said it for it (see
+Windows ending the session). The system drops a server's hold on its file when the
+process goes, which is how the next server on that socket tells a dead server's record
+from a live one's.
 
 That next server writes `~/.tmux/flight/ended/tmux-<pid>.log`, adds a line to
-`show-messages`, and shows it to the first client to attach. Reports older than 30
-days are removed. `ended:` is one of:
+`show-messages`, and, unless Windows ended it, shows that line to the first client to
+attach. Reports older than 30 days are removed. `ended:` is one of:
 
 - `crashed: <reason>`: an exception, a bad C runtime argument, `abort()`, tmux's
   own `fatal`, or a fail-fast. On Windows `%TEMP%\tmux-crash-<pid>.log` holds the
   stack.
+- `with Windows: Windows ended the session at <time>`: a restart, a shutdown or a
+  sign-out. Nothing went wrong, so no client is told.
+- `before this Windows sign-in: no word from Windows`: the server last worked before
+  this sign-in and Windows never told it the session was ending. A power cut, Windows
+  failing, or a kill before a later restart read the same.
 - `with no record of why`: killed from outside.
 
 `last worked` is the last second the server's loop ran. `client lost` is the moment an
@@ -27,8 +33,25 @@ attached client saw the connection drop, which is the time of death, and reads `
 recorded` if no client was attached. Then only `last worked` and the next server's
 start bound it.
 
-The record names no killer: a process's exit isn't visible to the process. It doesn't
-survive a power cut, since the pages may not have reached the disk.
+The record names no killer: a process's exit isn't visible to the process. It may not
+survive a power cut, since the pages may not have reached the disk: then there is no
+report at all, and if some survived it reads `before this Windows sign-in`.
+
+## Windows ending the session
+
+Windows tells every top-level window the session is ending, and a hidden one counts.
+It is the only word a server gets: a process with user32 loaded isn't sent the console
+events for sign-out and shutdown. So each server keeps a hidden window on a thread of
+its own, blocked in `GetMessage` until a message comes. `WM_ENDSESSION` saying the end
+is going ahead marks the record and flushes it to disk, since the process can go as
+soon as that returns. `WM_QUERYENDSESSION` is ignored because the shutdown can still
+be called off, and `ENDSESSION_CLOSEAPP`, an installer closing the program, leaves the
+session running. A sign-out and a forced restart (`shutdown /r /t 60`, which the boot
+proof runs) were both seen to deliver it on a real PC, about 100 ms after the first
+message.
+
+The sign-in time is the fallback for a server Windows gave no word. It proves when
+the server stopped working and no more, so that report doesn't say Windows ended it.
 
 ## The session set's menu
 
@@ -41,11 +64,14 @@ than the snapshot belongs to an earlier process with that pid, and counts for no
 | --- | --- | --- |
 | Server crashed | crashed: the reason, and the report's path | `ended: crashed:` |
 | Server killed | killed from outside, and the report's path | `ended: with no record of why` |
+| Ended with Windows | Windows ended the session, and the report's path | `ended: with Windows` |
 | Server shut down | told to exit | the snapshot's `stopped` line, from `kill-server` or a signal |
+| Previous session set | ended before this sign-in, and the report's path | `ended: before this Windows sign-in` |
 | Previous session set | stopped, and nothing says why | no report and no `stopped` line |
 
 The last happens for a set saved by a build older than this. A set from before this
-Windows sign-in ended with the PC and has no line saying how.
+Windows sign-in ended with the PC and has no line saying how, so the Windows rows
+show only when the sign-in time can't be told.
 
 ## Fail-fasts on Windows
 

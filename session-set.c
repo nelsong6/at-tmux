@@ -25,7 +25,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <wtsapi32.h>
 #include <direct.h>
 #else
 #include <dirent.h>
@@ -2420,37 +2419,57 @@ ss_menu_text(const char *text)
 static void
 ss_ended(struct ss_snap *snap, struct ss_ended *ended)
 {
-	char	*report, *crash, *text;
+	char		*report, *crash, *text;
+	enum flight_how	 how;
 
 	memset(ended, 0, sizeof *ended);
-	if (flight_ended(snap->pid, (time_t)snap->seen, &report, &crash)) {
+	how = flight_ended(snap->pid, (time_t)snap->seen, &report, &crash);
+	if (how != FLIGHT_HOW_UNKNOWN) {
 		text = ss_menu_text(report);
 		xasprintf(&ended->report, "-Report: %s", text);
 		free(text);
 		free(report);
-		if (crash != NULL) {
-			text = ss_menu_text(crash);
-			xasprintf(&ended->line, "-The tmux server crashed: %s",
-			    text);
-			free(text);
-			free(crash);
-			ended->title = " Server crashed ";
-			ended->logged = "after a crash";
-		} else {
-			ended->line = xstrdup("-The tmux server was killed "
-			    "from outside: it left no crash record");
-			ended->title = " Server killed ";
-			ended->logged = "after an outside kill";
-		}
-	} else if (snap->stopped != 0) {
-		ended->line = xstrdup("-The tmux server was told to exit");
-		ended->title = " Server shut down ";
-		ended->logged = "after being told to exit";
-	} else {
-		ended->line = xstrdup("-The tmux server stopped while this PC "
-		    "was running, and nothing says why");
+	}
+	switch (how) {
+	case FLIGHT_HOW_CRASHED:
+		text = ss_menu_text(crash);
+		xasprintf(&ended->line, "-The tmux server crashed: %s", text);
+		free(text);
+		free(crash);
+		ended->title = " Server crashed ";
+		ended->logged = "after a crash";
+		break;
+	case FLIGHT_HOW_KILLED:
+		ended->line = xstrdup("-The tmux server was killed from "
+		    "outside: it left no crash record");
+		ended->title = " Server killed ";
+		ended->logged = "after an outside kill";
+		break;
+	case FLIGHT_HOW_WINDOWS:
+		ended->line = xstrdup("-Windows ended the session, and the "
+		    "tmux server with it");
+		ended->title = " Ended with Windows ";
+		ended->logged = "after Windows ended the session";
+		break;
+	case FLIGHT_HOW_SIGNED_IN:
+		ended->line = xstrdup("-The tmux server ended before this "
+		    "Windows sign-in, with no word from Windows");
 		ended->title = " Previous session set ";
-		ended->logged = "after a stop with no report";
+		ended->logged = "after an end before this sign-in";
+		break;
+	case FLIGHT_HOW_UNKNOWN:
+		if (snap->stopped != 0) {
+			ended->line = xstrdup("-The tmux server was told to "
+			    "exit");
+			ended->title = " Server shut down ";
+			ended->logged = "after being told to exit";
+		} else {
+			ended->line = xstrdup("-The tmux server stopped while "
+			    "this PC was running, and nothing says why");
+			ended->title = " Previous session set ";
+			ended->logged = "after a stop with no report";
+		}
+		break;
 	}
 }
 
@@ -2548,26 +2567,11 @@ ss_offer_menu(struct ss_snap *snap, struct client *c, struct ss_ended *ended)
 static long long
 ss_signed_in(void)
 {
-#ifdef _WIN32
-	LPWSTR		 buffer;
-	DWORD		 size;
-	long long	 ticks;
-#endif
-
 	if (options_get_only(global_s_options, "@session-set-signin") != NULL) {
 		return (strtoll(options_get_string(global_s_options,
 		    "@session-set-signin"), NULL, 10));
 	}
-#ifdef _WIN32
-	if (!WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE,
-	    WTS_CURRENT_SESSION, WTSSessionInfo, &buffer, &size))
-		return (0);
-	ticks = ((WTSINFOW *)buffer)->LogonTime.QuadPart;
-	WTSFreeMemory(buffer);
-	if (ticks > 0)
-		return (ticks / 10000000 - 11644473600LL);
-#endif
-	return (0);
+	return (flight_signed_in());
 }
 
 /* A new server's only session, if nothing is running in its shell right now. */
