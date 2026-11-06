@@ -1791,6 +1791,21 @@ ss_restore_session(struct ss_job *job, struct evbuffer *evb,
 	ss_job_add(job, evb, NULL, NULL, 0, 0);
 }
 
+/* Does any saved server in snaps have a primary session? */
+static int
+ss_set_has_primary(struct ss_snap **snaps, u_int nsnaps)
+{
+	u_int	i, j;
+
+	for (i = 0; i < nsnaps; i++) {
+		for (j = 0; j < snaps[i]->nwindows; j++) {
+			if (strcmp(snaps[i]->windows[j].f[4], "primary") == 0)
+				return (1);
+		}
+	}
+	return (0);
+}
+
 /*
  * The steps that rebuild the saved servers in snaps in this server, beside its
  * own sessions, and show them on client c if it is not NULL: each session with
@@ -1798,7 +1813,8 @@ ss_restore_session(struct ss_job *job, struct evbuffer *evb,
  * rerun. A session name already taken gets "-2" and up; each
  * snapshot's primary session is made first. replace is a session that goes
  * once the set is made, showing on c, if it is still a lone shell: it steps
- * aside first so the set's sessions keep their names. With replace and no
+ * aside first so the set's sessions keep their names, and a replace named
+ * primary stays as that if the set has no primary. With replace and no
  * client, the first client to attach lands on the session to show, and a server
  * that goes before one attaches still has a set.
  */
@@ -1812,10 +1828,12 @@ ss_restore(struct ss_job *job, struct ss_snap **snaps, u_int nsnaps,
 	char		**made = NULL, **from = NULL, *aside = NULL, *name;
 	char		*show = NULL, *target;
 	u_int		 i, j, k, nmade = 0, nfrom;
-	int		 seen;
+	int		 seen, keep_primary = 0;
 
 	if (!ss_lone_shell(replace))
 		replace = NULL;
+	if (replace != NULL && strcmp(replace->name, "primary") == 0)
+		keep_primary = !ss_set_has_primary(snaps, nsnaps);
 
 	evb = evbuffer_new();
 	if (evb == NULL)
@@ -1885,8 +1903,15 @@ ss_restore(struct ss_job *job, struct ss_snap **snaps, u_int nsnaps,
 	}
 	if (aside != NULL) {
 		xasprintf(&target, "=%s", aside);
-		argv[0] = "kill-session"; argv[1] = "-t"; argv[2] = target;
-		ss_add_command(evb, argv, 3);
+		if (keep_primary) {
+			argv[0] = "rename-session"; argv[1] = "-t";
+			argv[2] = target; argv[3] = "primary";
+			ss_add_command(evb, argv, 4);
+		} else {
+			argv[0] = "kill-session"; argv[1] = "-t";
+			argv[2] = target;
+			ss_add_command(evb, argv, 3);
+		}
 		free(target);
 		free(aside);
 		ss_job_add(job, evb, NULL, NULL, 0, 0);

@@ -118,14 +118,15 @@ first=$(sed -n "s/^start${T}//p" "$SNAP" | tr -d '\r')
 stop
 
 # 2. The next server sets it aside and offers it; Enter brings it back in
-# place of the fresh session, the client on the session it showed.
+# place of the fresh session, the client on the session it showed. This set has
+# no primary, so the fresh primary stays, first in the row.
 $TMUX -f "$CONF" new -d -s primary || fail "start second server"
 wait_until test -f "$PREVIOUS" || fail "earlier snapshot not set aside"
 attach
-press_until Enter sessions_are "alpha main other zed" || fail "Enter did not restore"
+press_until Enter sessions_are "alpha main other primary zed" || fail "Enter did not restore"
 messages_have "offered after being told to exit" || fail "saved since sign-in, not offered as lost"
 windows_are main "one two three" || fail "restored windows differ"
-[ "$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')" = "$row" ] ||
+[ "$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')" = "primary $row" ] ||
     fail "sessions not back in the sessions row's order"
 [ "$($TMUX display -p -t main:two '#{window_panes}' | tr -d '\r')" = 2 ] ||
     fail "restored window lacks its split"
