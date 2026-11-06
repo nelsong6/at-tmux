@@ -232,6 +232,8 @@ static const char *options_table_allow_passthrough_list[] = {
 	"#[list=on]" \
 	"#{S:" \
 		"#[range=session|#{session_id} fg=#8a8f98] " \
+		"#{W:#{?#{||:#{==:#{@claude},attention}," \
+			"#{==:#{@claude},waiting}},#{E:@claude-style},}}" \
 		"#{?session_alerts,#[fg=#e05252 bold],}" \
 		"#S#[none bg=default fg=#8a8f98] " \
 		"#[norange default]" \

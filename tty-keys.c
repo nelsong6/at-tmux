@@ -997,6 +997,7 @@ complete_key:
 		notify_client("client-focus-out", c);
 	} else if (key == KEYC_FOCUS_IN) {
 		c->flags |= CLIENT_FOCUSED;
+		window_status_seen();
 		notify_client("client-focus-in", c);
 		window_update_focus(c->session->curw->window);
 	}

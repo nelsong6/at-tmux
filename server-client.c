@@ -560,6 +560,7 @@ server_client_set_session(struct client *c, struct session *s)
 		gettimeofday(&s->last_attached_time, NULL);
 		s->curw->flags &= ~WINLINK_ALERTFLAGS;
 		alerts_check_session(s);
+		window_status_seen();
 		tty_update_client_offset(c);
 		status_timer_start(c);
 		notify_client("client-session-changed", c);

@@ -4478,7 +4478,7 @@ includes options inherited from a parent set of options, such options are
 marked with an asterisk.
 .It Xo Ic set-session-status
 .Op Fl t Ar target-session
-.Ar working | waiting | done
+.Ar working | waiting | attention | done
 .Xc
 Set the Claude state of every window in
 .Ar target-session
@@ -4487,14 +4487,15 @@ by hand, as
 does for one.
 .It Xo Ic set-window-status
 .Op Fl t Ar target-window
-.Ar working | waiting | done
+.Ar working | waiting | attention | done
 .Xc
 Set the Claude state of
 .Ar target-window
 by hand:
-.Ar working
-or
+.Ar working ,
 .Ar waiting
+or
+.Ar attention
 sets the window option
 .Ic @claude
 and
@@ -4505,7 +4506,20 @@ Claude Code's hooks set the same option, and the default
 and
 .Ic window-status-current-format
 colour the window by it through
-.Ic @claude-style .
+.Ic @claude-style ,
+and the default
+.Ic status-sessions-format
+colours a session's name the same way while any of its windows is
+.Ar waiting
+or
+.Ar attention .
+.Ar attention
+is the user's move and is unset once the window is seen: when it is the
+current window of a client that has focus (which needs
+.Ic focus-events
+to know when the terminal does).
+.Ar waiting
+stays until it is changed.
 .El
 .Pp
 Available server options are:

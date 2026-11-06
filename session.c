@@ -560,6 +560,7 @@ session_set_current(struct session *s, struct winlink *wl)
 		window_update_focus(wl->window);
 	}
 	winlink_clear_flags(wl);
+	window_status_seen();
 	window_update_activity(wl->window);
 	tty_update_window_offset(wl->window);
 	notify_session("session-window-changed", s);

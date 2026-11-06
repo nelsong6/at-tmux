@@ -376,6 +376,9 @@ jobs:
       - name: Run play-sound tests
         run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/play-sound.sh
 
+      - name: Run Claude attention tests
+        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/claude-attention.sh
+
   report:
     needs: [build-and-test, linux]
     if: ${{ always() }}
