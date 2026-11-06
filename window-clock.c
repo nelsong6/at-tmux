@@ -240,10 +240,13 @@ window_clock_draw_screen(struct window_mode_entry *wme)
 	t = time(NULL);
 	tm = localtime(&t);
 	if (style == 0 || style == 2) {
+		/* Not %l: the Windows C runtime ends the process on it. */
 		if (style == 2)
-			strftime(tim, sizeof tim, "%l:%M:%S ", localtime(&t));
+			strftime(tim, sizeof tim, "%I:%M:%S ", tm);
 		else
-			strftime(tim, sizeof tim, "%l:%M ", localtime(&t));
+			strftime(tim, sizeof tim, "%I:%M ", tm);
+		if (tim[0] == '0')
+			tim[0] = ' ';
 		if (tm->tm_hour >= 12)
 			strlcat(tim, "PM", sizeof tim);
 		else
