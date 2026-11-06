@@ -30,6 +30,23 @@ start bound it.
 The record names no killer: a process's exit isn't visible to the process. It doesn't
 survive a power cut, since the pages may not have reached the disk.
 
+## The session set's menu
+
+A set lost while the PC stayed up is offered with how its server ended, so a crash,
+an outside kill and an exit don't look the same. The menu finds the report by the pid
+in the snapshot, which holds however many servers came and went since. A report older
+than the snapshot belongs to an earlier process with that pid, and counts for nothing.
+
+| Title | The line says | From |
+| --- | --- | --- |
+| Server crashed | crashed: the reason, and the report's path | `ended: crashed:` |
+| Server killed | killed from outside, and the report's path | `ended: with no record of why` |
+| Server shut down | told to exit | the snapshot's `stopped` line, from `kill-server` or a signal |
+| Previous session set | stopped, and nothing says why | no report and no `stopped` line |
+
+The last happens for a set saved by a build older than this. A set from before this
+Windows sign-in ended with the PC and has no line saying how.
+
 ## Fail-fasts on Windows
 
 A fail-fast (heap corruption, a stack cookie) ends the process without running

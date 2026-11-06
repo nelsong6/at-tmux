@@ -3685,6 +3685,7 @@ void	 flight_worked(time_t);
 void	 flight_expanding(const char *);
 void	 flight_crashed(const char *);
 void printflike(1, 2) flight_end(const char *, ...);
+int	 flight_ended(long long, time_t, char **, char **);
 void	 flight_tell(struct client *);
 void	 flight_lost_server(void);
 

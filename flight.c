@@ -54,6 +54,10 @@
 #define FLIGHT_EVENTS 256
 #define FLIGHT_TEXT 120
 
+/* A report's line saying how its server ended; flight_ended reads it. */
+#define FLIGHT_ENDED "ended:        "
+#define FLIGHT_CRASHED "crashed: "
+
 struct flight_event {
 	int64_t	 at;
 	char	 text[FLIGHT_TEXT];
@@ -243,9 +247,9 @@ flight_report_one(const char *dir, const char *path, const char *lost)
 
 	fprintf(f, "tmux server %lld on %s\n", (long long)r->pid, r->socket);
 	if (*r->crash != '\0')
-		fprintf(f, "ended:        crashed: %s\n", r->crash);
+		fprintf(f, FLIGHT_ENDED FLIGHT_CRASHED "%s\n", r->crash);
 	else {
-		fprintf(f, "ended:        with no record of why: killed from "
+		fprintf(f, FLIGHT_ENDED "with no record of why: killed from "
 		    "outside, or a failure nothing in it could catch\n");
 	}
 	fprintf(f, "build:        %s\n", r->build);
@@ -465,6 +469,49 @@ flight_end(const char *fmt, ...)
 	remove(flight_path);
 	free(flight_path);
 	flight_path = NULL;
+}
+
+/*
+ * Read how server pid ended from its report: 1 if one was written at or after
+ * since, setting its path and, if the server crashed, the reason (NULL if not),
+ * for the caller to free. Reports go by pid and pids come round again, so an
+ * older one is another server's, and in a file of several the last counts.
+ */
+int
+flight_ended(long long pid, time_t since, char **report, char **crash)
+{
+	struct stat	 sb;
+	FILE		*f;
+	char		*dir, *path, line[512], *how;
+	int		 found = 0;
+
+	*report = *crash = NULL;
+	if ((dir = flight_dir()) == NULL)
+		return (0);
+	xasprintf(&path, "%s/ended/tmux-%lld.log", dir, pid);
+	free(dir);
+	if (stat(path, &sb) != 0 || sb.st_mtime < since ||
+	    (f = fopen(path, "r")) == NULL) {
+		free(path);
+		return (0);
+	}
+	while (fgets(line, sizeof line, f) != NULL) {
+		if (strncmp(line, FLIGHT_ENDED, strlen(FLIGHT_ENDED)) != 0)
+			continue;
+		found = 1;
+		free(*crash);
+		*crash = NULL;
+		line[strcspn(line, "\r\n")] = '\0';
+		how = line + strlen(FLIGHT_ENDED);
+		if (strncmp(how, FLIGHT_CRASHED, strlen(FLIGHT_CRASHED)) == 0)
+			*crash = xstrdup(how + strlen(FLIGHT_CRASHED));
+	}
+	fclose(f);
+	if (found)
+		*report = path;
+	else
+		free(path);
+	return (found);
 }
 
 /* Tell the first client to attach how the last server went. */

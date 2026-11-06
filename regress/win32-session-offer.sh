@@ -54,7 +54,7 @@ attached() {
 	[ -n "$($TMUX list-clients 2>/dev/null)" ]
 }
 
-# stop: kill-server, as a crash or a reboot ends one (its snapshot stays open).
+# stop: kill-server, which leaves its snapshot open as a crash or a reboot does.
 stop() {
 	$TMUX kill-server
 	wait_gone
@@ -123,7 +123,7 @@ $TMUX -f "$CONF" new -d -s primary || fail "start second server"
 wait_until test -f "$PREVIOUS" || fail "earlier snapshot not set aside"
 attach
 press_until Enter sessions_are "alpha main other zed" || fail "Enter did not restore"
-messages_have "offered as crash recovery" || fail "saved since sign-in, not crash recovery"
+messages_have "offered after being told to exit" || fail "saved since sign-in, not offered as lost"
 windows_are main "one two three" || fail "restored windows differ"
 [ "$($TMUX display -p '#{S:#{session_name} }' | tr -d '\r')" = "$row" ] ||
     fail "sessions not back in the sessions row's order"

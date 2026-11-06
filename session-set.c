@@ -47,7 +47,7 @@ extern const struct cmd_entry cmd_new_window_entry;
  * a second after a pane prints (ss_programs). No process is started for it.
  *
  * A snapshot is lines of tab-separated fields (ss_field escapes them): a
- * version line, then start, pid, seen, closed, attached and socket, then one
+ * version line, then start, pid, seen, closed, stopped, attached and socket, then one
  * line per window, sessions in the sessions row's order (as they were made, or
  * as reorder-session left them): "window", its place in its session (SS_CURRENT, SS_LAST), its size,
  * and the line that brings the window back. That last line is kept on the
@@ -72,7 +72,7 @@ extern const struct cmd_entry cmd_new_window_entry;
  * A set last saved before this Windows sign-in ended with the PC (a reboot, a
  * shutdown or a sign-out), so a new server rebuilds it with no offer, client or
  * none, in place of its fresh session (ss_restore_silent). One saved since was
- * lost while the PC stayed up, and the offer calls it likely a crash. A marker,
+ * lost while the PC stayed up, and the offer says how it went (ss_ended). A marker,
  * live/<socket>-previous.tried, goes down before that restore starts and stays
  * until the set is archived, so a restore that fails or kills the server is
  * offered next time, never run again unasked.
@@ -681,8 +681,10 @@ struct ss_line {
 };
 struct ss_snap {
 	long long	 start;
+	long long	 pid;
 	long long	 seen;
 	long long	 closed;
+	long long	 stopped;
 	long long	 restoring;
 	char		*attached;
 	char		*socket;
@@ -795,10 +797,14 @@ ss_snap_read(const char *path)
 		if (n == 2) {
 			if (strcmp(f[0], "start") == 0)
 				snap->start = strtoll(f[1], NULL, 10);
+			else if (strcmp(f[0], "pid") == 0)
+				snap->pid = strtoll(f[1], NULL, 10);
 			else if (strcmp(f[0], "seen") == 0)
 				snap->seen = strtoll(f[1], NULL, 10);
 			else if (strcmp(f[0], "closed") == 0)
 				snap->closed = strtoll(f[1], NULL, 10);
+			else if (strcmp(f[0], "stopped") == 0)
+				snap->stopped = strtoll(f[1], NULL, 10);
 			else if (strcmp(f[0], "restoring") == 0)
 				snap->restoring = strtoll(f[1], NULL, 10);
 			else if (strcmp(f[0], "attached") == 0) {
@@ -1007,7 +1013,8 @@ ss_take_earlier(const char *dir)
 }
 
 static int
-ss_write(const char *dir, const char *sessions, long long closed)
+ss_write(const char *dir, const char *sessions, long long closed,
+    long long stopped)
 {
 	struct evbuffer	*evb;
 	char		*path;
@@ -1021,9 +1028,10 @@ ss_write(const char *dir, const char *sessions, long long closed)
 	if (evb == NULL)
 		fatalx("out of memory");
 	evbuffer_add_printf(evb, SESSION_SET_VERSION "\nstart\t%lld\npid\t%ld"
-	    "\nseen\t%lld\nclosed\t%lld\nrestoring\t%d\nattached",
-	    (long long)start_time.tv_sec, (long)getpid(), (long long)time(NULL),
-	    closed, ss_job != NULL && ss_job->previous);
+	    "\nseen\t%lld\nclosed\t%lld\nstopped\t%lld\nrestoring\t%d"
+	    "\nattached", (long long)start_time.tv_sec, (long)getpid(),
+	    (long long)time(NULL), closed, stopped,
+	    ss_job != NULL && ss_job->previous);
 	ss_field(evb, ss_attached);
 	evbuffer_add_printf(evb, "\nsocket");
 	ss_field(evb, socket_path);
@@ -1092,7 +1100,7 @@ ss_flush(__unused int fd, __unused short events, __unused void *data)
 	if (ss_written)
 		return;
 
-	if (ss_write(dir, ss_last_sessions, 0) != 0) {
+	if (ss_write(dir, ss_last_sessions, 0, 0) != 0) {
 		ss_schedule(1);
 		return;
 	}
@@ -1112,10 +1120,18 @@ session_set_changed(void)
 	ss_schedule(0);
 }
 
-/* The server is shutting itself down: its windows are not being closed. */
+/*
+ * The server was told to exit: its windows are not being closed, and its
+ * snapshot says so, for the offer to tell the next client.
+ */
 void
 session_set_stop(void)
 {
+	const char	*dir;
+
+	if (!ss_stopped && !ss_ending() && (dir = ss_dir()) != NULL &&
+	    ss_last_sessions != NULL)
+		ss_write(dir, ss_last_sessions, 0, (long long)time(NULL));
 	ss_stopped = 1;
 	ss_job_end(0);
 }
@@ -1132,7 +1148,7 @@ session_set_closed(void)
 	if (ss_stopped || ss_ending() || (dir = ss_dir()) == NULL ||
 	    ss_last_sessions == NULL)
 		return;
-	ss_write(dir, ss_last_sessions, (long long)time(NULL));
+	ss_write(dir, ss_last_sessions, (long long)time(NULL), 0);
 	ss_stopped = 1;
 }
 
@@ -2348,15 +2364,83 @@ ss_offer_choice(__unused struct menu *menu, u_int idx, key_code key,
 	free(previous);
 }
 
-/* The offer: when the set was saved, its sessions, and the two choices. */
+/* How the server that saved a set ended, as the offer says it. */
+struct ss_ended {
+	const char	*title;
+	const char	*logged;
+	char		*line;
+	char		*report;
+};
+
+/* Text for a menu item, whose name is expanded as a format. */
+static char *
+ss_menu_text(const char *text)
+{
+	char	*escaped, *p;
+
+	escaped = p = xmalloc(strlen(text) * 2 + 1);
+	for (; *text != '\0'; text++) {
+		if ((*p++ = *text) == '#')
+			*p++ = '#';
+	}
+	*p = '\0';
+	return (escaped);
+}
+
+/*
+ * How the server that saved a set lost while the PC stayed up ended. The dead
+ * server's report answers, however many servers came and went since, ahead of
+ * the snapshot's stopped line, which a crash on the way out leaves behind.
+ */
+static void
+ss_ended(struct ss_snap *snap, struct ss_ended *ended)
+{
+	char	*report, *crash, *text;
+
+	memset(ended, 0, sizeof *ended);
+	if (flight_ended(snap->pid, (time_t)snap->seen, &report, &crash)) {
+		text = ss_menu_text(report);
+		xasprintf(&ended->report, "-Report: %s", text);
+		free(text);
+		free(report);
+		if (crash != NULL) {
+			text = ss_menu_text(crash);
+			xasprintf(&ended->line, "-The tmux server crashed: %s",
+			    text);
+			free(text);
+			free(crash);
+			ended->title = " Server crashed ";
+			ended->logged = "after a crash";
+		} else {
+			ended->line = xstrdup("-The tmux server was killed "
+			    "from outside: it left no crash record");
+			ended->title = " Server killed ";
+			ended->logged = "after an outside kill";
+		}
+	} else if (snap->stopped != 0) {
+		ended->line = xstrdup("-The tmux server was told to exit");
+		ended->title = " Server shut down ";
+		ended->logged = "after being told to exit";
+	} else {
+		ended->line = xstrdup("-The tmux server stopped while this PC "
+		    "was running, and nothing says why");
+		ended->title = " Previous session set ";
+		ended->logged = "after a stop with no report";
+	}
+}
+
+/*
+ * The offer: how the server ended, for a set lost while the PC stayed up, when
+ * the set was saved, its sessions, and the two choices.
+ */
 static struct menu *
-ss_offer_menu(struct ss_snap *snap, struct client *c, int lost)
+ss_offer_menu(struct ss_snap *snap, struct client *c, struct ss_ended *ended)
 {
 	struct menu		*menu;
 	struct menu_item	 item;
 	struct tm		*tm, now;
 	time_t			 t;
-	char			 when[64], day[64], *line, *name, *p;
+	char			 when[64], day[64], *line, *name;
 	u_int			 i, j, windows, claude, pane;
 	int			 seen;
 
@@ -2373,12 +2457,15 @@ ss_offer_menu(struct ss_snap *snap, struct client *c, int lost)
 	else
 		strftime(day, sizeof day, "%A %b %d", tm);
 
-	menu = menu_create(lost ? " Crash recovery " : " Previous session set ");
+	menu = menu_create(ended->title);
 	memset(&item, 0, sizeof item);
 	item.key = KEYC_NONE;
-	if (lost) {
-		item.name = "-at-terminal-tmux-server stopped while this PC was "
-		    "running, likely a crash";
+	if (ended->line != NULL) {
+		item.name = ended->line;
+		menu_add_item(menu, &item, NULL, c, NULL);
+	}
+	if (ended->report != NULL) {
+		item.name = ended->report;
 		menu_add_item(menu, &item, NULL, c, NULL);
 	}
 	xasprintf(&line, "-Last saved %s %s", when + (when[0] == '0'), day);
@@ -2408,12 +2495,7 @@ ss_offer_menu(struct ss_snap *snap, struct client *c, int lost)
 					claude++;
 			}
 		}
-		name = xmalloc(strlen(snap->windows[i].f[4]) * 2 + 1);
-		for (p = name, j = 0; snap->windows[i].f[4][j] != '\0'; j++) {
-			if ((*p++ = snap->windows[i].f[4][j]) == '#')
-				*p++ = '#';
-		}
-		*p = '\0';
+		name = ss_menu_text(snap->windows[i].f[4]);
 		if (claude != 0) {
 			xasprintf(&line, "-%-20s%u window%s, %u Claude", name,
 			    windows, windows == 1 ? "" : "s", claude);
@@ -2539,6 +2621,7 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 	struct session	*s;
 	struct ss_snap	*snap;
 	struct menu	*menu;
+	struct ss_ended	 ended;
 	char		*previous;
 	u_int		 w, h, px, py;
 	int		 new_server, lost;
@@ -2581,8 +2664,17 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 		return;
 	}
 
-	menu = ss_offer_menu(snap, c, lost);
+	if (lost)
+		ss_ended(snap, &ended);
+	else {
+		memset(&ended, 0, sizeof ended);
+		ended.title = " Previous session set ";
+		ended.logged = "as the previous set";
+	}
+	menu = ss_offer_menu(snap, c, &ended);
 	ss_snap_free(snap);
+	free(ended.line);
+	free(ended.report);
 	w = menu->width + 4;
 	h = menu->count + 2;
 	px = (c->tty.sx > w ? (c->tty.sx - w) / 2 : 0);
@@ -2595,8 +2687,7 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 		return;
 	}
 	log_debug("session-set: offered on %s", c->name);
-	server_add_message("session-set: offered as %s",
-	    lost ? "crash recovery" : "the previous set");
+	server_add_message("session-set: offered %s", ended.logged);
 	ss_offer_client = c;
 }
 

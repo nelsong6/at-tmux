@@ -242,6 +242,12 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-session-offer.sh
 
+      - name: Run session-set ended tests
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-session-ended.sh
+
       - name: Run restore-set tests
         shell: bash
         timeout-minutes: 5
