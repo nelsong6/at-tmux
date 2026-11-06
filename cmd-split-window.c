@@ -41,8 +41,8 @@ const struct cmd_entry cmd_split_window_entry = {
 	.name = "split-window",
 	.alias = "splitw",
 
-	.args = { "bc:de:fF:hIl:p:Pt:vZ", 0, -1, NULL },
-	.usage = "[-bdefhIPvZ] [-c start-directory] [-e environment] "
+	.args = { "bc:de:fF:hIl:p:PRt:vZ", 0, -1, NULL },
+	.usage = "[-bdefhIPRvZ] [-c start-directory] [-e environment] "
 		 "[-F format] [-l size] " CMD_TARGET_PANE_USAGE
 		 " [shell-command [argument ...]]",
 
@@ -149,6 +149,8 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 		sc.flags |= SPAWN_DETACHED;
 	if (args_has(args, 'Z'))
 		sc.flags |= SPAWN_ZOOM;
+	if (args_has(args, 'R'))
+		sc.flags |= SPAWN_SHELLFALLBACK;
 
 	if ((new_wp = spawn_pane(&sc, &cause)) == NULL) {
 		cmdq_error(item, "create pane failed: %s", cause);

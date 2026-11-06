@@ -511,6 +511,7 @@ spawn_pane(struct spawn_context *sc, char **cause)
 		char			*cmdline, *envblock;
 		const char		*shell = new_wp->shell;
 
+	start:
 		if (new_wp->argc == 1) {
 			xasprintf(&cmdline, "\"%s\" %s %s", shell,
 			    win32_shell_command_flag(shell), new_wp->argv[0]);
@@ -566,6 +567,16 @@ spawn_pane(struct spawn_context *sc, char **cause)
 		free(envblock);
 		free(cmdline);
 
+		if (pty == NULL && new_wp->argc != 0 &&
+		    (sc->flags & SPAWN_SHELLFALLBACK)) {
+			session_set_start_failed(*cause);
+			free(*cause);
+			*cause = NULL;
+			cmd_free_argv(new_wp->argc, new_wp->argv);
+			new_wp->argc = 0;
+			new_wp->argv = NULL;
+			goto start;
+		}
 		if (pty == NULL) {
 			new_wp->fd = -1;
 			if (~sc->flags & SPAWN_RESPAWN) {

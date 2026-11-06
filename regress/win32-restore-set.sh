@@ -3,7 +3,7 @@
 # restore-set runs a window at a time with the server free between windows: the
 # client that asked waits for the end, other clients are answered with the true
 # state, and commands that make what the restore is making wait. A window that
-# fails loses only itself, a client that dies or a hook that runs tmux doesn't stop
+# can't be made loses only itself, a client that dies or a hook that runs tmux doesn't stop
 # it, and a server that dies part way through leaves the set to be offered again.
 
 PATH=/bin:/usr/bin
@@ -30,6 +30,7 @@ fail() {
 	exit 1
 }
 
+T=$(printf '\t')
 PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
 
 # A pane that stays up, doing nothing, with {id} in a comment.
@@ -165,18 +166,31 @@ wait "$RESTORE" || fail "restore-set failed"
 $TMUX kill-session -t =main-2 || fail "clean up"
 quick_restore
 
-# 5. A window that can't start loses only itself, and the exit says which.
-$TMUX set -g @session-set-restart-cmd "no-such-program.exe argument"
+# 5. A program that can't start leaves a shell, and the exit says which.
+$TMUX set -g @session-set-resume "no-such-program.exe argument {id}"
 cp "$DIR/saved" "$DIR/five.set"
 if $TMUX restore-set -d five.set 2>"$DIR/out"; then
+	fail "a program that can't start wasn't reported"
+fi
+grep -q "^restored $WINDOWS of $WINDOWS windows, a shell in place of: main-2:.* (w2), can't start no-such-program.exe" "$DIR/out" ||
+    fail "the failure doesn't name the window"
+[ -z "$($TMUX display -p -t =main-2:w2 '#{pane_start_command}' | tr -d '\r')" ] ||
+    fail "the window isn't a shell"
+$TMUX kill-session -t =main-2 || fail "clean up"
+$TMUX set -g @session-set-resume "$RESUME"
+
+# 6. A window that can't be made loses only itself, and the exit says which:
+#    here the set's size leaves no room for w3's second pane.
+sed "s/^window${T}\([0-9]*\)${T}[0-9]*${T}[0-9]*${T}/window${T}\1${T}3${T}1${T}/" \
+    "$DIR/saved" >"$DIR/six.set"
+if $TMUX restore-set -d six.set 2>"$DIR/out"; then
 	fail "a failed window wasn't reported"
 fi
-grep -q "^restored [0-9]* of $WINDOWS windows, failed: main-2:" "$DIR/out" ||
+grep -q "^restored [0-9]* of $WINDOWS windows, failed: main-2:[0-9]* (w3)" "$DIR/out" ||
     fail "the failure doesn't name the window"
-$TMUX lsw -t =main-2 -F '#{window_name}' | tr -d '\r' | grep -qx w3 ||
-    fail "the windows after the failed one were lost"
+$TMUX lsw -t =main-2 -F '#{window_name}' | tr -d '\r' | grep -qx w2 ||
+    fail "the windows before the failed one were lost"
 $TMUX kill-session -t =main-2 || fail "clean up"
-$TMUX set -gu @session-set-restart-cmd
 
 # 7. upgrade-server waits for the restore, and says so.
 slow_restore
@@ -194,9 +208,9 @@ wait "$RESTORE" || fail "restore-set failed"
 $TMUX kill-session -t =main-2 2>/dev/null
 quick_restore
 
-# 8. The client that asked dies during a restore with a window failing: the
+# 8. The client that asked dies during a restore with a program failing: the
 #    server carries on, and the failure stays on record.
-$TMUX set -g @session-set-restart-cmd "no-such-program.exe argument"
+$TMUX set -g @session-set-resume "no-such-program.exe argument {id}"
 slow_restore
 cp "$DIR/saved" "$DIR/dead.set"
 $TMUX restore-set -d dead.set >/dev/null 2>&1 &
@@ -208,10 +222,10 @@ wait "$RESTORE"
 wait_until restored || fail "the restore never ended"
 $TMUX has-session -t =main 2>/dev/null ||
     fail "a dead client's failed restore ended the server"
-$TMUX restore-set | tr -d '\r' | grep -q "failed: main-2:" ||
+$TMUX restore-set | tr -d '\r' | grep -q "a shell in place of: main-2:" ||
     fail "the failure isn't on record"
 $TMUX kill-session -t =main-2 || fail "clean up"
-$TMUX set -gu @session-set-restart-cmd
+$TMUX set -g @session-set-resume "$RESUME"
 quick_restore
 
 # 9. restore-set from a hook runs on the queue its own steps use, so nothing

@@ -210,14 +210,11 @@ wait_until client_on_alpha || fail "first client not on the session it showed"
 sixth=$(sed -n "s/^start${T}//p" "$SNAP" | tr -d '\r')
 stop
 
-# 7. A restore that can't finish (here a window whose program can't start) leaves
-# the fresh session and the set, and the next server offers it rather than
-# running it again.
-cat >"$OUT/broken.conf" <<EOF
-source '$(cygpath -m "$OUT/reboot.conf")'
-set -g @session-set-restart-cmd 'no-such-program.exe argument'
-EOF
-$TMUX -f "$(cygpath -m "$OUT/broken.conf")" new -d -s primary || fail "start seventh server"
+# 7. A restore that can't finish (here a saved size with no room for a window's
+# second pane) leaves the fresh session and the set, and the next server offers
+# it rather than running it again.
+sed -i "s/^window${T}\([0-9]*\)${T}[0-9]*${T}[0-9]*${T}/window${T}\1${T}3${T}1${T}/" "$SNAP"
+$TMUX -f "$(cygpath -m "$OUT/reboot.conf")" new -d -s primary || fail "start seventh server"
 wait_until messages_have "restore after a reboot failed" || fail "failure not recorded"
 wait_until sessions_are primary || fail "fresh session not back"
 snap_has "$PREVIOUS" "^start${T}$sixth$" || fail "failed restore lost its set"
@@ -226,5 +223,22 @@ $TMUX -f "$(cygpath -m "$OUT/reboot.conf")" new -d -s primary || fail "start eig
 attach
 wait_until messages_have "offered as the previous set" || fail "set not offered"
 sessions_are primary || fail "restore ran again unasked"
+press_until Escape eval '! test -f "$PREVIOUS"' || fail "offer not closed"
+
+# 8. A program that can't start doesn't cost a restore after a reboot: the set
+# comes back with a shell in its place, and says so.
+cp "$SYSTEMROOT/System32/PING.EXE" "$OUT/gone.exe"
+$TMUX new-window -d -t primary: -n gone "$(cygpath -w "$OUT/gone.exe")" -n 300 127.0.0.1 ||
+    fail "gone window"
+wait_until snap_has "$SNAP" "${T}gone${T}" || fail "gone not saved"
+eighth=$(sed -n "s/^start${T}//p" "$SNAP" | tr -d '\r')
+stop
+rm -f "$OUT/gone.exe"
+$TMUX -f "$(cygpath -m "$OUT/reboot.conf")" new -d -s primary || fail "start ninth server"
+wait_until test -f "$OUT/archive/$BASE-$eighth.set" || fail "a lost program stopped the restore"
+wait_until messages_have "a shell in place of: primary.* (gone), can't start" ||
+    fail "the lost program isn't reported"
+[ -z "$($TMUX display -p -t =primary:gone '#{pane_start_command}' | tr -d '\r')" ] ||
+    fail "the lost program's window isn't a shell"
 
 exit 0

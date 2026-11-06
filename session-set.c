@@ -77,17 +77,32 @@ extern const struct cmd_entry cmd_new_window_entry;
  * until the set is archived, so a restore that fails or kills the server is
  * offered next time, never run again unasked.
  *
- * A pane's Claude Code session comes from the pane options @claude-session and
- * @claude-cwd, which Claude Code's own hooks set. @session-set-resume is the
- * command that resumes one ("{id}" for its ID); @session-set-restart-<program>
- * the command that starts a program again. Each is a program and its arguments
- * (quotes group, nothing else is special), started with no shell. Without either
- * a pane comes back as a shell in its folder.
+ * What a pane comes back as is decided here, when it is saved. A pane with a
+ * Claude Code or Codex session (the pane options @claude-session and @claude-cwd,
+ * or the @codex- pair, which their hooks set) runs @session-set-resume or
+ * @session-set-resume-codex ("{id}" for its ID), a program and its arguments
+ * (quotes group, nothing else is special) started with no shell. Any other pane
+ * started with a command saves it and reruns it, unless ss_pane_rerun says not
+ * to. The rest are shells in their folders, as is a pane whose program can't
+ * start (new-window -R), which session_set_start_failed reports.
+ *
+ * A window's @<name>-window options are saved with it: they are how a program
+ * finds the window it opened, and a window is otherwise made with no options.
  */
 
 #define SESSION_SET_CLOSED_MAX 25
 #define SESSION_SET_ARCHIVE_MAX 50
-#define SESSION_SET_VERSION "tmux-session-set 1"
+#define SESSION_SET_VERSION "tmux-session-set 2"
+#define SESSION_SET_VERSION_1 "tmux-session-set 1"
+
+/*
+ * Where a snapshot's panes start in a window line, and a closed-windows line's;
+ * each pane is a folder, session, program and start command. Version 1 had no
+ * marks field before the panes, and no start command.
+ */
+#define SS_WINDOW_PANES 12
+#define SS_CLOSED_PANES 9
+#define SS_PANE_FIELDS 4
 
 /* A window's place in its session, and its flags in the reopen line. */
 #define SS_CURRENT 0x1
@@ -126,6 +141,7 @@ struct ss_job {
 	u_int		  done;
 	u_int		  failed;
 	struct evbuffer	 *failures;
+	struct evbuffer	 *shells;	/* programs that came back as shells */
 	char		**files;
 	struct ss_snap	**snaps;
 	u_int		  nfiles;
@@ -322,6 +338,96 @@ ss_program_name(const char *path)
 	return (name);
 }
 
+/* The program a command line starts: its first word, without quotes or path. */
+static char *
+ss_line_program(const char *line)
+{
+	const char	*end;
+	char		*word, *name;
+	char		 stop[3] = " \t";
+
+	if (*line == '"' || *line == '\'') {
+		stop[0] = *line++;
+		stop[1] = '\0';
+	}
+	end = line + strcspn(line, stop);
+	word = xstrndup(line, end - line);
+	name = ss_program_name(word);
+	free(word);
+	return (name);
+}
+
+/* Whether a pane's program is one a resume option starts. */
+static int
+ss_pane_resumable(struct window_pane *wp)
+{
+	static const char	*options[] = {
+		"@session-set-resume", "@session-set-resume-codex"
+	};
+	char			*program, *resume;
+	u_int			 i;
+	int			 found = 0;
+
+	program = ss_line_program(wp->argv[0]);
+	for (i = 0; !found && i < nitems(options); i++) {
+		if (options_get_only(global_s_options, options[i]) == NULL)
+			continue;
+		resume = ss_line_program(options_get_string(global_s_options,
+		    options[i]));
+		found = (strcasecmp(program, resume) == 0);
+		free(resume);
+	}
+	free(program);
+	return (found);
+}
+
+/*
+ * Whether a pane's start command is what should bring it back. Not a dead pane's,
+ * a one-shot that already ended; not one a launcher marked @session-set-shell on
+ * the pane or its window, whose rerun would repeat what it did; and not an agent's
+ * that has no session to resume, whose command can be the brief it was opened on.
+ */
+static int
+ss_pane_rerun(struct window_pane *wp)
+{
+	if (wp->argc == 0 || wp->fd == -1)
+		return (0);
+	if (ss_pane_option(wp, "@claude-session") != NULL ||
+	    ss_pane_option(wp, "@codex-session") != NULL)
+		return (0);
+	if (options_get(wp->options, "@session-set-shell") != NULL)
+		return (0);
+	return (!ss_pane_resumable(wp));
+}
+
+/* A window's @<name>-window options, a name=value to a line. */
+static char *
+ss_window_marks(struct window *w)
+{
+	struct options_entry	*o;
+	struct evbuffer		*evb;
+	const char		*name;
+	char			*marks;
+	size_t			 len;
+
+	evb = evbuffer_new();
+	if (evb == NULL)
+		fatalx("out of memory");
+	for (o = options_first(w->options); o != NULL; o = options_next(o)) {
+		name = options_name(o);
+		len = strlen(name);
+		if (*name != '@' || len <= 7 ||
+		    strcmp(name + len - 7, "-window") != 0)
+			continue;
+		evbuffer_add_printf(evb, "%s%s=%s",
+		    EVBUFFER_LENGTH(evb) != 0 ? "\n" : "", name,
+		    options_get_string(w->options, name));
+	}
+	marks = xstrndup((char *)EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
+	evbuffer_free(evb);
+	return (marks);
+}
+
 /*
  * What a pane runs: the program its last look at the process table found
  * (ss_programs), or before that its shell's.
@@ -426,6 +532,10 @@ ss_pane_cwd(struct session *s, struct winlink *wl, struct window_pane *wp)
 		cwd = xstrdup(claude_cwd);
 	else
 		cwd = ss_format("#{pane_current_path}", s, wl, wp);
+	if (*cwd == '\0' && wp->cwd != NULL) {
+		free(cwd);
+		cwd = xstrdup(wp->cwd);	/* a program that reports no folder */
+	}
 	for (p = cwd; *p != '\0'; p++) {
 		if (*p == '\\')
 			*p = '/';
@@ -446,7 +556,7 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 	struct window		*w = wl->window;
 	struct window_pane	*wp;
 	struct evbuffer		*line;
-	char			*layout, *cwd, *command;
+	char			*layout, *cwd, *command, *start, *marks;
 	char			*codex;
 	const char		*id;
 	u_int			 i, active = 0;
@@ -484,14 +594,16 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 		i++;
 	}
 	evbuffer_add_printf(line, "\t%u", active);
+	marks = ss_window_marks(w);
+	ss_field(line, marks);
+	free(marks);
 	TAILQ_FOREACH(wp, &w->panes, entry) {
 		cwd = ss_pane_cwd(s, wl, wp);
 		command = ss_pane_command(wp);
 		if (command == NULL || strcmp(command, "fzt-automate") != 0)
 			only_menu = 0;
 		ss_field(line, cwd);
-		/* Keep the v1 snapshot shape and old Claude IDs intact. A tagged
-		 * Codex ID selects its own resume command when reopened/restored. */
+		/* A tagged Codex ID selects its own resume command. */
 		codex = NULL;
 		if ((id = ss_pane_option(wp, "@codex-session")) != NULL)
 			xasprintf(&codex, "codex:%s", id);
@@ -499,6 +611,10 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 		    ss_pane_option(wp, "@claude-session"));
 		free(codex);
 		ss_field(line, command);
+		start = ss_pane_rerun(wp) ?
+		    cmd_stringify_argv(wp->argc, wp->argv) : NULL;
+		ss_field(line, start);
+		free(start);
 		free(command);
 		free(cwd);
 	}
@@ -602,11 +718,37 @@ ss_snap_free(struct ss_snap *snap)
 static char	**ss_split(const char *, u_int *);
 
 /*
+ * A version 1 line's fields as today's: no marks and no start commands. With
+ * panes at head, and three fields each. Takes f.
+ */
+static char **
+ss_upgrade_fields(char **f, u_int *n, u_int head)
+{
+	char	**out;
+	u_int	  panes = (*n - head) / 3, i, p, at;
+
+	*n = head + 1 + panes * SS_PANE_FIELDS;
+	out = xcalloc(*n, sizeof *out);
+	for (i = 0; i < head; i++)
+		out[i] = f[i];
+	out[head] = xstrdup("");
+	at = head + 1;
+	for (p = 0; p < panes; p++) {
+		for (i = 0; i < 3; i++)
+			out[at++] = f[head + p * 3 + i];
+		out[at++] = xstrdup("");
+	}
+	free(f);
+	return (out);
+}
+
+/*
  * Read a snapshot: NULL if the file is missing or is not one. A window line
  * holds "window", its place (SS_CURRENT, SS_LAST), width and height, then the
  * reopen line's fields: session, its folder, position, flags (SS_AUTONAME,
- * SS_ZOOMED), name, layout (unzoomed), active pane, and folder, Claude session
- * and program for each pane.
+ * SS_ZOOMED), name, layout (unzoomed), active pane, marks (ss_window_marks), and
+ * folder, session, program and start command for each pane. A version 1
+ * snapshot reads as one whose panes come back as agents or shells.
  */
 static struct ss_snap *
 ss_snap_read(const char *path)
@@ -614,7 +756,7 @@ ss_snap_read(const char *path)
 	struct ss_snap	*snap;
 	char		*data, *line, *next, *end, **f;
 	u_int		 n;
-	int		 first = 1, ok = 1;
+	int		 first = 1, ok = 1, old = 0;
 
 	if ((data = ss_read_file(path)) == NULL)
 		return (NULL);
@@ -626,7 +768,8 @@ ss_snap_read(const char *path)
 		if (end != line && end[-1] == '\r')
 			end[-1] = '\0';
 		if (first) {
-			ok = (strcmp(line, SESSION_SET_VERSION) == 0);
+			old = (strcmp(line, SESSION_SET_VERSION_1) == 0);
+			ok = old || strcmp(line, SESSION_SET_VERSION) == 0;
 			first = 0;
 			continue;
 		}
@@ -634,11 +777,15 @@ ss_snap_read(const char *path)
 			continue;
 		f = ss_split(line, &n);
 		if (strcmp(f[0], "window") == 0) {
-			if (n < 14 || (n - 11) % 3 != 0) {
+			if (old ? n < 14 || (n - 11) % 3 != 0 :
+			    n < SS_WINDOW_PANES + SS_PANE_FIELDS ||
+			    (n - SS_WINDOW_PANES) % SS_PANE_FIELDS != 0) {
 				ok = 0;
 				ss_free_fields(f, n);
 				continue;
 			}
+			if (old)
+				f = ss_upgrade_fields(f, &n, SS_WINDOW_PANES - 1);
 			snap->windows = xreallocarray(snap->windows,
 			    snap->nwindows + 1, sizeof *snap->windows);
 			snap->windows[snap->nwindows].f = f;
@@ -999,6 +1146,40 @@ ss_closed_path(const char *dir)
 	return (path);
 }
 
+static char	*ss_closed_upgrade(char *);
+
+/*
+ * closed-windows' lines, newest first, without its version line, or NULL if it
+ * can't be read. One with no version line is version 1's.
+ */
+static char *
+ss_closed_read(const char *path)
+{
+	char	*data, *body;
+	size_t	 len = strlen(SESSION_SET_VERSION);
+
+	if ((data = ss_read_file(path)) == NULL)
+		return (NULL);
+	if (strncmp(data, SESSION_SET_VERSION, len) == 0 && data[len] == '\n') {
+		body = xstrdup(data + len + 1);
+		free(data);
+		return (body);
+	}
+	return (ss_closed_upgrade(data));
+}
+
+static int
+ss_closed_write(const char *path, const char *body)
+{
+	char	*data;
+	int	 retval;
+
+	xasprintf(&data, SESSION_SET_VERSION "\n%s", body);
+	retval = ss_write_file(path, data, strlen(data));
+	free(data);
+	return (retval);
+}
+
 /* A window is being destroyed: put it on top of closed-windows. */
 void
 session_set_window_destroyed(struct window *w)
@@ -1011,7 +1192,7 @@ session_set_window_destroyed(struct window *w)
 		return;
 	if (!ss_stopped && !ss_ending() && (dir = ss_dir()) != NULL) {
 		path = ss_closed_path(dir);
-		if ((old = ss_read_file(path)) == NULL)
+		if ((old = ss_closed_read(path)) == NULL)
 			old = xstrdup("");
 		for (p = old; *p != '\0' && kept < SESSION_SET_CLOSED_MAX - 1;
 		    p++) {
@@ -1022,7 +1203,7 @@ session_set_window_destroyed(struct window *w)
 			*p = '\0';
 		xasprintf(&data, "%lld%s\n%s", (long long)time(NULL),
 		    w->session_set_line, old);
-		if (ss_write_file(path, data, strlen(data)) != 0)
+		if (ss_closed_write(path, data) != 0)
 			log_debug("session-set: can't write %s", path);
 		free(data);
 		free(old);
@@ -1082,6 +1263,39 @@ ss_split(const char *line, u_int *count)
 	}
 	*count = n;
 	return (fields);
+}
+
+/* Version 1 closed-windows lines as today's, dropping any that aren't. Takes data. */
+static char *
+ss_closed_upgrade(char *data)
+{
+	struct evbuffer	*evb;
+	char		*line, *next, *out, **f;
+	u_int		 n, i;
+
+	evb = evbuffer_new();
+	if (evb == NULL)
+		fatalx("out of memory");
+	for (line = data; line != NULL && *line != '\0'; line = next) {
+		if ((next = strchr(line, '\n')) != NULL)
+			*next++ = '\0';
+		f = ss_split(line, &n);
+		if (n < 11 || (n - 8) % 3 != 0) {
+			log_debug("session-set: closed-windows line dropped");
+			ss_free_fields(f, n);
+			continue;
+		}
+		f = ss_upgrade_fields(f, &n, SS_CLOSED_PANES - 1);
+		evbuffer_add(evb, f[0], strlen(f[0]));
+		for (i = 1; i < n; i++)
+			ss_field(evb, f[i]);
+		evbuffer_add(evb, "\n", 1);
+		ss_free_fields(f, n);
+	}
+	out = xstrndup((char *)EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
+	evbuffer_free(evb);
+	free(data);
+	return (out);
 }
 
 static void
@@ -1156,44 +1370,79 @@ ss_add_words(struct evbuffer *evb, const char *s)
 	free(word);
 }
 
-/* The command that brings a pane's program back, or NULL for a shell. */
+/* The command that resumes an agent's session, or NULL. */
 static char *
-ss_start_command(const char *claude, const char *command)
+ss_resume_command(const char *id)
 {
-	struct options_entry	*o;
-	const char		*template, *at;
-	const char		*option;
-	char			*name, *out;
+	const char	*template, *at, *option = "@session-set-resume";
+	char		*out;
 
-	if (claude != NULL && *claude != '\0') {
-		option = "@session-set-resume";
-		if (strncmp(claude, "codex:", 6) == 0) {
-			option = "@session-set-resume-codex";
-			claude += 6;
-		}
-		if (options_get_only(global_s_options, option) ==
-		    NULL)
-			return (NULL);
-		template = options_get_string(global_s_options,
-		    option);
-		if ((at = strstr(template, "{id}")) == NULL)
-			return (xstrdup(template));
-		xasprintf(&out, "%.*s%s%s", (int)(at - template), template,
-		    claude, at + 4);
-		return (out);
-	}
-	if (command == NULL || *command == '\0')
+	if (*id == '\0')
 		return (NULL);
-	xasprintf(&name, "@session-set-restart-%s", command);
-	o = options_get_only(global_s_options, name);
-	out = (o == NULL ? NULL :
-	    xstrdup(options_get_string(global_s_options, name)));
-	free(name);
-	if (out != NULL && *out == '\0') {
-		free(out);
-		out = NULL;
+	if (strncmp(id, "codex:", 6) == 0) {
+		option = "@session-set-resume-codex";
+		id += 6;
 	}
+	if (options_get_only(global_s_options, option) == NULL)
+		return (NULL);
+	template = options_get_string(global_s_options, option);
+	if ((at = strstr(template, "{id}")) == NULL)
+		return (xstrdup(template));
+	xasprintf(&out, "%.*s%s%s", (int)(at - template), template, id, at + 4);
 	return (out);
+}
+
+/*
+ * Finish the command that makes a pane with what it runs, and return whether
+ * that is a start command, already words of a tmux command. Nothing added is a
+ * shell.
+ */
+static int
+ss_add_program(struct evbuffer *evb, const char *id, const char *start)
+{
+	char	*resume;
+
+	if ((resume = ss_resume_command(id)) != NULL) {
+		ss_add_words(evb, resume);
+		free(resume);
+		return (0);
+	}
+	if (*start == '\0')
+		return (0);
+	evbuffer_add_printf(evb, " %s", start);
+	return (1);
+}
+
+/* Add a window's marks to the new-window command in evb. */
+static void
+ss_add_marks(struct evbuffer *evb, const char *marks)
+{
+	char	*copy, *line, *next, *escaped;
+
+	copy = xstrdup(marks);
+	for (line = copy; line != NULL && *line != '\0'; line = next) {
+		if ((next = strchr(line, '\n')) != NULL)
+			*next++ = '\0';
+		escaped = args_escape(line);
+		evbuffer_add_printf(evb, " -o %s", escaped);
+		free(escaped);
+	}
+	free(copy);
+}
+
+/*
+ * A window's first pane keeps a rerun program's failure on screen, or the window
+ * would go with no word of why. Its other panes close: a program's own helper pane
+ * can't work again, and it would stay as a dead pane beside the program.
+ */
+static void
+ss_add_keep_failure(struct evbuffer *evb, const char *target)
+{
+	const char	*argv[6];
+
+	argv[0] = "set-option"; argv[1] = "-p"; argv[2] = "-t";
+	argv[3] = target; argv[4] = "remain-on-exit"; argv[5] = "failed";
+	ss_add_command(evb, argv, 6);
 }
 
 /*
@@ -1205,20 +1454,20 @@ char *
 session_set_reopen(int show, char **cause)
 {
 	const char	*dir, *argv[12];
-	char		*path, *data, *nl, **f, *target, *start, *idx;
+	char		*path, *data, *nl, **f, *target, *idx;
 	char		*placeholder = NULL, *out;
 	struct session	*s;
 	struct winlink	*wl, *before = NULL, *first_wl = NULL;
 	struct evbuffer	*evb;
 	u_int		 n, i, position, panes, at;
-	int		 flags;
+	int		 flags, rerun;
 
 	if ((dir = ss_dir()) == NULL) {
 		*cause = xstrdup("@session-set-dir is not set");
 		return (NULL);
 	}
 	path = ss_closed_path(dir);
-	data = ss_read_file(path);
+	data = ss_closed_read(path);
 	if (data == NULL || *data == '\0') {
 		free(data);
 		free(path);
@@ -1227,8 +1476,7 @@ session_set_reopen(int show, char **cause)
 	}
 	if ((nl = strchr(data, '\n')) != NULL)
 		*nl++ = '\0';
-	if (ss_write_file(path, nl != NULL ? nl : "",
-	    nl != NULL ? strlen(nl) : 0) != 0) {
+	if (ss_closed_write(path, nl != NULL ? nl : "") != 0) {
 		free(data);
 		free(path);
 		*cause = xstrdup("can't update closed-windows");
@@ -1236,10 +1484,11 @@ session_set_reopen(int show, char **cause)
 	}
 	free(path);
 
-	/* closedAt session path position flags name layout active panes... */
+	/* closedAt session path position flags name layout active marks panes... */
 	f = ss_split(data, &n);
 	free(data);
-	if (n < 11 || (n - 8) % 3 != 0) {
+	if (n < SS_CLOSED_PANES + SS_PANE_FIELDS ||
+	    (n - SS_CLOSED_PANES) % SS_PANE_FIELDS != 0) {
 		for (i = 0; i < n; i++)
 			free(f[i]);
 		free(f);
@@ -1248,8 +1497,7 @@ session_set_reopen(int show, char **cause)
 	}
 	position = strtoul(f[3], NULL, 10);
 	flags = atoi(f[4]);
-	at = strtoul(f[7], NULL, 10);
-	panes = (n - 8) / 3;
+	panes = (n - SS_CLOSED_PANES) / SS_PANE_FIELDS;
 
 	evb = evbuffer_new();
 	if (evb == NULL)
@@ -1273,7 +1521,8 @@ session_set_reopen(int show, char **cause)
 	}
 
 	argv[0] = "new-window";
-	i = 1;
+	argv[1] = "-R";
+	i = 2;
 	if (position <= 1 && first_wl != NULL) {
 		argv[i++] = "-b";
 		xasprintf(&idx, "=%s:%d", f[1], first_wl->idx);
@@ -1290,24 +1539,21 @@ session_set_reopen(int show, char **cause)
 		argv[i++] = target;
 	}
 	argv[i++] = "-c";
-	argv[i++] = f[8];
-	start = ss_start_command(f[9], f[10]);
+	argv[i++] = f[SS_CLOSED_PANES];
 	ss_add_command(evb, argv, i);
-	if (start != NULL) {
-		ss_add_words(evb, start);
-	}
-	free(start);
+	ss_add_marks(evb, f[8]);
+	rerun = ss_add_program(evb, f[SS_CLOSED_PANES + 1],
+	    f[SS_CLOSED_PANES + 3]);
 	free(idx);
+	if (rerun)
+		ss_add_keep_failure(evb, target);
 
 	for (u_int p = 1; p < panes; p++) {
-		start = ss_start_command(f[9 + p * 3], f[10 + p * 3]);
-		argv[0] = "split-window"; argv[1] = "-t"; argv[2] = target;
-		argv[3] = "-c"; argv[4] = f[8 + p * 3];
-		ss_add_command(evb, argv, 5);
-		if (start != NULL) {
-			ss_add_words(evb, start);
-		}
-		free(start);
+		at = SS_CLOSED_PANES + p * SS_PANE_FIELDS;
+		argv[0] = "split-window"; argv[1] = "-R"; argv[2] = "-t";
+		argv[3] = target; argv[4] = "-c"; argv[5] = f[at];
+		ss_add_command(evb, argv, 6);
+		ss_add_program(evb, f[at + 1], f[at + 3]);
 	}
 	argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = target;
 	argv[3] = f[6];
@@ -1317,7 +1563,7 @@ session_set_reopen(int show, char **cause)
 		argv[3] = f[5];
 		ss_add_command(evb, argv, 4);
 	}
-	xasprintf(&idx, "=%s:.%lld", f[1], (long long)at +
+	xasprintf(&idx, "=%s:.%lld", f[1], strtoll(f[7], NULL, 10) +
 	    options_get_number(global_w_options, "pane-base-index"));
 	argv[0] = "select-pane"; argv[1] = "-t"; argv[2] = idx;
 	ss_add_command(evb, argv, 3);
@@ -1435,7 +1681,7 @@ ss_restore_session(struct ss_job *job, struct evbuffer *evb,
 {
 	const char	*argv[12];
 	struct ss_line	*w;
-	char		*window, *idx, *start;
+	char		*window, *idx;
 	u_int		 i, p, panes, k = 0, active = 0, last = 0, first = 1, at;
 	long long	 base;
 
@@ -1463,26 +1709,22 @@ ss_restore_session(struct ss_job *job, struct evbuffer *evb,
 		else if (atoi(w->f[1]) & SS_LAST)
 			last = k;
 		xasprintf(&window, "=%s:%lld", name, base + k);
-		panes = (w->n - 11) / 3;
-		start = ss_start_command(w->f[12], w->f[13]);
-		argv[0] = "new-window"; argv[1] = "-d"; argv[2] = "-t";
-		argv[3] = window; argv[4] = "-c"; argv[5] = w->f[11];
+		panes = (w->n - SS_WINDOW_PANES) / SS_PANE_FIELDS;
+		argv[0] = "new-window"; argv[1] = "-dR"; argv[2] = "-t";
+		argv[3] = window; argv[4] = "-c";
+		argv[5] = w->f[SS_WINDOW_PANES];
 		ss_add_command(evb, argv, 6);
-		if (start != NULL) {
-			ss_add_words(evb, start);
-		}
-		free(start);
+		ss_add_marks(evb, w->f[11]);
+		if (ss_add_program(evb, w->f[SS_WINDOW_PANES + 1],
+		    w->f[SS_WINDOW_PANES + 3]))
+			ss_add_keep_failure(evb, window);
 		for (p = 1; p < panes; p++) {
-			start = ss_start_command(w->f[12 + p * 3],
-			    w->f[13 + p * 3]);
-			argv[0] = "split-window"; argv[1] = "-t";
-			argv[2] = window; argv[3] = "-c";
-			argv[4] = w->f[11 + p * 3];
-			ss_add_command(evb, argv, 5);
-			if (start != NULL) {
-				ss_add_words(evb, start);
-			}
-			free(start);
+			at = SS_WINDOW_PANES + p * SS_PANE_FIELDS;
+			argv[0] = "split-window"; argv[1] = "-R";
+			argv[2] = "-t"; argv[3] = window; argv[4] = "-c";
+			argv[5] = w->f[at];
+			ss_add_command(evb, argv, 6);
+			ss_add_program(evb, w->f[at + 1], w->f[at + 3]);
 		}
 		argv[0] = "select-layout"; argv[1] = "-t"; argv[2] = window;
 		argv[3] = w->f[9];
@@ -1536,8 +1778,8 @@ ss_restore_session(struct ss_job *job, struct evbuffer *evb,
 /*
  * The steps that rebuild the saved servers in snaps in this server, beside its
  * own sessions, and show them on client c if it is not NULL: each session with
- * its windows, splits, layouts, folders and names, Claude Code resumed and
- * programs started again. A session name already taken gets "-2" and up; each
+ * its windows, splits, layouts, folders and names, agents resumed and programs
+ * rerun. A session name already taken gets "-2" and up; each
  * snapshot's primary session is made first. replace is a session that goes
  * once the set is made, showing on c, if it is still a lone shell: it steps
  * aside first so the set's sessions keep their names. With replace and no
@@ -1664,9 +1906,9 @@ ss_job_end(int done)
 	struct ss_step	*step;
 	struct client	*c;
 	const char	*dir;
-	char		*result;
+	char		*result, *base;
 	u_int		 i;
-	int		 undone;
+	int		 undone, problem;
 
 	if (job == NULL)
 		return;
@@ -1683,11 +1925,19 @@ ss_job_end(int done)
 		xasprintf(&result, "restored %u of %u windows", job->total,
 		    job->total);
 	}
+	if (EVBUFFER_LENGTH(job->shells) != 0) {
+		base = result;
+		xasprintf(&result, "%s, a shell in place of: %.*s", base,
+		    (int)EVBUFFER_LENGTH(job->shells),
+		    EVBUFFER_DATA(job->shells));
+		free(base);
+	}
+	problem = (job->failed != 0 || EVBUFFER_LENGTH(job->shells) != 0);
 	if (done) {
 		free(ss_job_last);
 		ss_job_last = xstrdup(result);
 		server_add_message("restore-set: %s", result);
-		if (job->failed != 0)
+		if (problem)
 			log_message(result);
 		ss_job_show(result, -1);
 		if ((dir = ss_dir()) != NULL && !undone) {
@@ -1704,7 +1954,7 @@ ss_job_end(int done)
 
 	if (job->item != NULL) {
 		c = cmdq_get_client(job->item);
-		if (done && job->failed != 0 && (~c->flags & CLIENT_DEAD))
+		if (done && problem && (~c->flags & CLIENT_DEAD))
 			cmdq_error(job->item, "%s", result);
 		cmdq_continue(job->item);
 	}
@@ -1727,11 +1977,38 @@ ss_job_end(int done)
 	free(job->snaps);
 	free(job->files);
 	evbuffer_free(job->failures);
+	evbuffer_free(job->shells);
 	free(job->fresh);
 	free(job);
 
 	ss_written = 0;
 	session_set_changed();
+}
+
+/*
+ * A pane's program couldn't start, so it is a shell (new-window -R): the restore
+ * says so at its end, and reopen-window now.
+ */
+void
+session_set_start_failed(const char *cause)
+{
+	struct ss_step	*step;
+	char		*message;
+
+	if (ss_job != NULL && ss_job->next != 0) {
+		step = &ss_job->steps[ss_job->next - 1];
+		if (step->session != NULL) {
+			evbuffer_add_printf(ss_job->shells, "%s%s:%d (%s), %s",
+			    EVBUFFER_LENGTH(ss_job->shells) != 0 ? "; " : "",
+			    step->session, step->idx, step->name, cause);
+			return;
+		}
+	}
+	xasprintf(&message, "reopen-window: a shell in place of: %s", cause);
+	server_add_message("%s", message);
+	log_message(message);
+	ss_job_show(message, -1);
+	free(message);
 }
 
 /* Whether a step's window is there, with all its panes. */
@@ -1892,7 +2169,8 @@ ss_job_start(struct ss_snap **snaps, char **files, u_int nfiles,
 		free(path);
 	}
 	job->failures = evbuffer_new();
-	if (job->failures == NULL)
+	job->shells = evbuffer_new();
+	if (job->failures == NULL || job->shells == NULL)
 		fatalx("out of memory");
 	ss_restore(job, snaps, nfiles, replace, c);
 	evtimer_set(&job->timer, ss_job_step, NULL);
@@ -2124,7 +2402,8 @@ ss_offer_menu(struct ss_snap *snap, struct client *c, int lost)
 			    snap->windows[i].f[4]) != 0)
 				continue;
 			windows++;
-			for (pane = 12; pane < snap->windows[j].n; pane += 3) {
+			for (pane = SS_WINDOW_PANES + 1;
+			    pane < snap->windows[j].n; pane += SS_PANE_FIELDS) {
 				if (*snap->windows[j].f[pane] != '\0')
 					claude++;
 			}

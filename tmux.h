@@ -2320,6 +2320,7 @@ struct spawn_context {
 #define SPAWN_FULLSIZE 0x20
 #define SPAWN_EMPTY 0x40
 #define SPAWN_ZOOM 0x80
+#define SPAWN_SHELLFALLBACK 0x100
 };
 
 /* Paste buffer. */
@@ -3657,6 +3658,7 @@ void	 session_set_output(void);
 void	 session_set_stop(void);
 void	 session_set_closed(void);
 void	 session_set_window_destroyed(struct window *);
+void	 session_set_start_failed(const char *);
 char	*session_set_reopen(int, char **);
 int	 session_set_restore(const char **, u_int, struct client *,
 	     struct cmdq_item *, char **);

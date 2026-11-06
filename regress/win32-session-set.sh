@@ -48,7 +48,7 @@ pane_program() {
 	    cut -d, -f1 | tr -d '"\r'
 }
 snap_has() { grep -q -- "$1" "$SNAP" 2>/dev/null; }
-closed_lines() { [ -f "$DIR/closed-windows" ] && wc -l <"$DIR/closed-windows" | tr -d ' ' || echo 0; }
+closed_lines() { grep -c -v '^tmux-session-set ' "$DIR/closed-windows" 2>/dev/null || true; }
 has_window() {
 	$TMUX lsw -t"=$1" -F '#{window_name}' 2>/dev/null | tr -d '\r' |
 	    grep -qx "$2"
@@ -137,7 +137,7 @@ wait_until windows_are other "o1 three" || fail "session not made again with its
 cp "$COMSPEC" "$DIR/fzt-automate.exe"
 $TMUX new-window -d -t main: -n menu "$(cygpath -w "$DIR/fzt-automate.exe") /k" ||
     fail "menu window"
-wait_until snap_has "${T}fzt-automate$" || fail "menu program not seen"
+wait_until snap_has "${T}fzt-automate${T}" || fail "menu program not seen"
 $TMUX kill-window -t main:menu
 sleep 0.5
 [ "$(closed_lines)" -eq 0 ] || fail "menu window recorded"
@@ -149,23 +149,13 @@ wait_until snap_has "${T}C:/Users${T}" || fail "reported folder not in snapshot"
 $TMUX kill-window -t main:osc
 
 # 10. A program started in a pane reaches the snapshot with no tmux command
-# after it, and its window reopens running @session-set-restart-<program>.
-$TMUX set -g @session-set-restart-PING "$SYS\System32\PING.EXE -n 300 -w 1234 127.0.0.1" ||
-    fail "set restart"
+# after it.
 $TMUX new-window -d -t main: -n prog || fail "prog window"
 $TMUX send-keys -t main:prog "$LONG" Enter
-wait_until snap_has "${T}prog${T}.*${T}PING$" ||
+wait_until snap_has "${T}prog${T}.*${T}PING${T}" ||
     fail "program started in a pane not seen"
+$TMUX kill-window -t main:prog
 : >"$DIR/closed-windows"
-$TMUX kill-window -t main:prog
-wait_until test "$(closed_lines)" -eq 1 || fail "prog window not recorded"
-$TMUX reopen-window -d || fail "reopen prog"
-wait_until has_window main prog || fail "prog window not reopened"
-$TMUX display -p -t main:prog '#{pane_start_command}' | grep -q -- '-w 1234' ||
-    fail "program not restarted"
-[ "$(pane_program main:prog)" = PING.EXE ] ||
-    fail "program restarted through a shell: $(pane_program main:prog)"
-$TMUX kill-window -t main:prog
 
 # 11. At most 25 closed windows are kept.
 : >"$DIR/closed-windows"
@@ -177,7 +167,7 @@ while [ $i -lt 27 ]; do
 	i=$((i + 1))
 done
 wait_until test "$(closed_lines)" -eq 25 || fail "closed-windows not capped at 25 ($(closed_lines))"
-head -1 "$DIR/closed-windows" | grep -q '	w26	' || fail "newest closed window not first"
+sed -n 2p "$DIR/closed-windows" | grep -q '	w26	' || fail "newest closed window not first"
 
 # 12. kill-server records nothing and leaves the snapshot open for restore.
 : >"$DIR/closed-windows"

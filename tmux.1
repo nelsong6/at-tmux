@@ -3290,7 +3290,7 @@ the
 option.
 .Tg neww
 .It Xo Ic new-window
-.Op Fl abdkPS
+.Op Fl abdkPRS
 .Op Fl c Ar start-directory
 .Op Fl e Ar environment
 .Op Fl F Ar format
@@ -3338,6 +3338,10 @@ is not specified, the value of the
 option is used.
 .Fl c
 specifies the working directory in which the new window is created.
+On Windows, with
+.Fl R
+a program that can't start leaves the pane running the default shell, rather
+than failing the command.
 .Pp
 When the shell command completes, the window closes.
 See the
@@ -3509,9 +3513,23 @@ runs the command in the global option
 .Ic @session-set-resume ,
 with
 .Ql {id}
-replaced by the session's ID; a pane that ran a program with a global option
-.Ic @session-set-restart- Ns Ar program
-runs that; any other pane is a shell.
+replaced by the session's ID, and one that ran Codex (the pane option
+.Ic @codex-session )
+the option
+.Ic @session-set-resume-codex .
+Any other pane started with a command runs that command again, unless the pane
+is dead, it or its window has the option
+.Ic @session-set-shell
+(set by a launcher whose command should not repeat), or its program is one of
+those resume options with no session to resume.
+The rest are shells, as is a pane whose program can't start, which the message
+log and attached clients are told.
+If a rerun program in a window's first pane fails, the pane stays, showing why
+.Pq Ic remain-on-exit ;
+in any other pane it closes.
+A window keeps its
+.Ic @ Ns Ar name Ns Ic -window
+options.
 Unless
 .Fl d
 is given, the client is switched to the window.
@@ -3681,7 +3699,8 @@ showed.
 .Pp
 The windows are made one at a time with the server free between them.
 The client that ran the command waits for the end, and exits with an error
-naming any window that could not be made; the rest are made regardless.
+naming any window that could not be made and any pane that is a shell because
+its program could not start; the rest are made regardless.
 Other clients are answered meanwhile with the sessions as they stand, and
 attached clients show the progress.
 A command from a client that makes a session the restore is making, or a window
@@ -3822,7 +3841,7 @@ the command behaves like
 .Ic last-window .
 .Tg splitw
 .It Xo Ic split-window
-.Op Fl bdfhIvPZ
+.Op Fl bdfhIPRvZ
 .Op Fl c Ar start-directory
 .Op Fl e Ar environment
 .Op Fl F Ar format
