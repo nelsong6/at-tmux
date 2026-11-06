@@ -1188,6 +1188,8 @@ options_push_changes(const char *name)
 
 	log_debug("%s: %s", __func__, name);
 
+	if (strcmp(name, "@claude") == 0)
+		window_status_seen();
 	if (strcmp(name, "automatic-rename") == 0) {
 		RB_FOREACH(w, windows, &windows) {
 			if (w->active == NULL)

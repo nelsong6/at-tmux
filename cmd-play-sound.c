@@ -41,8 +41,10 @@ const struct cmd_entry cmd_play_sound_entry = {
 	.name = "play-sound",
 	.alias = NULL,
 
-	.args = { "", 1, 1, NULL },
-	.usage = "path",
+	.args = { "t:", 1, 1, NULL },
+	.usage = CMD_TARGET_PANE_USAGE " path",
+
+	.target = { 't', CMD_FIND_PANE, CMD_FIND_CANFAIL },
 
 	.flags = CMD_AFTERHOOK,
 	.exec = cmd_play_sound_exec
@@ -106,6 +108,11 @@ cmd_play_sound_exec(struct cmd *self, struct cmdq_item *item)
 	const char	*player;
 	char		*argv[3];
 #endif
+
+	/* A sound for a window being looked at has nothing to tell. */
+	if (args_has(args, 't') && cmdq_get_target(item)->wl != NULL &&
+	    window_seen(cmdq_get_target(item)->wl->window))
+		return (CMD_RETURN_NORMAL);
 
 	if (access(path, R_OK) != 0) {
 		cmdq_error(item, "can't read %s", path);

@@ -25,8 +25,11 @@
 /*
  * Set the Claude state of a window, or of every window in a session, by hand:
  * the window option @claude that Claude Code's hooks set, which the default
- * window-status formats colour through @claude-style. done removes it, as the
- * hooks do when Claude finishes.
+ * window-status formats colour through @claude-style. done removes it.
+ *
+ * attention is the user's move: a finished turn or an open question. It lasts
+ * until the window is seen, the current window of a focused client, where
+ * waiting (a permission prompt) lasts until it is answered.
  */
 
 #define SET_STATUS_OPTION "@claude"
@@ -38,7 +41,7 @@ const struct cmd_entry cmd_set_window_status_entry = {
 	.alias = NULL,
 
 	.args = { "t:", 1, 1, NULL },
-	.usage = CMD_TARGET_WINDOW_USAGE " working|waiting|done",
+	.usage = CMD_TARGET_WINDOW_USAGE " working|waiting|attention|done",
 
 	.target = { 't', CMD_FIND_WINDOW, 0 },
 
@@ -51,7 +54,7 @@ const struct cmd_entry cmd_set_session_status_entry = {
 	.alias = NULL,
 
 	.args = { "t:", 1, 1, NULL },
-	.usage = CMD_TARGET_SESSION_USAGE " working|waiting|done",
+	.usage = CMD_TARGET_SESSION_USAGE " working|waiting|attention|done",
 
 	.target = { 't', CMD_FIND_SESSION, 0 },
 
@@ -84,8 +87,10 @@ cmd_set_status_exec(struct cmd *self, struct cmdq_item *item)
 	if (strcmp(state, "done") == 0)
 		state = NULL;
 	else if (strcmp(state, "working") != 0 &&
-	    strcmp(state, "waiting") != 0) {
-		cmdq_error(item, "unknown status %s: working, waiting or done",
+	    strcmp(state, "waiting") != 0 &&
+	    strcmp(state, "attention") != 0) {
+		cmdq_error(item,
+		    "unknown status %s: working, waiting, attention or done",
 		    state);
 		return (CMD_RETURN_ERROR);
 	}
@@ -99,4 +104,53 @@ cmd_set_status_exec(struct cmd *self, struct cmdq_item *item)
 	options_push_changes(SET_STATUS_OPTION);
 
 	return (CMD_RETURN_NORMAL);
+}
+
+/* The client looking at a window: it is current on a client that has focus. */
+static struct window *
+window_seen_by(struct client *c)
+{
+	if (c->session == NULL || c->session->curw == NULL)
+		return (NULL);
+	if (c->flags & (CLIENT_SUSPENDED|CLIENT_EXIT|CLIENT_CONTROL))
+		return (NULL);
+	if (~c->flags & CLIENT_FOCUSED)
+		return (NULL);
+	return (c->session->curw->window);
+}
+
+/* Whether any client is looking at a window. */
+int
+window_seen(struct window *w)
+{
+	struct client	*c;
+
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (window_seen_by(c) == w)
+			return (1);
+	}
+	return (0);
+}
+
+/* Clear attention from every window a client is looking at. */
+void
+window_status_seen(void)
+{
+	struct client		*c;
+	struct window		*w;
+	struct options_entry	*o;
+	const char		*state;
+
+	TAILQ_FOREACH(c, &clients, entry) {
+		if ((w = window_seen_by(c)) == NULL)
+			continue;
+		o = options_get_only(w->options, SET_STATUS_OPTION);
+		if (o == NULL)
+			continue;
+		state = options_get_string(w->options, SET_STATUS_OPTION);
+		if (strcmp(state, "attention") != 0)
+			continue;
+		options_remove_or_default(o, -1, NULL);
+		server_status_window(w);
+	}
 }
