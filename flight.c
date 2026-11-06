@@ -218,6 +218,11 @@ flight_report_one(const char *dir, const char *path, const char *lost)
 	r->origin[sizeof r->origin - 1] = '\0';
 	r->crash[sizeof r->crash - 1] = '\0';
 	r->expanding[sizeof r->expanding - 1] = '\0';
+#ifdef _WIN32
+	if (*r->crash == '\0')
+		win32_crash_reason((long)r->pid, r->started, r->crash,
+		    sizeof r->crash);
+#endif
 
 	xasprintf(&ended, "%s/ended", dir);
 	flight_mkdir(ended);

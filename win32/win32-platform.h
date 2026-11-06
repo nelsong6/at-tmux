@@ -921,6 +921,7 @@ int win32_child_application(const wchar_t *cmd, const char *env,
     wchar_t **application);
 void  win32_launch_server(const char *label);
 void  win32_crash_init(void);
+void  win32_crash_reason(long, int64_t, char *, size_t);
 void  win32_leave_package(LPPROC_THREAD_ATTRIBUTE_LIST);
 void  win32_origin(char *, size_t);
 

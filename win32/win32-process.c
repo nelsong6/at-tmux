@@ -5,6 +5,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,8 +13,9 @@
 
 #include "win32-platform.h"
 #include <shellapi.h>
-#include <dbghelp.h>
 #include <signal.h>
+#include <werapi.h>
+#include "win32-crash.h"
 
 /* Defined in flight.c. */
 void flight_crashed(const char *);
@@ -22,7 +24,6 @@ void flight_crashed(const char *);
 #define PACKAGE_FULL_NAME_MAX_LENGTH 127
 LONG WINAPI GetCurrentPackageFullName(unsigned int *, wchar_t *);
 
-#pragma comment(lib, "dbghelp.lib")
 
 /* External: defined in win32-compat.c */
 void win32_child_exited(pid_t pid, int status);
@@ -462,75 +463,54 @@ void log_debug(const char *, ...);
  * dbghelp's default search leaves out the exe's folder, and the path stored in
  * the exe is the build machine's. The folder is resolved at startup because a
  * release runs through a junction home-sync moves to the next release while
- * this server keeps running, and that release's PDB doesn't match.
+ * this server keeps running, and that release's PDB doesn't match. tmux-wer.dll
+ * reads all of this from the failed process, which can't be asked anything.
  */
-static char win32_crash_symbols[MAX_PATH];
+static struct win32_crash_context win32_crash = { WIN32_CRASH_MAGIC };
+
+static int
+win32_crash_log(unsigned long pid, char *path, size_t size)
+{
+	DWORD	 n;
+
+	n = GetTempPathA((DWORD)size, path);
+	if (n == 0 || n >= size - 32)
+		return (0);
+	snprintf(path + n, size - n, "tmux-crash-%lu.log", pid);
+	return (1);
+}
+
+static void
+win32_crash_emit(const char *line, void *arg)
+{
+	FILE	*f = arg;
+
+	fprintf(stderr, "%s\n", line);
+	if (f != NULL)
+		fprintf(f, "%s\n", line);
+	log_debug("%s", line);
+}
 
 static void
 win32_crash_report(const char *what, const CONTEXT *context)
 {
-	HANDLE			 proc = GetCurrentProcess(), thread = GetCurrentThread();
-	CONTEXT			 ctx = *context;
-	STACKFRAME64		 frame;
-	char			 symbuf[sizeof(SYMBOL_INFO) + 256];
-	SYMBOL_INFO		*sym = (SYMBOL_INFO *)symbuf;
-	IMAGEHLP_LINE64		 line;
-	DWORD64			 disp64;
-	DWORD			 disp;
-	char			 out[1024], path[MAX_PATH];
-	size_t			 len;
-	int			 i;
-	FILE			*f = NULL;
-	DWORD			 n;
+	char	 out[1024];
+	FILE	*f = NULL;
 
-	n = GetTempPathA(sizeof path, path);
-	if (n != 0 && n < sizeof path - 32) {
-		snprintf(path + n, sizeof path - n, "tmux-crash-%lu.log",
-		    GetCurrentProcessId());
-		f = fopen(path, "w");
-	}
+	if (win32_crash.log[0] != '\0')
+		f = fopen(win32_crash.log, "w");
 
 	flight_crashed(what);
 	snprintf(out, sizeof out, "tmux crashed: %s", what);
-	fprintf(stderr, "%s\n", out);
-	if (f != NULL)
-		fprintf(f, "%s\n", out);
-	log_debug("%s", out);
-	SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
-	SymInitialize(proc, win32_crash_symbols[0] != '\0' ?
-	    win32_crash_symbols : NULL, TRUE);
-
-	memset(&frame, 0, sizeof frame);
-	frame.AddrPC.Offset = ctx.Rip;
-	frame.AddrPC.Mode = AddrModeFlat;
-	frame.AddrFrame.Offset = ctx.Rbp;
-	frame.AddrFrame.Mode = AddrModeFlat;
-	frame.AddrStack.Offset = ctx.Rsp;
-	frame.AddrStack.Mode = AddrModeFlat;
-	for (i = 0; i < 32; i++) {
-		if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, proc, thread, &frame,
-		    &ctx, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL))
-			break;
-		memset(symbuf, 0, sizeof symbuf);
-		sym->SizeOfStruct = sizeof(SYMBOL_INFO);
-		sym->MaxNameLen = 255;
-		memset(&line, 0, sizeof line);
-		line.SizeOfStruct = sizeof line;
-		len = snprintf(out, sizeof out, "  #%d %s", i,
-		    SymFromAddr(proc, frame.AddrPC.Offset, &disp64, sym) ?
-		    sym->Name : "?");
-		if (len < sizeof out &&
-		    SymGetLineFromAddr64(proc, frame.AddrPC.Offset, &disp, &line))
-			snprintf(out + len, sizeof out - len, " %s:%lu",
-			    line.FileName, line.LineNumber);
-		fprintf(stderr, "%s\n", out);
-		if (f != NULL)
-			fprintf(f, "%s\n", out);
-		log_debug("%s", out);
-	}
+	win32_crash_emit(out, f);
+	win32_crash_stack(GetCurrentProcess(), GetCurrentThread(), context,
+	    win32_crash.symbols, win32_crash_emit, f);
 	if (f != NULL)
 		fclose(f);
 	fflush(NULL);
+
+	/* Last: a handler that dies part way leaves the job to tmux-wer.dll. */
+	win32_crash.reported = 1;
 }
 
 static LONG WINAPI
@@ -577,6 +557,58 @@ win32_abort(int sig)
 	win32_crash_report("abort", &ctx);
 }
 
+/*
+ * A fail-fast runs nothing in the process, so only Windows' error reporting
+ * sees one, and only a helper listed for this user gets loaded there. It is
+ * named by its real folder, not the junction: the listing has to match the
+ * real path, and that keeps a server with the helper of its own build. A build
+ * that is gone loses its line when a new path is added.
+ */
+static void
+win32_crash_register(void)
+{
+	static const wchar_t	 key_name[] = L"Software\\Microsoft\\Windows\\"
+	    L"Windows Error Reporting\\RuntimeExceptionHelperModules";
+	static const wchar_t	 helper[] = L"tmux-wer.dll";
+	wchar_t			 path[MAX_PATH], name[MAX_PATH], *slash;
+	HKEY			 key;
+	DWORD			 i, n, zero = 0;
+	int			 len;
+
+	len = MultiByteToWideChar(CP_ACP, 0, win32_crash.symbols, -1, path,
+	    MAX_PATH);
+	if (len == 0 || (size_t)len + wcslen(helper) >= MAX_PATH)
+		return;
+	path[len - 1] = L'\\';
+	wcscpy(path + len, helper);
+	if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
+		return;
+
+	if (RegCreateKeyExW(HKEY_CURRENT_USER, key_name, 0, NULL, 0,
+	    KEY_QUERY_VALUE | KEY_SET_VALUE, NULL, &key, NULL) != ERROR_SUCCESS)
+		return;
+	if (RegQueryValueExW(key, path, NULL, NULL, NULL, NULL) != ERROR_SUCCESS) {
+		i = 0;
+		for (;;) {
+			n = MAX_PATH;
+			if (RegEnumValueW(key, i, name, &n, NULL, NULL, NULL,
+			    NULL) != ERROR_SUCCESS)
+				break;
+			slash = wcsrchr(name, L'\\');
+			if (slash != NULL && _wcsicmp(slash + 1, helper) == 0 &&
+			    GetFileAttributesW(name) == INVALID_FILE_ATTRIBUTES)
+				RegDeleteValueW(key, name);
+			else
+				i++;
+		}
+		RegSetValueExW(key, path, 0, REG_DWORD, (const BYTE *)&zero,
+		    sizeof zero);
+	}
+	RegCloseKey(key);
+
+	WerRegisterRuntimeExceptionModule(path, &win32_crash);
+}
+
 void
 win32_crash_init(void)
 {
@@ -587,6 +619,11 @@ win32_crash_init(void)
 	SetUnhandledExceptionFilter(win32_crash_handler);
 	_set_invalid_parameter_handler(win32_invalid_parameter);
 	signal(SIGABRT, win32_abort);
+	win32_crash_log(GetCurrentProcessId(), win32_crash.log,
+	    sizeof win32_crash.log);
+
+	/* Inherited, and a Go parent turns Windows' error reporting off. */
+	SetErrorMode(GetErrorMode() & ~SEM_NOGPFAULTERRORBOX);
 
 	n = GetModuleFileNameA(NULL, path, sizeof path);
 	if (n == 0 || n >= sizeof path)
@@ -601,8 +638,32 @@ win32_crash_init(void)
 	    (slash = strrchr(path, '\\')) == NULL)
 		return;
 	*slash = '\0';
-	snprintf(win32_crash_symbols, sizeof win32_crash_symbols, "%s",
+	snprintf(win32_crash.symbols, sizeof win32_crash.symbols, "%s",
 	    strncmp(path, "\\\\?\\", 4) == 0 ? path + 4 : path);
+	win32_crash_register();
+}
+
+/* What a dead server's crash log says, when its record says nothing. */
+void
+win32_crash_reason(long pid, int64_t started, char *buf, size_t size)
+{
+	static const char	 prefix[] = "tmux crashed: ";
+	char			 path[MAX_PATH], line[256];
+	struct _stat64		 sb;
+	FILE			*f;
+
+	/* A log older than the server is an earlier process with this PID. */
+	if (!win32_crash_log(pid, path, sizeof path) ||
+	    _stat64(path, &sb) != 0 || sb.st_mtime < started)
+		return;
+	if ((f = fopen(path, "r")) == NULL)
+		return;
+	if (fgets(line, sizeof line, f) != NULL &&
+	    strncmp(line, prefix, sizeof prefix - 1) == 0) {
+		line[strcspn(line, "\r\n")] = '\0';
+		snprintf(buf, size, "%s", line + sizeof prefix - 1);
+	}
+	fclose(f);
 }
 
 #ifndef PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY

@@ -17,10 +17,10 @@ That next server writes `~/.tmux/flight/ended/tmux-<pid>.log`, adds a line to
 `show-messages`, and shows it to the first client to attach. Reports older than 30
 days are removed. `ended:` is one of:
 
-- `crashed: <reason>`: an exception, a bad C runtime argument, `abort()` or tmux's
-  own `fatal`. On Windows `%TEMP%\tmux-crash-<pid>.log` holds the stack.
-- `with no record of why`: killed from outside, or a failure nothing in the process
-  could catch, such as heap corruption's fail-fast.
+- `crashed: <reason>`: an exception, a bad C runtime argument, `abort()`, tmux's
+  own `fatal`, or a fail-fast. On Windows `%TEMP%\tmux-crash-<pid>.log` holds the
+  stack.
+- `with no record of why`: killed from outside.
 
 `last worked` is the last second the server's loop ran. `client lost` is the moment an
 attached client saw the connection drop, which is the time of death, and reads `not
@@ -29,6 +29,22 @@ start bound it.
 
 The record names no killer: a process's exit isn't visible to the process. It doesn't
 survive a power cut, since the pages may not have reached the disk.
+
+## Fail-fasts on Windows
+
+A fail-fast (heap corruption, a stack cookie) ends the process without running
+anything in it, so no handler of ours can write. Windows' error reporting still
+sees it, so every tmux process registers `tmux-wer.dll`, from its exe's real folder
+rather than the `current` junction, and lists that path under
+`HKCU\Software\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHelperModules`,
+which is what lets Windows load it. The failed
+process waits while the DLL, in Windows' own process, reads the log path and
+symbol folder from it, walks its stack and writes the same log. It leaves the
+crash unclaimed, so Windows' own dump and event still happen, and does nothing if
+the process's handler already finished. A parent's error mode is inherited, and
+a Go parent turns this reporting off, so `win32_crash_init` clears that mode. The
+record itself can't be written from outside, so the next server takes the reason
+from the crash log.
 
 ## Leaving packages
 

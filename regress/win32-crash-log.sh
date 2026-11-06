@@ -25,6 +25,20 @@ TMUX_FLIGHT_DIR=$(cygpath -m "$OUT/flight")
 export TMUX_FLIGHT_DIR
 . "$dir/win32-wait.sh"
 
+# wer_listed NAME: whether this user's list of crash helpers has that path.
+wer_key='HKCU:\Software\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHelperModules'
+wer_listed() {
+	"$powershell" -NoProfile -Command "(Get-Item '$wer_key').GetValue('$1') -ne \$null" |
+	    tr -d '\r' | grep -q True
+}
+wer_stale="$winout\\gone\\tmux-wer.dll"
+wer_helper="$(cygpath -aw "$package")\\tmux-wer.dll"
+wer_forget() {
+	"$powershell" -NoProfile -Command "
+		Remove-ItemProperty '$wer_key' -Name '$wer_stale' -ErrorAction SilentlyContinue
+		Remove-ItemProperty '$wer_key' -Name '$wer_helper' -ErrorAction SilentlyContinue"
+}
+
 # Junctions go first: rm -rf would follow one into the package.
 cleanup() {
 	$TMUX kill-server 2>/dev/null
@@ -35,6 +49,7 @@ cleanup() {
 		    ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
 	"$cmd" //c rmdir "$winout\\current" 2>/dev/null
 	rm -rf "$OUT"
+	wer_forget
 }
 trap cleanup 0 1 15
 
@@ -49,11 +64,18 @@ fail() {
 "$cmd" //c mklink //J "$winout\\current" "$(cygpath -aw "$package")" >/dev/null ||
     fail "making the junction"
 
+wer_forget
+"$powershell" -NoProfile -Command "New-ItemProperty '$wer_key' -Name '$wer_stale' -PropertyType DWord -Value 0 -Force" >/dev/null ||
+    fail "listing a helper that is gone"
+
 # The server's %TEMP% is GetTempPath's, which reads TMP first.
 TMP=$winout $TMUX -fNUL new -d </dev/null || fail "new-session"
 server=$($TMUX display-message -p '#{pid}' | tr -d '\r')
 [ -n "$server" ] || fail "no server pid"
 log=$OUT/tmux-crash-$server.log
+
+wer_listed "$wer_helper" || fail "the helper is not listed for this user"
+! wer_listed "$wer_stale" || fail "a helper that is gone stayed listed"
 
 mkdir "$OUT/next"
 "$cmd" //c rmdir "$winout\\current"
@@ -100,6 +122,23 @@ crash_with() {
 }
 crash_with abort abort 'exception 0xc0000005'
 crash_with _invalid_parameter_noinfo 'invalid argument to a C runtime function' abort
+
+# A fail-fast runs nothing in the process: Windows' error reporting loads
+# tmux-wer.dll, which writes the log from outside (TMUX-150). This one starts
+# through the junction, as a release's server does.
+WAIT_TIMEOUT=30 wait_until gone || fail "the crashed server is still up"
+"$cmd" //c rmdir "$winout\\current"
+"$cmd" //c mklink //J "$winout\\current" "$(cygpath -aw "$package")" >/dev/null ||
+    fail "moving the junction back"
+TMUX="$OUT/current/tmux.exe -L$TEST_SOCKET"
+fail_fast='exception 0xc0000409 (fail-fast code 2)'
+crash_with __report_gsfailure "$fail_fast" 'invalid argument to a C runtime function'
+tr -d '\r' <"$log" | grep -q '^  #[0-9]* __report_gsfailure' ||
+    fail 'the fail-fast log names no function'
+WAIT_TIMEOUT=30 wait_until gone || fail 'the failed server is still up'
+TMP=$winout $TMUX -fNUL new -d </dev/null || fail 'new-session after the fail-fast'
+tr -d '\r' <"$OUT/flight/ended/tmux-$server.log" | grep -q "^ended: *crashed: $fail_fast" ||
+    fail 'the next server did not report the fail-fast'
 
 echo PASS
 exit 0

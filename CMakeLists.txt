@@ -236,6 +236,7 @@ set(TMUX_COMPAT_SOURCES
 # win32 layer sources
 set(TMUX_WIN32_SOURCES
     win32/win32-compat.c
+    win32/win32-crash.c
     win32/win32-ipc.c
     win32/win32-process.c
     win32/win32-pty.c
@@ -354,6 +355,12 @@ if(MSVC)
     # Use C11
     set_property(TARGET tmux PROPERTY C_STANDARD 11)
 endif()
+
+# Windows error reporting loads this to write the crash log of a process that
+# failed too abruptly to write its own.
+add_library(tmux-wer SHARED win32/tmux-wer.c win32/win32-crash.c)
+target_compile_definitions(tmux-wer PRIVATE _CRT_SECURE_NO_WARNINGS)
+add_dependencies(tmux tmux-wer)
 
 # Install
 install(TARGETS tmux RUNTIME DESTINATION bin)
