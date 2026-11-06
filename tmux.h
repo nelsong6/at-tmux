@@ -3981,6 +3981,7 @@ int		 server_listen_fd(void);
 u_int		 server_pending_ttys(void);
 void		 paste_upgrade_save(struct evbuffer *);
 void		 paste_upgrade_restore(struct upgrade_reader *);
+void		 options_upgrade_baseline(void);
 void		 options_upgrade_save(struct evbuffer *, struct options *);
 void		 options_upgrade_restore(struct upgrade_reader *,
 		     struct options *);
