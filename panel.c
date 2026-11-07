@@ -200,7 +200,7 @@ panel_draw(struct client *c)
 	screen_write_clearscreen(&ctx, gc.bg);
 	for (y = 0; y < height; y++) {
 		screen_write_cursormove(&ctx, 0, y, 0);
-		screen_write_putc(&ctx, &selected, ' ');
+		screen_write_putc(&ctx, &gc, '|');
 		if (y == 0)
 			text = pd->menu->title;
 		else if (y == 1 && pd->tabs != 0) {

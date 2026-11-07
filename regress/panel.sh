@@ -41,6 +41,7 @@ $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Links -b4 -g first -- \
 wait_until width_is 80 || { echo 'panel did not reserve 40 columns'; exit 1; }
 wait_until contains 'All.*PRs.*Tickets.*History' || { $OUTER capture-pane -p; exit 1; }
 wait_until contains PANEL-CONTENT || { echo 'panel not drawn'; exit 1; }
+wait_until contains '|PANEL-CONTENT' || { echo 'panel divider is not ASCII'; $OUTER capture-pane -p; exit 1; }
 [ "$($TMUX list-panes | wc -l)" -eq 1 ] || { echo 'created a pane'; exit 1; }
 $TMUX send-keys -K -c "$CLIENT" t
 option_is() { [ "$($TMUX show -gv "$1" | tr -d '\r')" = "$2" ]; }
@@ -158,4 +159,10 @@ wait_until width_is 60 || { echo 'resize did not reserve the new width'; exit 1;
 wait_until contains REFLOW-END || { echo 'resize lost paragraph text'; $OUTER capture-pane -p; exit 1; }
 $TMUX display-panel -c "$CLIENT" -C
 wait_until width_is 90 || exit 1
+# The line under a pane with a footer is one line: no cells of it fall outside the
+# window's borders, which simple lines draw as periods.
+$TMUX set -g pane-border-lines simple
+$TMUX splitw -d -v -l 8
+border_whole() { $OUTER capture-pane -p | tr -d '\r' | grep -q '^-\{90\}$'; }
+wait_until border_whole || { echo 'border under a footer is broken'; $OUTER capture-pane -p; exit 1; }
 printf 'ALL PANEL TESTS PASSED\n'

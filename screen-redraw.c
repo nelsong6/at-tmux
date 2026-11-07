@@ -122,7 +122,8 @@ screen_redraw_pane_border(struct screen_redraw_ctx *ctx, struct window_pane *wp,
     u_int px, u_int py)
 {
 	struct options	*oo = wp->window->options;
-	u_int		 ex = wp->xoff + wp->sx, ey = wp->yoff + wp->sy;
+	u_int		 ex = wp->xoff + wp->sx;
+	u_int		 ey = wp->yoff + wp->sy + wp->footer_rows;
 	int		 hsplit = 0, vsplit = 0, pane_status = ctx->pane_status;
 	int		 pane_scrollbars = ctx->pane_scrollbars, sb_w = 0;
 	int		 sb_pos;
@@ -181,7 +182,7 @@ screen_redraw_pane_border(struct screen_redraw_ctx *ctx, struct window_pane *wp,
 
 	/* Top/bottom borders. */
 	if (vsplit && pane_status == PANE_STATUS_OFF && sb_w == 0) {
-		if (wp->yoff == 0 && py == wp->sy && px <= wp->sx / 2)
+		if (wp->yoff == 0 && py == ey && px <= wp->sx / 2)
 			return (SCREEN_REDRAW_BORDER_BOTTOM);
 		if (wp->yoff != 0 && py == wp->yoff - 1 && px > wp->sx / 2)
 			return (SCREEN_REDRAW_BORDER_TOP);
@@ -615,7 +616,7 @@ screen_redraw_make_pane_footer(struct client *c, struct window_pane *wp)
 	return (1);
 }
 
-/* Draw pane footers, over the row of each pane the borders treat as outside it. */
+/* Draw pane footers, over the row of each pane the borders treat as inside it. */
 static void
 screen_redraw_draw_pane_footers(struct screen_redraw_ctx *ctx)
 {
