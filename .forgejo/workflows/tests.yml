@@ -106,6 +106,12 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-csi-u.sh
 
+      - name: Run late terminal option tests
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-late-terminal.sh
+
       - name: Run has-session tests
         shell: bash
         run: |

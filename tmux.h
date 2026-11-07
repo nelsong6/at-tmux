@@ -1681,6 +1681,7 @@ struct tty {
 #define TTY_WAITBG 0x4000
 #define TTY_LINESIZED 0x8000
 #define TTY_INHERITED 0x10000
+#define TTY_EXTKEYS 0x20000
 #define TTY_ALL_REQUEST_FLAGS \
 	(TTY_HAVEDA|TTY_HAVEDA2|TTY_HAVEXDA)
 	int		 flags;
@@ -2689,6 +2690,8 @@ int	tty_open(struct tty *, char **);
 void	tty_close(struct tty *);
 void	tty_free(struct tty *);
 void	tty_update_features(struct tty *);
+void	tty_update_extended_keys(struct tty *);
+void	tty_update_term(struct tty *);
 void	tty_set_selection(struct tty *, const char *, const char *, size_t);
 void	tty_write(void (*)(struct tty *, const struct tty_ctx *),
 	    struct tty_ctx *);

@@ -613,6 +613,7 @@ tty_stop_tty(struct tty *tty)
 		tty_raw(tty, "\033[?7727l");
 	tty_raw(tty, tty_term_string(tty->term, TTYC_DSFCS));
 	tty_raw(tty, tty_term_string(tty->term, TTYC_DSEKS));
+	tty->flags &= ~TTY_EXTKEYS;
 
 	if (tty_use_margin(tty))
 		tty_raw(tty, tty_term_string(tty->term, TTYC_DSMG));
@@ -653,6 +654,62 @@ tty_free(struct tty *tty)
 	free(tty->line_sizes);
 }
 
+/*
+ * Ask the terminal for extended keys once, or end them. A terminal keeps a
+ * stack of the kitty keyboard protocol's modes, so a repeat is not harmless.
+ */
+void
+tty_update_extended_keys(struct tty *tty)
+{
+	if (~tty->flags & TTY_STARTED)
+		return;
+
+	if (options_get_number(global_options, "extended-keys")) {
+		if (~tty->flags & TTY_EXTKEYS &&
+		    tty_term_has(tty->term, TTYC_ENEKS)) {
+			tty_puts(tty, tty_term_string(tty->term, TTYC_ENEKS));
+			tty->flags |= TTY_EXTKEYS;
+		}
+	} else if (tty->flags & TTY_EXTKEYS) {
+		tty_puts(tty, tty_term_string(tty->term, TTYC_DSEKS));
+		tty->flags &= ~TTY_EXTKEYS;
+	}
+}
+
+/*
+ * Rebuild an open terminal's description after terminal-features or
+ * terminal-overrides changes. What the terminal reported about itself stays
+ * in the client's features.
+ */
+void
+tty_update_term(struct tty *tty)
+{
+	struct client	*c = tty->client;
+	struct tty_term	*old = tty->term, *term;
+	char		*cause;
+
+	term = tty_term_create(tty, c->term_name, c->term_caps, c->term_ncaps,
+	    &c->term_features, &cause);
+	if (term == NULL) {
+		log_debug("%s: %s", c->name, cause);
+		free(cause);
+		return;
+	}
+
+	if (tty->flags & TTY_EXTKEYS &&
+	    strcmp(tty_term_string(old, TTYC_ENEKS),
+	    tty_term_string(term, TTYC_ENEKS)) != 0) {
+		tty_puts(tty, tty_term_string(old, TTYC_DSEKS));
+		tty->flags &= ~TTY_EXTKEYS;
+	}
+
+	tty->term = term;
+	tty_term_free(old);
+	tty_keys_build(tty);
+	if (tty->flags & TTY_STARTED)
+		tty_update_features(tty);
+}
+
 void
 tty_update_features(struct tty *tty)
 {
@@ -663,8 +720,7 @@ tty_update_features(struct tty *tty)
 
 	if (tty_use_margin(tty))
 		tty_putcode(tty, TTYC_ENMG);
-	if (options_get_number(global_options, "extended-keys"))
-		tty_puts(tty, tty_term_string(tty->term, TTYC_ENEKS));
+	tty_update_extended_keys(tty);
 	if (options_get_number(global_options, "focus-events"))
 		tty_puts(tty, tty_term_string(tty->term, TTYC_ENFCS));
 	if (tty->term->flags & TERM_VT100LIKE)
