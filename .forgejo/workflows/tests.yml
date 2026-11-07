@@ -313,6 +313,7 @@ jobs:
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-popup-output.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade.sh
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh panel.sh
+          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh panel-fill.sh
 
       - name: Run independent footer tests
         shell: bash
@@ -390,7 +391,9 @@ jobs:
         run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/palette.sh
 
       - name: Run side panel tests
-        run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/panel.sh
+        run: |
+          sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/panel.sh
+          sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/panel-fill.sh
 
       - name: Run hold tests
         run: sudo -n -u ubuntu env TEST_TMUX="$PWD/tmux" sh regress/hold.sh

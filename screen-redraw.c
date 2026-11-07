@@ -961,15 +961,17 @@ screen_redraw_draw_borders(struct screen_redraw_ctx *ctx)
 	struct session		*s = c->session;
 	struct window		*w = s->curw->window;
 	struct window_pane	*wp;
-	u_int			 i, j;
+	u_int			 i, j, width;
 
 	log_debug("%s: %s @%u", __func__, c->name, w->id);
 
 	TAILQ_FOREACH(wp, &w->panes, entry)
 		wp->border_gc_set = 0;
 
+	/* The side panel's columns are the panel's: never paint under it. */
+	width = c->tty.sx - panel_width(c);
 	for (j = 0; j < c->tty.sy - ctx->statuslines; j++) {
-		for (i = 0; i < c->tty.sx; i++)
+		for (i = 0; i < width; i++)
 			screen_redraw_draw_borders_cell(ctx, i, j);
 	}
 }
