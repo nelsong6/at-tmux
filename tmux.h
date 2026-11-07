@@ -85,6 +85,7 @@ struct tty_code;
 struct tty_key;
 struct tmuxpeer;
 struct tmuxproc;
+struct upgrade_reader;
 struct winlink;
 
 /* Default configuration files and socket paths. */
@@ -1260,6 +1261,7 @@ struct window_pane {
 	struct input_ctx *ictx;
 
 	struct new_window_draw *draw_wait; /* new-window -W, until it draws */
+	struct window_copy_upgrade *upgrade_copy; /* mode to rebuild after upgrade */
 
 #ifdef _WIN32
 	void		*win32_pty; /* struct win32_pty * */
@@ -3600,6 +3602,10 @@ void printflike(3, 4) window_copy_add(struct window_pane *, int, const char *,
 void printflike(3, 0) window_copy_vadd(struct window_pane *, int, const char *,
 		     va_list);
 void		 window_copy_scroll(struct window_pane *, int, u_int, int);
+int		 window_copy_upgrade_carries(struct window_pane *);
+void		 window_copy_upgrade_save(struct evbuffer *, struct window_pane *);
+void		 window_copy_upgrade_read(struct upgrade_reader *, struct window_pane *);
+void		 window_copy_upgrade_apply(struct window_pane *);
 void		 window_copy_pageup(struct window_pane *, int);
 void		 window_copy_pagedown(struct window_pane *, int, int);
 void		 window_copy_start_drag(struct client *, struct mouse_event *);

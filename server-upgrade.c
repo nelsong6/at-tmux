@@ -28,7 +28,7 @@
  */
 
 #define UPGRADE_MAGIC "tmux-upgrade"
-#define UPGRADE_VERSION 2
+#define UPGRADE_VERSION 3
 #define UPGRADE_ACK_TIMEOUT 30000
 #define UPGRADE_FLUSH_TIMEOUT 5000
 
@@ -781,6 +781,7 @@ upgrade_save_pane(struct evbuffer *evb, struct window_pane *wp,
 	upw_u32(o, wp->ictx != NULL);
 	if (wp->ictx != NULL)
 		input_upgrade_save(o, wp->ictx, wp->base.hyperlinks);
+	window_copy_upgrade_save(o, wp);
 	upw_obj(evb, o);
 	evbuffer_free(o);
 	return (0);
@@ -874,6 +875,8 @@ upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
 		wp->ictx = input_init(wp, NULL, &wp->palette, NULL);
 		input_upgrade_restore(&o, wp->ictx, wp->base.hyperlinks);
 	}
+	if (upgrade_version >= 3)
+		window_copy_upgrade_read(&o, wp);
 	if (o.error)
 		r->error = 1;
 	return (wp);
@@ -1406,7 +1409,7 @@ upgrade_busy(void)
 			return (reason);
 	}
 	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
-		if (!TAILQ_EMPTY(&wp->modes)) {
+		if (!window_copy_upgrade_carries(wp)) {
 			xasprintf(&reason, "pane %%%u is in %s", wp->id,
 			    TAILQ_FIRST(&wp->modes)->mode->name);
 		} else if (wp->pipe_fd != -1)
@@ -2319,6 +2322,8 @@ server_upgrade_restore(void)
 	}
 	window_set_next_ids(next_window, next_pane);
 	next_session_id = next_session;
+	RB_FOREACH(wp, window_pane_tree, &all_window_panes)
+		window_copy_upgrade_apply(wp);
 
 	n = upr_u32(&r);
 	for (i = 0; i < n && !r.error; i++)

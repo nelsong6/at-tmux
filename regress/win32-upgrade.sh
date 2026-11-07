@@ -181,16 +181,33 @@ $OUTER send-keys -tout "echo TYPED_MARK" Enter
 wait_for up:0.1 "^TYPED_MARK" || fail "client keys not reaching pane"
 echo "PASS 2: panes and client work after upgrade"
 
-# --- Test 3: it waits while copy mode is open, and goes once it closes ---
-$TMUX copy-mode -tup:0.0
+# --- Test 3: a pane scrolled back in copy mode doesn't hold it, and stays there ---
+$TMUX send-keys -tup:0.0 "for /L %i in (1,1,100) do @echo LINE%i" Enter
+wait_for up:0.0 "^LINE100" || fail "no history to scroll"
+$TMUX copy-mode -u -tup:0.0
+$TMUX send-keys -tup:0.0 -X begin-selection
+$TMUX send-keys -tup:0.0 -X cursor-up
+SCROLLED=$($TMUX display -p -tup:0.0 '#{scroll_position} #{copy_cursor_x} #{copy_cursor_y} #{selection_present}' | tr -d '\r')
+[ "${SCROLLED%% *}" -gt 0 ] || fail "copy mode didn't scroll: $SCROLLED"
 $TMUX upgrade-server "$EXE"
-wait_until status_starts "waiting: pane" || fail "did not wait: $(upgrade_status)"
-[ "$(server_pid)" = "$PID1" ] || fail "upgraded during copy mode"
-$TMUX send-keys -tup:0.0 -X cancel
-wait_until pid_changed_from "$PID1" || fail "did not upgrade after copy mode"
+wait_until pid_changed_from "$PID1" || fail "copy mode held the upgrade: $(upgrade_status)"
 PID2=$(server_pid)
 [ "$(pane_pids)" = "$PANES0" ] || fail "pane processes changed on second upgrade"
-echo "PASS 3: waits for copy mode, upgrades again"
+[ "$($TMUX display -p -tup:0.0 '#{pane_mode}' | tr -d '\r')" = copy-mode ] || fail "copy mode wasn't carried"
+[ "$($TMUX display -p -tup:0.0 '#{scroll_position} #{copy_cursor_x} #{copy_cursor_y} #{selection_present}' | tr -d '\r')" = "$SCROLLED" ] ||
+    fail "the place in copy mode changed"
+$TMUX send-keys -tup:0.0 -X cancel
+echo "PASS 3: copy mode doesn't hold an upgrade and keeps its place"
+
+# --- Test 3b: a mode that can't be carried waits, and goes once it closes ---
+$TMUX choose-tree -tup:0.0
+$TMUX upgrade-server "$EXE"
+wait_until status_starts "waiting: pane" || fail "did not wait: $(upgrade_status)"
+[ "$(server_pid)" = "$PID2" ] || fail "upgraded during tree mode"
+$TMUX send-keys -tup:0.0 q
+wait_until pid_changed_from "$PID2" || fail "did not upgrade after tree mode"
+PID2=$(server_pid)
+echo "PASS 3b: waits for a mode it can't carry"
 
 # --- Test 4: a build that can't take over leaves the server as it was ---
 $TMUX upgrade-server "$(cygpath -w /c/Windows/System32/whoami.exe)"

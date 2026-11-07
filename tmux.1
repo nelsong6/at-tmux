@@ -1786,7 +1786,7 @@ Move the server to the build at
 .Ar tmux-path
 without restarting anything in it.
 The server waits until nothing is in flight (no popup, menu, prompt, pane in
-a mode, piped pane, running job or client part-way through a command), then
+a mode other than copy or view mode, which go across as they are, piped pane, running job or client part-way through a command), then
 starts the new build and hands it every pane's console and process, every
 screen and its history, all sessions, windows, options, key bindings and
 buffers, and every client's connection.

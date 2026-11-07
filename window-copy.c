@@ -524,6 +524,171 @@ window_copy_free(struct window_mode_entry *wme)
 	free(data);
 }
 
+#ifdef HAVE_SERVER_UPGRADE
+/* A copy or view mode on its way across upgrade-server. */
+struct window_copy_upgrade {
+	int		 view;
+	int		 selection;
+	int		 rectflag;
+	int		 scroll_exit;
+	int		 hide_position;
+	int		 showmark;
+	u_int		 cursordrag;
+	u_int		 lineflag;
+	u_int		 selflag;
+	u_int		 cx;
+	u_int		 cy;
+	u_int		 oy;
+	u_int		 selx;
+	u_int		 sely;
+	u_int		 endselx;
+	u_int		 endsely;
+	u_int		 mx;
+	u_int		 my;
+	struct screen	*backing;
+};
+
+/* Can upgrade-server carry this pane as it is? */
+int
+window_copy_upgrade_carries(struct window_pane *wp)
+{
+	struct window_mode_entry	*wme = TAILQ_FIRST(&wp->modes);
+
+	if (wme == NULL)
+		return (1);
+	return (TAILQ_NEXT(wme, entry) == NULL && wme->swp == wp &&
+	    (wme->mode == &window_copy_mode || wme->mode == &window_view_mode));
+}
+
+void
+window_copy_upgrade_save(struct evbuffer *o, struct window_pane *wp)
+{
+	struct window_mode_entry	*wme = TAILQ_FIRST(&wp->modes);
+	struct window_copy_mode_data	*data;
+
+	upw_u32(o, wme != NULL);
+	if (wme == NULL)
+		return;
+	data = wme->data;
+	upw_u32(o, data->viewmode);
+	upw_u32(o, data->screen.sel != NULL);
+	upw_u32(o, data->rectflag);
+	upw_u32(o, data->scroll_exit);
+	upw_u32(o, data->hide_position);
+	upw_u32(o, data->showmark);
+	upw_u32(o, data->cursordrag);
+	upw_u32(o, data->lineflag);
+	upw_u32(o, data->selflag);
+	upw_u32(o, data->cx);
+	upw_u32(o, data->cy);
+	upw_u32(o, data->oy);
+	upw_u32(o, data->selx);
+	upw_u32(o, data->sely);
+	upw_u32(o, data->endselx);
+	upw_u32(o, data->endsely);
+	upw_u32(o, data->mx);
+	upw_u32(o, data->my);
+	upw_u32(o, data->backing->cx);
+	upw_u32(o, data->backing->cy);
+	grid_upgrade_save(o, data->backing->grid, wp->base.hyperlinks);
+}
+
+void
+window_copy_upgrade_read(struct upgrade_reader *r, struct window_pane *wp)
+{
+	struct window_copy_upgrade	*u;
+	struct grid			*gd;
+
+	if (!upr_u32(r))
+		return;
+	wp->upgrade_copy = u = xcalloc(1, sizeof *u);
+	u->view = upr_u32(r);
+	u->selection = upr_u32(r);
+	u->rectflag = upr_u32(r);
+	u->scroll_exit = upr_u32(r);
+	u->hide_position = upr_u32(r);
+	u->showmark = upr_u32(r);
+	u->cursordrag = upr_u32(r);
+	u->lineflag = upr_u32(r);
+	u->selflag = upr_u32(r);
+	u->cx = upr_u32(r);
+	u->cy = upr_u32(r);
+	u->oy = upr_u32(r);
+	u->selx = upr_u32(r);
+	u->sely = upr_u32(r);
+	u->endselx = upr_u32(r);
+	u->endsely = upr_u32(r);
+	u->mx = upr_u32(r);
+	u->my = upr_u32(r);
+	u->backing = xmalloc(sizeof *u->backing);
+	screen_init(u->backing, screen_size_x(&wp->base), screen_size_y(&wp->base), 0);
+	u->backing->cx = upr_u32(r);
+	u->backing->cy = upr_u32(r);
+	if ((gd = grid_upgrade_restore(r, wp->base.hyperlinks)) == NULL) {
+		r->error = 1;
+		return;
+	}
+	grid_destroy(u->backing->grid);
+	u->backing->grid = gd;
+	u->backing->rlower = gd->sy - 1;
+}
+
+/*
+ * Put the pane back in its mode, where it was, once its window is whole. No
+ * client is back yet, so it writes to the mode's screen and not through to one.
+ */
+void
+window_copy_upgrade_apply(struct window_pane *wp)
+{
+	struct window_copy_upgrade	*u = wp->upgrade_copy;
+	struct window_mode_entry	*wme;
+	struct window_copy_mode_data	*data;
+	struct args			*args;
+	struct screen_write_ctx		 ctx;
+	u_int				 i;
+
+	if (u == NULL)
+		return;
+	wp->upgrade_copy = NULL;
+	args = args_create();
+	window_pane_set_mode(wp, wp, u->view ? &window_view_mode :
+	    &window_copy_mode, NULL, args);
+	args_free(args);
+	wme = TAILQ_FIRST(&wp->modes);
+	data = wme->data;
+
+	screen_free(data->backing);
+	free(data->backing);
+	data->backing = u->backing;
+	data->rectflag = u->rectflag;
+	data->scroll_exit = u->scroll_exit;
+	data->hide_position = u->hide_position;
+	data->showmark = u->showmark;
+	data->cursordrag = u->cursordrag;
+	data->lineflag = u->lineflag;
+	data->selflag = u->selflag;
+	data->cx = u->cx;
+	data->cy = u->cy;
+	data->oy = u->oy;
+	data->selx = u->selx;
+	data->sely = u->sely;
+	data->endselx = u->endselx;
+	data->endsely = u->endsely;
+	data->mx = u->mx;
+	data->my = u->my;
+	data->screen.cx = data->cx;
+	data->screen.cy = data->cy;
+	if (u->selection)
+		window_copy_set_selection(wme, 0, 0);
+	screen_write_start(&ctx, &data->screen);
+	for (i = 0; i < screen_size_y(&data->screen); i++)
+		window_copy_write_line(wme, &ctx, i);
+	screen_write_cursormove(&ctx, data->cx, data->cy, 0);
+	screen_write_stop(&ctx);
+	free(u);
+}
+#endif
+
 void
 window_copy_add(struct window_pane *wp, int parse, const char *fmt, ...)
 {
