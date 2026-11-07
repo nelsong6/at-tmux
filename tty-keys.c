@@ -1587,6 +1587,13 @@ tty_keys_device_attributes2(struct tty *tty, const char *buf, size_t len,
 	tty_update_features(tty);
 	tty->flags |= TTY_HAVEDA2;
 
+	/*
+	 * A terminal answers in order, so the primary reply was lost: on Windows
+	 * a process still attached to the console can take it. Ask once more.
+	 */
+	if (~tty->flags & TTY_HAVEDA)
+		tty_puts(tty, "\033[c");
+
 	return (0);
 }
 
