@@ -1101,9 +1101,6 @@ static inline int usleep(unsigned int usec) {
 	return 0;
 }
 
-/* wcwidth. */
-int win32_wcwidth(wchar_t wc);
-#define wcwidth(wc) win32_wcwidth(wc)
 
 /* getpagesize. */
 static inline int getpagesize(void) {

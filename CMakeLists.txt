@@ -8,7 +8,6 @@ set(CMAKE_SYSTEM_VERSION 10.0.17763.0)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Options
-option(TMUX_ENABLE_UTF8PROC "Enable utf8proc support" OFF)
 
 # Find libevent
 find_package(libevent CONFIG QUIET)
@@ -246,11 +245,9 @@ set(TMUX_WIN32_SOURCES
     win32/win32-regex.c
 )
 
-# Optional: utf8proc
-if(TMUX_ENABLE_UTF8PROC)
-    find_package(utf8proc REQUIRED)
-    list(APPEND TMUX_COMPAT_SOURCES compat/utf8proc.c)
-endif()
+# utf8proc answers how wide a character is. compat/utf8proc.c is not built: it passes
+# code points in wchar_t, 16 bits here, so utf8.c calls the library directly.
+find_package(utf8proc CONFIG REQUIRED)
 
 # display-palette's command descriptions, from tmux.1
 add_executable(palette-descriptions tools/palette-descriptions.c)
@@ -319,11 +316,7 @@ target_link_libraries(tmux PRIVATE
     wtsapi32
 )
 
-# utf8proc
-if(TMUX_ENABLE_UTF8PROC AND utf8proc_FOUND)
-    target_link_libraries(tmux PRIVATE utf8proc)
-    target_compile_definitions(tmux PRIVATE ENABLE_UTF8PROC)
-endif()
+target_link_libraries(tmux PRIVATE utf8proc::utf8proc)
 
 # MSVC-specific settings
 if(MSVC)
@@ -369,5 +362,4 @@ install(TARGETS tmux RUNTIME DESTINATION bin)
 message(STATUS "")
 message(STATUS "tmux Windows build configuration:")
 message(STATUS "  Version:    3.6a-win32")
-message(STATUS "  UTF8PROC:   ${TMUX_ENABLE_UTF8PROC}")
 message(STATUS "")

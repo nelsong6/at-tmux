@@ -518,28 +518,6 @@ win32_mkstemp(char *tmpl)
 	    _S_IREAD | _S_IWRITE);
 }
 
-/* wcwidth: return display width of a wide character. */
-int
-win32_wcwidth(wchar_t wc)
-{
-	if (wc == 0)
-		return (0);
-	if (wc < 32 || (wc >= 0x7f && wc < 0xa0))
-		return (-1);
-	/* CJK and fullwidth: rough check. */
-	if ((wc >= 0x1100 && wc <= 0x115f) ||
-	    wc == 0x2329 || wc == 0x232a ||
-	    (wc >= 0x2e80 && wc <= 0xa4cf && wc != 0x303f) ||
-	    (wc >= 0xac00 && wc <= 0xd7a3) ||
-	    (wc >= 0xf900 && wc <= 0xfaff) ||
-	    (wc >= 0xfe10 && wc <= 0xfe19) ||
-	    (wc >= 0xfe30 && wc <= 0xfe6f) ||
-	    (wc >= 0xff01 && wc <= 0xff60) ||
-	    (wc >= 0xffe0 && wc <= 0xffe6))
-		return (2);
-	return (1);
-}
-
 /*
  * fnmatch() implementation for Windows.
  * Supports *, ?, [...], FNM_CASEFOLD.

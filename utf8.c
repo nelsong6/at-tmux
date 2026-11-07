@@ -24,11 +24,15 @@
 #include <string.h>
 #include <wchar.h>
 
+#ifdef _WIN32
+#include <utf8proc.h>
+#endif
+
 #include "compat.h"
 #include "tmux.h"
 
 struct utf8_width_item {
-	wchar_t				wc;
+	uint32_t			wc;
 	u_int				width;
 	int				allocated;
 
@@ -284,12 +288,33 @@ utf8_item_by_index(u_int index)
 
 /* Find a codepoint in the cache. */
 static struct utf8_width_item *
-utf8_find_in_width_cache(wchar_t wc)
+utf8_find_in_width_cache(uint32_t wc)
 {
 	struct utf8_width_item	uw;
 
 	uw.wc = wc;
 	return RB_FIND(utf8_width_cache, &utf8_width_cache, &uw);
+}
+
+/* The codepoint in ud. A Windows wchar_t is 16 bits and can't hold one past U+FFFF. */
+static enum utf8_state
+utf8_codepoint(const struct utf8_data *ud, uint32_t *cp)
+{
+#ifdef _WIN32
+	utf8proc_int32_t	c;
+
+	if (utf8proc_iterate((const utf8proc_uint8_t *)ud->data, ud->size, &c) <= 0 ||
+	    c < 0)
+		return (UTF8_ERROR);
+	*cp = c;
+#else
+	wchar_t			wc;
+
+	if (utf8_towc(ud, &wc) != UTF8_DONE)
+		return (UTF8_ERROR);
+	*cp = wc;
+#endif
+	return (UTF8_DONE);
 }
 
 /* Parse a single codepoint option. */
@@ -301,7 +326,7 @@ utf8_add_to_width_cache(const char *s)
 	u_int			 width;
 	const char		*errstr;
 	struct utf8_data	*ud;
-	wchar_t			 wc;
+	uint32_t		 wc;
 	unsigned long long	 n;
 
 	copy = xstrdup(s);
@@ -323,7 +348,7 @@ utf8_add_to_width_cache(const char *s)
 		if (copy[2] == '\0' ||
 		    *endptr != '\0' ||
 		    n == 0 ||
-		    n > WCHAR_MAX ||
+		    n > 0x10ffff ||
 		    (errno == ERANGE && n == ULLONG_MAX)) {
 			free(copy);
 			return;
@@ -338,11 +363,7 @@ utf8_add_to_width_cache(const char *s)
 			free(copy);
 			return;
 		}
-#ifdef HAVE_UTF8PROC
-		if (utf8proc_mbtowc(&wc, ud[0].data, ud[0].size) <= 0) {
-#else
-		if (mbtowc(&wc, ud[0].data, ud[0].size) <= 0) {
-#endif
+		if (utf8_codepoint(&ud[0], &wc) != UTF8_DONE) {
 			free(ud);
 			free(copy);
 			return;
@@ -519,9 +540,9 @@ static enum utf8_state
 utf8_width(struct utf8_data *ud, int *width)
 {
 	struct utf8_width_item	*uw;
-	wchar_t			 wc;
+	uint32_t		 wc;
 
-	if (utf8_towc(ud, &wc) != UTF8_DONE)
+	if (utf8_codepoint(ud, &wc) != UTF8_DONE)
 		return (UTF8_ERROR);
 	uw = utf8_find_in_width_cache(wc);
 	if (uw != NULL) {
@@ -529,7 +550,11 @@ utf8_width(struct utf8_data *ud, int *width)
 		log_debug("cached width for %08X is %d", (u_int)wc, *width);
 		return (UTF8_DONE);
 	}
-#ifdef HAVE_UTF8PROC
+#if defined(_WIN32)
+	*width = utf8proc_category(wc) == UTF8PROC_CATEGORY_CO ? 1 :
+	    utf8proc_charwidth(wc);
+	log_debug("utf8proc_charwidth(%05X) returned %d", (u_int)wc, *width);
+#elif defined(HAVE_UTF8PROC)
 	*width = utf8proc_wcwidth(wc);
 	log_debug("utf8proc_wcwidth(%05X) returned %d", (u_int)wc, *width);
 #else
