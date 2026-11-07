@@ -4004,6 +4004,7 @@ void		 window_pane_upgrade_feed(struct window_pane *,
 
 /* panel.c */
 u_int panel_width(struct client *);
+void panel_resized(void);
 void panel_clear(struct client *);
 void panel_draw(struct client *);
 int panel_key(struct client *, struct key_event *);

@@ -532,6 +532,16 @@ const struct options_table_entry options_table[] = {
 		  "pressed. Zero means disabled."
 	},
 
+	{ .name = "panel-width",
+	  .type = OPTIONS_TABLE_NUMBER,
+	  .scope = OPTIONS_TABLE_SERVER,
+	  .minimum = 0,
+	  .maximum = 10000,
+	  .default_num = 0,
+	  .text = "Width of the side panel; 0 is a third of the terminal up to 56 "
+		  "columns. Dragging the panel's divider sets it."
+	},
+
 	{ .name = "prompt-history-limit",
 	  .type = OPTIONS_TABLE_NUMBER,
 	  .scope = OPTIONS_TABLE_SERVER,

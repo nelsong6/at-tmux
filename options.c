@@ -1206,6 +1206,8 @@ options_push_changes(const char *name)
 		RB_FOREACH(wp, window_pane_tree, &all_window_panes)
 			window_pane_default_cursor(wp);
 	}
+	if (strcmp(name, "panel-width") == 0)
+		panel_resized();
 	if (strcmp(name, "fill-character") == 0) {
 		RB_FOREACH(w, windows, &windows)
 			window_set_fill_character(w);

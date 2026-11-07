@@ -4745,6 +4745,13 @@ Once reached, the sequence will be discarded.
 .It Ic message-limit Ar number
 Set the number of error or information messages to save in the message log for
 each client.
+.It Ic panel-width Ar number
+The width of the side panel opened by
+.Ic display-panel .
+Zero, the default, is one third of the terminal up to 56 columns.
+Dragging the panel's divider sets this option, and every panel takes the new
+width.
+The panel keeps at least 24 columns and leaves the window at least 30.
 .It Ic prompt-history-limit Ar number
 Set the number of history items to save in the history file for each type of
 command prompt.
@@ -7519,6 +7526,8 @@ Display a persistent, native side panel beside the conversation on
 .Ar target-client .
 The panel reserves one third of the terminal width, up to 56 columns, without
 creating a pane or starting a program.
+Drag the divider at its left edge to change its width, or set
+.Ic panel-width .
 At least 50 columns and six available rows are needed; resizing below this hides
 the panel until sufficient space returns.
 The panel is associated with the source pane's window and is hidden in other

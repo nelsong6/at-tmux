@@ -15,6 +15,10 @@ panel_min(u_int a, u_int b)
 
 static uint64_t panel_next_generation;
 
+/* The panel stays this wide, and leaves the window this much of the terminal. */
+#define PANEL_WIDTH_MINIMUM 24
+#define PANEL_WINDOW_MINIMUM 30
+
 struct panel_line {
 	char *text;
 	u_int item;
@@ -32,12 +36,14 @@ struct panel_data {
 	u_int tabs;
 	int choice;
 	int focused;
+	int resizing;
 };
 
 u_int
 panel_width(struct client *c)
 {
 	struct window_pane *wp;
+	u_int width;
 
 	if (c->panel == NULL || c->session == NULL || c->session->curw == NULL ||
 	    c->tty.sx < 50 || c->tty.sy < status_line_size(c) + 6)
@@ -45,7 +51,26 @@ panel_width(struct client *c)
 	wp = window_pane_find_by_id(c->panel->source);
 	if (wp == NULL || wp->window != c->session->curw->window)
 		return (0);
-	return (panel_min(56, c->tty.sx / 3));
+	width = options_get_number(global_options, "panel-width");
+	if (width == 0)
+		return (panel_min(56, c->tty.sx / 3));
+	width = panel_min(width, c->tty.sx - PANEL_WINDOW_MINIMUM);
+	return (width < PANEL_WIDTH_MINIMUM ? PANEL_WIDTH_MINIMUM : width);
+}
+
+/* The panel-width option changed: every open panel, and the windows beside them. */
+void
+panel_resized(void)
+{
+	struct client *c;
+
+	recalculate_sizes();
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (c->panel == NULL || c->session == NULL)
+			continue;
+		tty_update_client_offset(c);
+		c->flags |= CLIENT_REDRAWWINDOW|CLIENT_REDRAWSTATUS|CLIENT_REDRAWBORDERS;
+	}
 }
 
 static void
@@ -255,7 +280,7 @@ panel_key(struct client *c, struct key_event *event)
 	struct cmdq_state *state;
 	char *error;
 	u_int width = panel_width(c), height, top, i, rows;
-	int row, step, n, click, released;
+	int row, step, n, click, released, held;
 	key_code key = event->key & ~KEYC_MASK_FLAGS;
 	if (width == 0)
 		return (0);
@@ -267,9 +292,25 @@ panel_key(struct client *c, struct key_event *event)
 		/* Motion with no button held is encoded as a dragged release. */
 		click = !MOUSE_WHEEL(m->b) && !MOUSE_DRAG(m->b);
 		released = click && MOUSE_RELEASE(m->b);
+		held = MOUSE_DRAG(m->b) && !MOUSE_RELEASE(m->b);
+		if (pd->resizing) {
+			if (held && m->x < c->tty.sx) {
+				options_set_number(global_options, "panel-width",
+				    c->tty.sx - m->x);
+				panel_resized();
+			} else if (!held)
+				pd->resizing = 0;
+			return (1);
+		}
+		if (click && !released && m->x == c->tty.sx - width &&
+		    m->y >= top && m->y < top + height) {
+			pd->resizing = 1;
+			return (1);
+		}
 		if (m->x < c->tty.sx - width || m->y < top || m->y >= top + height) {
 			if (click)
 				pd->focused = 0;
+			pd->choice = -1;
 			c->flags |= CLIENT_REDRAWOVERLAY;
 			return (0);
 		}
@@ -287,6 +328,8 @@ panel_key(struct client *c, struct key_event *event)
 				pd->top = panel_min(pd->top + 3, pd->nlines - (rows));
 			goto redraw;
 		}
+		/* A row is highlighted only while the mouse is on it. */
+		pd->choice = -1;
 		if (m->x == c->tty.sx - width)
 			goto redraw;
 		if (pd->tabs != 0 && m->y == top + 1) {

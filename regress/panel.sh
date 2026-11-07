@@ -68,6 +68,46 @@ hover_typed() { $TMUX capture-pane -p | tr -d '\r' | grep -q HOVER-ALIVE; }
 wait_until hover_typed || { echo 'hover took keyboard focus'; exit 1; }
 focused_is 0 && option_is @tab prs && option_is @picked no && width_is 80 ||
  { echo "hover acted as a click: focused $($TMUX display -c "$CLIENT" -p '#{client_panel_focused}'), tab $($TMUX show -gv @tab), picked $($TMUX show -gv @picked), width $($TMUX display -p '#{pane_width}')"; exit 1; }
+# A row is highlighted only while the mouse is on it: on the row, on plain text, on it
+# again, then off the panel. The highlight shows while the panel has focus.
+$OUTER send-keys -l "$(printf '\033[<0;85;3M\033[<0;85;3m')"
+wait_until focused_is 1 || { echo 'a click on text did not focus the panel'; exit 1; }
+highlighted() { $OUTER capture-pane -e -p | tr -d '\r' | grep 'Choose action' | grep -q '43m\|43;'; }
+not_highlighted() { ! highlighted; }
+$OUTER send-keys -l "$(printf '\033[<35;85;4M')"
+wait_until highlighted || { echo 'hover did not highlight the row'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<35;85;3M')"
+wait_until not_highlighted || { echo 'the highlight stayed on plain text'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<35;85;4M')"
+wait_until highlighted || { echo 'hover did not highlight the row again'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<35;10;4M')"
+wait_until not_highlighted || { echo 'the highlight stayed after leaving the panel'; exit 1; }
+$TMUX send-keys -K -c "$CLIENT" Tab
+wait_until focused_is 0 || { echo 'Tab did not return focus'; exit 1; }
+# Dragging the divider sets the width, live, and holds it inside its bounds. Motion with
+# no press on the divider moves nothing.
+# Each no-move is read once a tab click sent behind it has landed.
+$OUTER send-keys -l "$(printf '\033[<32;61;5M\033[<35;61;5M\033[<0;102;2M\033[<0;102;2m')"
+wait_until option_is @tab tickets || { echo 'tab click behind the stray drag failed'; exit 1; }
+width_is 80 || { echo 'a drag that started off the divider resized the panel'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;81;5M\033[<32;71;5M')"
+wait_until width_is 70 || { echo 'dragging did not move the divider'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<32;61;5M\033[<0;61;5m')"
+wait_until width_is 60 || { echo 'drag did not reach the mouse'; exit 1; }
+[ "$($TMUX show -gv panel-width | tr -d '\r')" = 60 ] || { echo 'the drag was not kept'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<35;40;5M\033[<0;78;2M\033[<0;78;2m')"
+wait_until option_is @tab prs || { echo 'tab click behind the motion failed'; exit 1; }
+width_is 60 || { echo 'motion after the release kept resizing'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;61;5M\033[<32;2;5M\033[<0;2;5m')"
+wait_until width_is 30 || { echo 'the window lost its least width'; $TMUX display -p '#{pane_width}'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;31;5M\033[<32;119;5M\033[<0;119;5m')"
+wait_until width_is 96 || { echo 'the panel lost its least width'; $TMUX display -p '#{pane_width}'; exit 1; }
+$TMUX set -g panel-width 50
+wait_until width_is 70 || { echo 'setting panel-width did not move it'; exit 1; }
+$TMUX set -gu panel-width
+wait_until width_is 80 || { echo 'unsetting panel-width did not restore it'; exit 1; }
+$TMUX send-keys -K -c "$CLIENT" Tab
+wait_until focused_is 0 || { echo 'Tab did not return focus after the drags'; exit 1; }
 # A delayed refresh must not replace a newly navigated view.
 $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T New -g second -- -NEW-VIEW '' ''
 $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Stale -g first -u -- -STALE-VIEW '' ''
@@ -125,11 +165,14 @@ wait_until contains SCROLL-ROW-27 || { echo 'refresh reset scroll'; exit 1; }
 # Upgrade preserves panel content, scroll and focus along with pane processes.
 PID=$($TMUX display -p '#{pid}' | tr -d '\r')
 PANES=$($TMUX list-panes -F '#{pane_id}|#{pane_pid}')
+$TMUX set -g panel-width 45
 $TMUX upgrade-server "$EXE" || exit 1
 upgraded() { now=$($TMUX display -p '#{pid}' | tr -d '\r'); [ -n "$now" ] && [ "$now" != "$PID" ]; }
 wait_until upgraded || { $TMUX display -p '#{server_upgrade}'; exit 1; }
 [ "$($TMUX list-panes -F '#{pane_id}|#{pane_pid}')" = "$PANES" ] || exit 1
 wait_until contains SCROLL-ROW-27 || { echo 'upgrade lost panel scroll'; exit 1; }
+[ "$($TMUX show -gv panel-width | tr -d '\r')" = 45 ] || { echo 'upgrade lost the panel width'; exit 1; }
+$TMUX set -gu panel-width
 wait_until width_is 80 || exit 1
 $TMUX display-panel -c "$CLIENT" -C
 wait_until width_is 120 || exit 1
