@@ -222,6 +222,30 @@ cmd_new_window_options(struct args *args, struct options *oo, char **cause)
 	return (0);
 }
 
+/*
+ * An -o option given to a window -M found reaches its panes: a pane's own
+ * value would win over it (a restore leaves a program's first pane its own
+ * remain-on-exit failed), so it goes.
+ */
+static void
+cmd_new_window_clear_panes(struct args *args, struct window *w)
+{
+	struct args_value	*av;
+	struct window_pane	*wp;
+	struct options_entry	*o;
+	char			*name;
+
+	for (av = args_first_value(args, 'o'); av != NULL;
+	    av = args_next_value(av)) {
+		name = xstrndup(av->string, strcspn(av->string, "="));
+		TAILQ_FOREACH(wp, &w->panes, entry) {
+			if ((o = options_get_only(wp->options, name)) != NULL)
+				options_remove_or_default(o, -1, NULL);
+		}
+		free(name);
+	}
+}
+
 /* The client waits for wp to draw, then switches to it (-W). */
 static void
 cmd_new_window_wait(struct cmdq_item *item, struct window_pane *wp,
@@ -377,6 +401,7 @@ cmd_new_window_app(struct cmdq_item *item, struct args *args,
 	}
 	/* Checked before the window was looked for, so this can't fail. */
 	cmd_new_window_options(args, w->options, &cause);
+	cmd_new_window_clear_panes(args, w);
 	options_set_string(w->options, mark, 0, "1");
 
 	TAILQ_FOREACH(wp, &w->panes, entry) {
@@ -479,8 +504,15 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 		if (argv != NULL)
 			cmd_free_argv(argc, argv);
 		if (wl != NULL) {
+			/* Moved in, it takes its place as a new window would. */
+			before = args_has(args, 'b');
+			if (app_s != s && (args_has(args, 'a') || before)) {
+				idx = winlink_shuffle_up(s, target->wl, before);
+				if (idx == -1)
+					idx = target->idx;
+			}
 			retval = cmd_new_window_app(item, args, wl, app_s, s,
-			    target->idx, mark, wc, c, tc);
+			    idx, mark, wc, c, tc);
 			free(mark);
 			return (retval);
 		}

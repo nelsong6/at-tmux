@@ -179,4 +179,34 @@ $TMUX new-window -M pinger -t sys: -W "$C" "$PING" -n 300 127.0.0.1 >$OUT 2>&1 |
     fail "8: client not switched to a running app"
 pass "8: -W switches to the app"
 
+# --- Test 9: a pane's own remain-on-exit (a restore leaves a program's first
+# pane failed) gives way to -M's -o, so the app keeps its relaunch line. ---
+# It waits a moment, so its pane is given the option before it ends.
+$TMUX new-window -d -t w: -n kept -o @kept-window=1 "$CMDEXE" //c \
+    "\"$PING\" -n 3 127.0.0.1 >nul& exit 3" || fail "9: kept"
+$TMUX set -p -t w:kept remain-on-exit failed
+wait_until pane_dead w:kept || fail "9: not kept by its pane's option"
+$TMUX new-window -M kept -d -t sys: -o remain-on-exit=relaunch \
+    "$CMDEXE" //c "exit 3" >$OUT 2>&1 || fail "9: $(cat $OUT)"
+[ -z "$($TMUX show -pv -t sys:kept remain-on-exit 2>/dev/null | tr -d '\r')" ] ||
+    fail "9: the pane kept its own remain-on-exit"
+[ "$(value sys:kept '#{remain-on-exit}')" = relaunch ] || fail "9: not relaunch"
+wait_for sys:kept '^kept stopped (exit 3)\. Press Enter to relaunch\.$' ||
+    fail "9: no relaunch line: $($TMUX capture-pane -p -t sys:kept | tr -d '\r')"
+pass "9: -o reaches a pane with its own value"
+
+# --- Test 10: moved in with -b or -a, the window takes the place a new one
+# would, the others making room. ---
+$TMUX new-window -M lead -d -t w: "$PING" -n 300 127.0.0.1 || fail "10: lead"
+$TMUX new-window -M tail -d -t w: "$PING" -n 301 127.0.0.1 || fail "10: tail"
+$TMUX new-window -M lead -d -b -t sys:^ "$PING" -n 300 127.0.0.1 >$OUT 2>&1 ||
+    fail "10: -b: $(cat $OUT)"
+[ "$($TMUX lsw -t sys -F '#{window_name}' | head -1 | tr -d '\r')" = lead ] ||
+    fail "10: not first: $($TMUX lsw -t sys -F '#{window_name}' | tr -d '\r' | tr '\n' ' ')"
+$TMUX new-window -M tail -d -a -t sys:lead "$PING" -n 301 127.0.0.1 >$OUT 2>&1 ||
+    fail "10: -a: $(cat $OUT)"
+[ "$($TMUX lsw -t sys -F '#{window_name}' | sed -n 2p | tr -d '\r')" = tail ] ||
+    fail "10: not after lead: $($TMUX lsw -t sys -F '#{window_name}' | tr -d '\r' | tr '\n' ' ')"
+pass "10: -b and -a place a moved window"
+
 exit $FAIL

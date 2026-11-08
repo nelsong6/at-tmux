@@ -3336,9 +3336,14 @@ names an app that has one window: the window with the user option
 set, in any session, or else a window of one pane with no such option that
 was started as the same command (the program by its name, then the same
 arguments).
-That window is moved into the target session, given the
+That window is moved into the target session (with
+.Fl a
+or
+.Fl b ,
+to the place a new window would take), given the
 .Fl o
-options, has the program in any dead pane started again, and is selected as a
+options (a pane's own value of one goes, so the window's reaches it), has the
+program in any dead pane started again, and is selected as a
 new window would be; only if there is none is a window made, named
 .Ar app-name
 unless
