@@ -32,7 +32,9 @@
 #endif
 
 /*
- * Play a sound file from the server, without waiting for it.
+ * Play a sound file from the server, without waiting for it. Each call is
+ * recorded in the server's log, played or not, so whether a sound played can be
+ * read back (TMUX-168).
  */
 
 static enum cmd_retval	cmd_play_sound_exec(struct cmd *, struct cmdq_item *);
@@ -41,8 +43,8 @@ const struct cmd_entry cmd_play_sound_entry = {
 	.name = "play-sound",
 	.alias = NULL,
 
-	.args = { "t:", 1, 1, NULL },
-	.usage = CMD_TARGET_PANE_USAGE " path",
+	.args = { "s:t:", 1, 1, NULL },
+	.usage = "[-s reason] " CMD_TARGET_PANE_USAGE " path",
 
 	.target = { 't', CMD_FIND_PANE, CMD_FIND_CANFAIL },
 
@@ -96,11 +98,33 @@ cmd_play_sound_find_player(void)
 }
 #endif
 
+/* Record a sound played, or why it wasn't, with the window it was for. */
+static void
+cmd_play_sound_record(struct window *w, const char *path, const char *why)
+{
+	char	*line, *window = NULL;
+
+	if (w != NULL)
+		xasprintf(&window, " for window @%u (%s)", w->id, w->name);
+	if (why == NULL)
+		xasprintf(&line, "play-sound played %s%s", path,
+		    window != NULL ? window : "");
+	else
+		xasprintf(&line, "play-sound did not play %s%s: %s", path,
+		    window != NULL ? window : "", why);
+	log_message(line);
+	free(line);
+	free(window);
+}
+
 static enum cmd_retval
 cmd_play_sound_exec(struct cmd *self, struct cmdq_item *item)
 {
 	struct args	*args = cmd_get_args(self);
 	const char	*path = args_string(args, 0);
+	struct winlink	*wl = cmdq_get_target(item)->wl;
+	struct window	*w = NULL;
+	char		*reason;
 #ifdef _WIN32
 	wchar_t		*wpath;
 	int		 n, ok;
@@ -109,10 +133,25 @@ cmd_play_sound_exec(struct cmd *self, struct cmdq_item *item)
 	char		*argv[3];
 #endif
 
-	/* A sound for a window being looked at has nothing to tell. */
-	if (args_has(args, 't') && cmdq_get_target(item)->wl != NULL &&
-	    window_seen(cmdq_get_target(item)->wl->window))
+	if (args_has(args, 't') && wl != NULL)
+		w = wl->window;
+
+	/*
+	 * -s records a sound the caller held back, so a sound that didn't play
+	 * leaves a line as one that did.
+	 */
+	if (args_has(args, 's')) {
+		reason = format_single_from_target(item, args_get(args, 's'));
+		cmd_play_sound_record(w, path, reason);
+		free(reason);
 		return (CMD_RETURN_NORMAL);
+	}
+
+	/* A sound for a window being looked at has nothing to tell. */
+	if (w != NULL && window_seen(w)) {
+		cmd_play_sound_record(w, path, "the window is being looked at");
+		return (CMD_RETURN_NORMAL);
+	}
 
 	if (access(path, R_OK) != 0) {
 		cmdq_error(item, "can't read %s", path);
@@ -132,6 +171,7 @@ cmd_play_sound_exec(struct cmd *self, struct cmdq_item *item)
 		cmdq_error(item, "can't play %s", path);
 		return (CMD_RETURN_ERROR);
 	}
+	cmd_play_sound_record(w, path, NULL);
 	return (CMD_RETURN_NORMAL);
 #else
 	if ((player = cmd_play_sound_find_player()) == NULL) {
@@ -151,6 +191,7 @@ cmd_play_sound_exec(struct cmd *self, struct cmdq_item *item)
 		cmdq_error(item, "can't start %s", player);
 		return (CMD_RETURN_ERROR);
 	}
+	cmd_play_sound_record(w, path, NULL);
 	return (CMD_RETURN_NORMAL);
 #endif
 }

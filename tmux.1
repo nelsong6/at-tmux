@@ -7448,6 +7448,7 @@ changes the confirmation key to
 the default is
 .Ql y .
 .It Xo Ic play-sound
+.Op Fl s Ar reason
 .Op Fl t Ar target-pane
 .Ar path
 .Xc
@@ -7468,6 +7469,13 @@ or
 .Xr aplay 1
 found on the global
 .Ev PATH .
+With
+.Fl s ,
+nothing is played and
+.Ar reason ,
+a format, is recorded as why.
+Each call is recorded in the server's error log, played or not, with why and the
+window it was for.
 .It Ic start-program Ar program Op Ar argument ...
 Start
 .Ar program
