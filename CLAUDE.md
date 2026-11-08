@@ -123,7 +123,7 @@ A master commit gets a Forgejo release from CI's `release` job, on a Linux runne
 
 Tests don't hold a change back (Nelson's decision, TMUX-128: one user). `ci.yml` only builds, signs and releases; `tests.yml` runs every test against master nightly, or on dispatch, and a failure shows in Alerts.
 
-A master run the runner dropped leaves that commit with no release. Start it again with `POST /api/v1/repos/nelsong6/at-tmux/actions/workflows/ci.yml/dispatches` and the body `{"ref":"master"}`: it runs and publishes as the push would have. Forgejo's API has no rerun of its own (TMUX-114).
+A master run the runner dropped leaves that commit with no release. `strip-owner` (agent-tools), delivering the PR it landed, sees no run on the merge commit and starts `ci.yml` on master again, which runs and publishes as the push would have; no agent starts it by hand (AHT-69). Forgejo's API has no rerun of its own (TMUX-114).
 
 After the complete release is published, CI starts home-sync on every PC. home-sync verifies the signed Windows package, switches `C:\Program Files\at-home\tmux\current`, and reconciles existing servers using `upgrade-server` while preserving their panes. The manual `publish.ps1` was retired by HOMECFG-110; merges need no separate publishing command.
 
