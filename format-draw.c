@@ -1114,6 +1114,49 @@ format_width(const char *expanded)
 }
 
 /*
+ * Where a line of at most limit columns can end at a word: the column of the
+ * last space at or before limit and after the first after columns, or 0.
+ */
+u_int
+format_break(const char *expanded, u_int limit, u_int after)
+{
+	const char		*cp, *end;
+	u_int			 n, leading_width, width = 0, at = 0;
+	struct utf8_data	 ud;
+	enum utf8_state		 more;
+
+	cp = expanded;
+	while (*cp != '\0' && width <= limit) {
+		if (*cp == '#') {
+			end = format_leading_hashes(cp, &n, &leading_width);
+			width += leading_width;
+			cp = end;
+			if (*cp == '#') {
+				end = format_skip(cp + 2, "]");
+				if (end == NULL)
+					return (0);
+				cp = end + 1;
+			}
+		} else if ((more = utf8_open(&ud, *cp)) == UTF8_MORE) {
+			while (*++cp != '\0' && more == UTF8_MORE)
+				more = utf8_append(&ud, *cp);
+			if (more == UTF8_DONE)
+				width += ud.width;
+		} else if (*cp == ' ') {
+			if (width > after)
+				at = width;
+			width++;
+			cp++;
+		} else if (*cp > 0x1f && *cp < 0x7f) {
+			width++;
+			cp++;
+		} else
+			cp++;
+	}
+	return (at);
+}
+
+/*
  * Trim on the left, taking #[] into account.  Note, we copy the whole set of
  * unescaped #s, but only add their escaped size to width. This is because the
  * format_draw function will actually do the escaping when it runs

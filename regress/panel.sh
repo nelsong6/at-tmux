@@ -87,7 +87,7 @@ wait_until focused_is 0 || { echo 'Tab did not return focus'; exit 1; }
 # Dragging the divider sets the width, live, and holds it inside its bounds. Motion with
 # no press on the divider moves nothing.
 # Each no-move is read once a tab click sent behind it has landed.
-$OUTER send-keys -l "$(printf '\033[<32;61;5M\033[<35;61;5M\033[<0;102;2M\033[<0;102;2m')"
+$OUTER send-keys -l "$(printf '\033[<32;61;5M\033[<35;61;5M\033[<0;95;2M\033[<0;95;2m')"
 wait_until option_is @tab tickets || { echo 'tab click behind the stray drag failed'; exit 1; }
 width_is 80 || { echo 'a drag that started off the divider resized the panel'; exit 1; }
 $OUTER send-keys -l "$(printf '\033[<0;81;5M\033[<32;71;5M')"
@@ -95,7 +95,7 @@ wait_until width_is 70 || { echo 'dragging did not move the divider'; exit 1; }
 $OUTER send-keys -l "$(printf '\033[<32;61;5M\033[<0;61;5m')"
 wait_until width_is 60 || { echo 'drag did not reach the mouse'; exit 1; }
 [ "$($TMUX show -gv panel-width | tr -d '\r')" = 60 ] || { echo 'the drag was not kept'; exit 1; }
-$OUTER send-keys -l "$(printf '\033[<35;40;5M\033[<0;78;2M\033[<0;78;2m')"
+$OUTER send-keys -l "$(printf '\033[<35;40;5M\033[<0;70;2M\033[<0;70;2m')"
 wait_until option_is @tab prs || { echo 'tab click behind the motion failed'; exit 1; }
 width_is 60 || { echo 'motion after the release kept resizing'; exit 1; }
 $OUTER send-keys -l "$(printf '\033[<0;61;5M\033[<32;2;5M\033[<0;2;5m')"
@@ -186,7 +186,7 @@ EOF
  $TMUX set-environment -g XDG_STATE_HOME "$state"
  socket=$($TMUX display -p '#{socket_path}' | tr -d '\r')
  XDG_STATE_HOME="$state" "$TEST_STRIP" menu --session panel-test --agent codex --socket "$socket" --client "$CLIENT" --part links || exit 1
- wait_until contains 'Panel provider integration' || { $OUTER capture-pane -p; exit 1; }
+ wait_until contains ' Conversation ' || { $OUTER capture-pane -p; exit 1; }
  wait_until contains 'TMUX-42' || exit 1
  $TMUX send-keys -K -c "$CLIENT" h
  wait_until contains 'Recorded conversation history' || { echo 'provider navigation failed'; $OUTER capture-pane -p; exit 1; }
@@ -200,6 +200,15 @@ wait_until contains REFLOW-END || exit 1
 $OUTER resize-window -x90 -y24
 wait_until width_is 60 || { echo 'resize did not reserve the new width'; exit 1; }
 wait_until contains REFLOW-END || { echo 'resize lost paragraph text'; $OUTER capture-pane -p; exit 1; }
+# A long row breaks between words, and the lines it wraps onto keep its margin.
+words=
+for n in 01 02 03 04 05 06 07 08 09 10 11 12; do words="$words WRAP$n"; done
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Wrap -- "-#[fg=red]$words" '' ''
+wait_until contains 'WRAP12' || { echo 'wrapped row not drawn'; $OUTER capture-pane -p; exit 1; }
+for n in 01 02 03 04 05 06 07 08 09 10 11 12; do
+ contains "WRAP$n" || { echo "WRAP$n was broken mid-word"; $OUTER capture-pane -p; exit 1; }
+done
+! contains '|WRAP' || { echo 'a wrapped line lost its margin'; $OUTER capture-pane -p; exit 1; }
 $TMUX display-panel -c "$CLIENT" -C
 wait_until width_is 90 || exit 1
 # The line under a pane with a footer is one line: no cells of it fall outside the

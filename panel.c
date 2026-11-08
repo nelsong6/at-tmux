@@ -84,11 +84,33 @@ panel_free_lines(struct panel_data *pd)
 	pd->nlines = 0;
 }
 
+/* The spaces a row starts with, kept on each line it wraps onto. */
+static u_int
+panel_indent(const char *text)
+{
+	u_int indent = 0;
+	const char *end;
+
+	while (*text != '\0') {
+		if (text[0] == '#' && text[1] == '[') {
+			if ((end = strchr(text, ']')) == NULL)
+				break;
+			text = end + 1;
+		} else if (*text == ' ') {
+			indent++;
+			text++;
+		} else
+			break;
+	}
+	return (indent);
+}
+
 static void
 panel_reflow(struct client *c)
 {
 	struct panel_data *pd = c->panel;
 	u_int width = panel_width(c), i, used, remaining, top_item = UINT_MAX, choice_item = UINT_MAX;
+	u_int indent, skip, limit;
 	char *text, *line, *next;
 	if (width == 0 || width == pd->width)
 		return;
@@ -101,18 +123,31 @@ panel_reflow(struct client *c)
 	for (i = 0; i < pd->menu->count; i++) {
 		text = xstrdup(pd->menu->items[i].name == NULL ? "" :
 		    pd->menu->items[i].name + (*pd->menu->items[i].name == '-'));
+		limit = width - 2;
+		indent = panel_indent(text);
+		if (indent >= limit / 2)
+			indent = 0;
 		for (;;) {
 			remaining = format_width(text);
-			line = i < pd->tabs ? xstrdup(text) : format_trim_left(text, width - 2);
+			skip = 0;
+			if (i < pd->tabs || remaining <= limit)
+				line = xstrdup(text);
+			else {
+				/* A long row breaks at its last space that fits. */
+				used = format_break(text, limit, indent);
+				line = format_trim_left(text, used != 0 ? used : limit);
+				skip = used != 0;
+			}
 			used = format_width(line);
 			pd->lines = xreallocarray(pd->lines, pd->nlines + 1, sizeof *pd->lines);
 			pd->lines[pd->nlines].text = line;
 			pd->lines[pd->nlines++].item = i;
-			if (i < pd->tabs || remaining <= used || used == 0)
+			if (i < pd->tabs || remaining <= used + skip || used == 0)
 				break;
-			next = format_trim_right(text, remaining - used);
+			next = format_trim_right(text, remaining - used - skip);
 			free(text);
-			text = next;
+			xasprintf(&text, "%*s%s", (int)indent, "", next);
+			free(next);
 		}
 		free(text);
 	}
@@ -130,6 +165,29 @@ panel_reflow(struct client *c)
 		pd->top = pd->tabs;
 	if (pd->choice >= (int)pd->nlines)
 		pd->choice = -1;
+}
+
+/*
+ * Where tab i is on the tab row: at x, taking w columns. The tabs sit side by side
+ * a gap apart from the rows' margin, each taking the gap after it too; when they
+ * don't fit, each gets an equal share of the row.
+ */
+static void
+panel_tab(struct panel_data *pd, u_int width, u_int i, u_int *x, u_int *w)
+{
+	u_int j, total = 0;
+
+	for (j = 0; j < pd->tabs; j++)
+		total += format_width(pd->menu->items[j].name) + 2;
+	if (total > width - 2) {
+		*w = (width - 2) / pd->tabs;
+		*x = 1 + i * *w;
+		return;
+	}
+	*x = 2;
+	for (j = 0; j < i; j++)
+		*x += format_width(pd->menu->items[j].name) + 2;
+	*w = format_width(pd->menu->items[i].name) + 2;
 }
 
 void
@@ -207,7 +265,7 @@ panel_draw(struct client *c)
 	struct panel_data *pd = c->panel;
 	struct screen_write_ctx ctx;
 	struct grid_cell gc, selected;
-	u_int width = panel_width(c), height, y, top, row, i, cell;
+	u_int width = panel_width(c), height, y, top, row, i, x, w;
 	const char *text;
 	if (width == 0)
 		return;
@@ -229,15 +287,17 @@ panel_draw(struct client *c)
 		if (y == 0)
 			text = pd->menu->title;
 		else if (y == 1 && pd->tabs != 0) {
-			cell = (width - 2) / pd->tabs;
 			for (i = 0; i < pd->tabs; i++) {
-				screen_write_cursormove(&ctx, 1 + i * cell, y, 0);
-				format_draw(&ctx, &gc, cell,
+				panel_tab(pd, width, i, &x, &w);
+				screen_write_cursormove(&ctx, x, y, 0);
+				format_draw(&ctx, &gc, w,
 				    pd->menu->items[i].name, NULL, 0);
 			}
 			continue;
 		} else if (y == height - 1)
-			text = pd->focused ? "Esc close | Tab return | Shift-drag select" : "Click panel | Shift-drag selects text";
+			text = pd->focused ?
+			    "#[dim] Esc close   Tab back to pane   Shift-drag select" :
+			    "#[dim] Click to use   Shift-drag select";
 		else {
 			row = pd->top + y - 1 - (pd->tabs != 0);
 			text = row < pd->nlines ? pd->lines[row].text : NULL;
@@ -279,7 +339,7 @@ panel_key(struct client *c, struct key_event *event)
 	struct cmd_find_state fs;
 	struct cmdq_state *state;
 	char *error;
-	u_int width = panel_width(c), height, top, i, rows;
+	u_int width = panel_width(c), height, top, i, rows, x, w;
 	int row, step, n, click, released, held;
 	key_code key = event->key & ~KEYC_MASK_FLAGS;
 	if (width == 0)
@@ -333,8 +393,11 @@ panel_key(struct client *c, struct key_event *event)
 		if (m->x == c->tty.sx - width)
 			goto redraw;
 		if (pd->tabs != 0 && m->y == top + 1) {
-			row = panel_min(pd->tabs - 1, (m->x - (c->tty.sx - width) - 1) /
-			    ((width - 2) / pd->tabs));
+			for (row = 0; row < (int)pd->tabs - 1; row++) {
+				panel_tab(pd, width, row, &x, &w);
+				if (m->x - (c->tty.sx - width) < x + w)
+					break;
+			}
 		} else
 			row = (int)(pd->top + m->y - top) - 1 - (pd->tabs != 0);
 		if (m->y == top || m->y == top + height - 1)

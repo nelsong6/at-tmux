@@ -2509,6 +2509,7 @@ void		 format_draw(struct screen_write_ctx *,
 		     const struct grid_cell *, u_int, const char *,
 		     struct style_ranges *, int);
 u_int		 format_width(const char *);
+u_int		 format_break(const char *, u_int, u_int);
 char		*format_trim_left(const char *, u_int);
 char		*format_trim_right(const char *, u_int);
 
