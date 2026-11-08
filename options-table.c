@@ -91,7 +91,7 @@ static const char *options_table_window_size_list[] = {
 	"largest", "smallest", "manual", "latest", NULL
 };
 static const char *options_table_remain_on_exit_list[] = {
-	"off", "on", "failed", NULL
+	"off", "on", "failed", "relaunch", NULL
 };
 static const char *options_table_destroy_unattached_list[] = {
 	"off", "on", "keep-last", "keep-group", NULL
@@ -1497,18 +1497,25 @@ const struct options_table_entry options_table[] = {
 	  .choices = options_table_remain_on_exit_list,
 	  .default_num = 0,
 	  .text = "Whether panes should remain ('on') or be automatically "
-		  "killed ('off' or 'failed') when the program inside exits."
+		  "killed ('off' or 'failed') when the program inside exits; "
+		  "'relaunch' keeps it and Enter starts its program again."
 	},
 
 	{ .name = "remain-on-exit-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
-	  .default_str = "Pane is dead ("
+	  .default_str = "#{?#{==:#{remain-on-exit},relaunch},"
+			 "#{window_name} stopped ("
+			 "#{?#{!=:#{pane_dead_status},},"
+			 "exit #{pane_dead_status},"
+			 "signal #{pane_dead_signal}}). "
+			 "Press Enter to relaunch.,"
+			 "Pane is dead ("
 			 "#{?#{!=:#{pane_dead_status},},"
 			 "status #{pane_dead_status},}"
 			 "#{?#{!=:#{pane_dead_signal},},"
-			 "signal #{pane_dead_signal},}, "
-			 "#{t:pane_dead_time})",
+			 "signal #{pane_dead_signal},}#, "
+			 "#{t:pane_dead_time})}",
 	  .text = "Message shown after the program in a pane has exited, if "
 		  "remain-on-exit is enabled."
 	},

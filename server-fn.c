@@ -365,6 +365,7 @@ server_destroy_pane(struct window_pane *wp, int notify)
 		}
 		/* FALLTHROUGH */
 	case 1:
+	case REMAIN_ON_EXIT_RELAUNCH:
 		if (wp->flags & PANE_STATUSDRAWN)
 			return;
 		wp->flags |= PANE_STATUSDRAWN;

@@ -745,3 +745,32 @@ complete:
 		notify_window("window-layout-changed", w);
 	return (new_wp);
 }
+
+/*
+ * Start a dead pane's own program again, in its folder (remain-on-exit
+ * relaunch: Enter in the pane, or new-window -M finding it dead). A program
+ * that can't start leaves the pane dead with why, as a respawn does.
+ */
+int
+spawn_relaunch(struct cmdq_item *item, struct session *s, struct winlink *wl,
+    struct window_pane *wp, char **cause)
+{
+	struct spawn_context	 sc = { 0 };
+	struct window_pane	*new_wp;
+
+	sc.item = item;
+	sc.s = s;
+	sc.wl = wl;
+	sc.wp0 = wp;
+	sc.idx = -1;
+	sc.environ = environ_create();
+	sc.flags = SPAWN_RESPAWN;
+
+	new_wp = spawn_pane(&sc, cause);
+	environ_free(sc.environ);
+
+	wp->flags |= PANE_REDRAW;
+	server_redraw_window_borders(wp->window);
+	server_status_window(wp->window);
+	return (new_wp == NULL ? -1 : 0);
+}

@@ -87,6 +87,9 @@ extern const struct cmd_entry cmd_new_window_entry;
  *
  * A window's @<name>-window options are saved with it: they are how a program
  * finds the window it opened, and a window is otherwise made with no options.
+ * So is remain-on-exit relaunch, an app's window that never closes (TMUX-167):
+ * its program comes back even from a dead pane, and its failure is shown by
+ * the relaunch line, not remain-on-exit failed.
  */
 
 #define SESSION_SET_CLOSED_MAX 25
@@ -389,7 +392,10 @@ ss_pane_resumable(struct window_pane *wp)
 static int
 ss_pane_rerun(struct window_pane *wp)
 {
-	if (wp->argc == 0 || wp->fd == -1)
+	if (wp->argc == 0)
+		return (0);
+	if (wp->fd == -1 && options_get_number(wp->options, "remain-on-exit") !=
+	    REMAIN_ON_EXIT_RELAUNCH)
 		return (0);
 	if (ss_pane_option(wp, "@claude-session") != NULL ||
 	    ss_pane_option(wp, "@codex-session") != NULL)
@@ -399,7 +405,10 @@ ss_pane_rerun(struct window_pane *wp)
 	return (!ss_pane_resumable(wp));
 }
 
-/* A window's @<name>-window options, a name=value to a line. */
+/*
+ * A window's @<name>-window options, a name=value to a line, and its
+ * remain-on-exit when that is relaunch.
+ */
 static char *
 ss_window_marks(struct window *w)
 {
@@ -421,6 +430,12 @@ ss_window_marks(struct window *w)
 		evbuffer_add_printf(evb, "%s%s=%s",
 		    EVBUFFER_LENGTH(evb) != 0 ? "\n" : "", name,
 		    options_get_string(w->options, name));
+	}
+	if (options_get_only(w->options, "remain-on-exit") != NULL &&
+	    options_get_number(w->options, "remain-on-exit") ==
+	    REMAIN_ON_EXIT_RELAUNCH) {
+		evbuffer_add_printf(evb, "%sremain-on-exit=relaunch",
+		    EVBUFFER_LENGTH(evb) != 0 ? "\n" : "");
 	}
 	marks = xstrndup((char *)EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
 	evbuffer_free(evb);
@@ -1445,6 +1460,22 @@ ss_add_marks(struct evbuffer *evb, const char *marks)
 	free(copy);
 }
 
+/* Do a window's saved marks say remain-on-exit relaunch? */
+static int
+ss_marks_relaunch(const char *marks)
+{
+	const char	*want = "remain-on-exit=relaunch", *cp = marks;
+	size_t		 len = strlen(want);
+
+	while ((cp = strstr(cp, want)) != NULL) {
+		if ((cp == marks || cp[-1] == '\n') &&
+		    (cp[len] == '\0' || cp[len] == '\n'))
+			return (1);
+		cp += len;
+	}
+	return (0);
+}
+
 /*
  * A window's first pane keeps a rerun program's failure on screen, or the window
  * would go with no word of why. Its other panes close: a program's own helper pane
@@ -1560,7 +1591,7 @@ session_set_reopen(int show, char **cause)
 	rerun = ss_add_program(evb, f[SS_CLOSED_PANES + 1],
 	    f[SS_CLOSED_PANES + 3]);
 	free(idx);
-	if (rerun)
+	if (rerun && !ss_marks_relaunch(f[8]))
 		ss_add_keep_failure(evb, target);
 
 	for (u_int p = 1; p < panes; p++) {
@@ -1731,7 +1762,7 @@ ss_restore_session(struct ss_job *job, struct evbuffer *evb,
 		ss_add_command(evb, argv, 6);
 		ss_add_marks(evb, w->f[11]);
 		if (ss_add_program(evb, w->f[SS_WINDOW_PANES + 1],
-		    w->f[SS_WINDOW_PANES + 3]))
+		    w->f[SS_WINDOW_PANES + 3]) && !ss_marks_relaunch(w->f[11]))
 			ss_add_keep_failure(evb, window);
 		for (p = 1; p < panes; p++) {
 			at = SS_WINDOW_PANES + p * SS_PANE_FIELDS;

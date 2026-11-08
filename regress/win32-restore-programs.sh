@@ -3,7 +3,8 @@
 # What a pane comes back as from reopen-window and restore-set: an agent by its
 # ID, a program by its start command, exactly as it was started, and a shell for
 # a dead pane, a marked pane, an agent with no ID, and a program that can't
-# start, which costs only itself. A window keeps its @<name>-window marks.
+# start, which costs only itself. A window keeps its @<name>-window marks, and
+# an app's window (remain-on-exit relaunch) comes back running even when dead.
 # Snapshots and closed-windows of version 1 stay readable.
 
 PATH=/bin:/usr/bin
@@ -205,6 +206,25 @@ reopen mark
     fail "the mark didn't come back"
 [ -z "$($TMUX show -wv -t main:mark @other 2>/dev/null | tr -d '\r')" ] ||
     fail "another option came back"
+
+# 9b. An app's window (remain-on-exit relaunch, TMUX-167) comes back as its
+# program even from a dead pane, still relaunch and still marked, with no
+# remain-on-exit failed on its pane to hide the relaunch line.
+$TMUX new-window -d -t main: -n app -o @app-window=1 -o remain-on-exit=relaunch \
+    "$COMSPEC" //c "exit 3" || fail "app window"
+was=$(start_of main:app)
+wait_until test "$(value main:app '#{pane_dead}')" = 1 || fail "app not dead"
+reopen app
+[ "$(start_of main:app)" = "$was" ] || fail "the app came back as $(start_of main:app)"
+[ "$($TMUX show -wv -t main:app remain-on-exit | tr -d '\r')" = relaunch ] ||
+    fail "the app's window lost relaunch"
+[ -z "$($TMUX show -pv -t main:app remain-on-exit 2>/dev/null | tr -d '\r')" ] ||
+    fail "the app's pane got its own remain-on-exit"
+[ "$($TMUX show -wv -t main:app @app-window | tr -d '\r')" = 1 ] ||
+    fail "the app's mark didn't come back"
+wait_for main:app '^app stopped (exit 3)\. Press Enter to relaunch\.$' ||
+    fail "no relaunch line after the reopen"
+$TMUX kill-window -t main:app
 
 # 10. A restore does the same as a reopen: a rerun program, its mark, a failure
 # kept on screen, and a program that can't start named at the end.

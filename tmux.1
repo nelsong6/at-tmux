@@ -3294,6 +3294,7 @@ option.
 .Op Fl c Ar start-directory
 .Op Fl e Ar environment
 .Op Fl F Ar format
+.Op Fl M Ar app-name
 .Op Fl n Ar window-name
 .Op Fl o Ar option=value
 .Op Fl t Ar target-window
@@ -3328,6 +3329,23 @@ is given and a window named
 already exists, it is selected (unless
 .Fl d
 is also given in which case the command does nothing).
+.Pp
+.Fl M
+names an app that has one window: the window with the user option
+.Ql @app-name-window
+set, in any session, or else a window of one pane with no such option that
+was started as the same command (the program by its name, then the same
+arguments).
+That window is moved into the target session, given the
+.Fl o
+options, has the program in any dead pane started again, and is selected as a
+new window would be; only if there is none is a window made, named
+.Ar app-name
+unless
+.Fl n
+is given, with
+.Ql @app-name-window
+set to 1.
 .Pp
 .Ar shell-command
 is the command to execute.
@@ -5971,13 +5989,17 @@ uses when the colour with that index is requested.
 The index may be from zero to 255.
 .Pp
 .It Xo Ic remain-on-exit
-.Op Ic on | off | failed
+.Op Ic on | off | failed | relaunch
 .Xc
 A pane with this flag set is not destroyed when the program running in it
 exits.
 If set to
 .Ic failed ,
 then only when the program exit status is not zero.
+If set to
+.Ic relaunch ,
+the pane stays whatever the exit status and Enter pressed in it starts its
+program again; a session restore starts that program even in a dead pane.
 The pane may be reactivated with the
 .Ic respawn-pane
 command.

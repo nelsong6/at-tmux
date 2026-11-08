@@ -1348,6 +1348,7 @@ window_pane_key(struct window_pane *wp, struct client *c, struct session *s,
     struct winlink *wl, key_code key, struct mouse_event *m)
 {
 	struct window_mode_entry	*wme;
+	char				*cause = NULL;
 
 	if (KEYC_IS_MOUSE(key) && m == NULL)
 		return (-1);
@@ -1360,6 +1361,18 @@ window_pane_key(struct window_pane *wp, struct client *c, struct session *s,
 			wme->mode->key(wme, c, s, wl, key, m);
 		}
 		return (0);
+	}
+
+	if (window_pane_relaunches(wp) && s != NULL && wl != NULL) {
+		if ((key & ~KEYC_MASK_FLAGS) == '\r') {
+			key_trace_took("relaunching a dead pane");
+			if (spawn_relaunch(NULL, s, wl, wp, &cause) != 0) {
+				log_debug("%s: %%%u: %s", __func__, wp->id,
+				    cause);
+				free(cause);
+			}
+			return (0);
+		}
 	}
 
 	if (wp->fd == -1 || wp->flags & PANE_INPUTOFF) {
@@ -1390,6 +1403,18 @@ int
 window_pane_exited(struct window_pane *wp)
 {
 	return (wp->fd == -1 || (wp->flags & PANE_EXITED));
+}
+
+/*
+ * A dead pane with remain-on-exit relaunch, showing its relaunch line: Enter
+ * starts its program again.
+ */
+int
+window_pane_relaunches(struct window_pane *wp)
+{
+	return (wp->fd == -1 && (wp->flags & PANE_STATUSDRAWN) &&
+	    options_get_number(wp->options, "remain-on-exit") ==
+	    REMAIN_ON_EXIT_RELAUNCH);
 }
 
 u_int

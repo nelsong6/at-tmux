@@ -1199,6 +1199,9 @@ enum client_theme {
 	THEME_DARK
 };
 
+/* remain-on-exit's relaunch: kept on any exit, Enter starts it again. */
+#define REMAIN_ON_EXIT_RELAUNCH 3
+
 /* Child window structure. */
 struct window_pane {
 	u_int		 id;
@@ -3460,6 +3463,7 @@ void		 window_pane_paste(struct window_pane *, key_code, char *,
 		     size_t);
 int		 window_pane_visible(struct window_pane *);
 int		 window_pane_exited(struct window_pane *);
+int		 window_pane_relaunches(struct window_pane *);
 u_int		 window_pane_search(struct window_pane *, const char *, int,
 		     int);
 const char	*window_printable_flags(struct winlink *, int);
@@ -3887,6 +3891,8 @@ void		 style_set_scrollbar_style_from_option(struct style *,
 /* spawn.c */
 struct winlink	*spawn_window(struct spawn_context *, char **);
 struct window_pane *spawn_pane(struct spawn_context *, char **);
+int		 spawn_relaunch(struct cmdq_item *, struct session *,
+		     struct winlink *, struct window_pane *, char **);
 #ifdef _WIN32
 char		*environ_to_win32_block(struct environ *);
 #endif

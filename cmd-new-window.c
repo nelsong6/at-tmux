@@ -40,9 +40,10 @@ const struct cmd_entry cmd_new_window_entry = {
 	.name = "new-window",
 	.alias = "neww",
 
-	.args = { "abc:de:F:kn:o:PRSt:W:", 0, -1, NULL },
+	.args = { "abc:de:F:kM:n:o:PRSt:W:", 0, -1, NULL },
 	.usage = "[-abdkPRS] [-c start-directory] [-e environment] [-F format] "
-		 "[-n window-name] [-o option=value] " CMD_TARGET_WINDOW_USAGE
+		 "[-M app-name] [-n window-name] [-o option=value] "
+		 CMD_TARGET_WINDOW_USAGE
 		 " [-W target-client] [shell-command [argument ...]]",
 
 	.target = { 't', CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX },
@@ -221,6 +222,200 @@ cmd_new_window_options(struct args *args, struct options *oo, char **cause)
 	return (0);
 }
 
+/* The client waits for wp to draw, then switches to it (-W). */
+static void
+cmd_new_window_wait(struct cmdq_item *item, struct window_pane *wp,
+    struct client *wc, struct session *s)
+{
+	struct new_window_draw	*nwd;
+
+	nwd = xcalloc(1, sizeof *nwd);
+	nwd->item = item;
+	nwd->wp = wp;
+	nwd->tc = wc;
+	wc->references++;
+	nwd->session = s->id;
+	TAILQ_INSERT_TAIL(&new_window_draws, nwd, entry);
+	wp->draw_wait = nwd;
+}
+
+/* A program's name: the last part of its path, less .exe on Windows. */
+static char *
+cmd_new_window_program_name(const char *path)
+{
+	const char	*cp;
+	char		*name;
+#ifdef _WIN32
+	size_t		 len;
+#endif
+
+	if ((cp = strrchr(path, '/')) != NULL)
+		path = cp + 1;
+#ifdef _WIN32
+	if ((cp = strrchr(path, '\\')) != NULL)
+		path = cp + 1;
+#endif
+	name = xstrdup(path);
+#ifdef _WIN32
+	len = strlen(name);
+	if (len > 4 && strcasecmp(name + len - 4, ".exe") == 0)
+		name[len - 4] = '\0';
+#endif
+	return (name);
+}
+
+/* Does w carry any app's mark, an @<name>-window option? */
+static int
+cmd_new_window_marked(struct window *w)
+{
+	struct options_entry	*o;
+	const char		*name;
+	size_t			 len;
+
+	for (o = options_first(w->options); o != NULL; o = options_next(o)) {
+		name = options_name(o);
+		len = strlen(name);
+		if (*name == '@' && len > 7 &&
+		    strcmp(name + len - 7, "-window") == 0)
+			return (1);
+	}
+	return (0);
+}
+
+/*
+ * Is w an app's window with no mark: one pane, started as this same command
+ * (the program by its name wherever it was found, then the same arguments)?
+ */
+static int
+cmd_new_window_runs(struct window *w, int argc, char **argv)
+{
+	struct window_pane	*wp = TAILQ_FIRST(&w->panes);
+	char			*a, *b;
+	int			 i, same;
+
+	if (wp == NULL || window_count_panes(w) != 1 || wp->argc != argc ||
+	    argc == 0 || cmd_new_window_marked(w))
+		return (0);
+	for (i = 1; i < argc; i++) {
+		if (strcmp(wp->argv[i], argv[i]) != 0)
+			return (0);
+	}
+	a = cmd_new_window_program_name(wp->argv[0]);
+	b = cmd_new_window_program_name(argv[0]);
+#ifdef _WIN32
+	same = (strcasecmp(a, b) == 0);
+#else
+	same = (strcmp(a, b) == 0);
+#endif
+	free(a);
+	free(b);
+	return (same);
+}
+
+/*
+ * new-window -M: the app's window, in any session. The one marked
+ * @<name>-window first, else an unmarked window of one pane started as its
+ * command.
+ */
+static struct winlink *
+cmd_new_window_find_app(const char *mark, int argc, char **argv,
+    struct session **sp)
+{
+	struct session	*s, *by_s = NULL;
+	struct winlink	*wl, *by_program = NULL;
+
+	RB_FOREACH(s, sessions, &sessions) {
+		RB_FOREACH(wl, winlinks, &s->windows) {
+			if (options_get_only(wl->window->options, mark) != NULL &&
+			    format_true(options_get_string(wl->window->options,
+			    mark))) {
+				*sp = s;
+				return (wl);
+			}
+			if (by_program == NULL &&
+			    cmd_new_window_runs(wl->window, argc, argv)) {
+				by_program = wl;
+				by_s = s;
+			}
+		}
+	}
+	*sp = by_s;
+	return (by_program);
+}
+
+/*
+ * new-window -M found the app's window wl in app_s: bring it into s, give it
+ * its mark and the -o options, start its dead panes' programs again, and show
+ * it as a new window would be shown.
+ */
+static enum cmd_retval
+cmd_new_window_app(struct cmdq_item *item, struct args *args,
+    struct winlink *wl, struct session *app_s, struct session *s, int idx,
+    const char *mark, struct client *wc, struct client *c, struct client *tc)
+{
+	struct window		*w = wl->window;
+	struct window_pane	*wp, *relaunched = NULL;
+	char			*cause = NULL, *cp;
+	const char		*template;
+	int			 failed = 0;
+
+	if (app_s != s) {
+		w->references++;
+		if (server_link_window(app_s, wl, s, idx, 0, 0, &cause) != 0) {
+			window_remove_ref(w, __func__);
+			cmdq_error(item, "%s", cause);
+			free(cause);
+			return (CMD_RETURN_ERROR);
+		}
+		server_unlink_window(app_s, wl);
+		wl = winlink_find_by_window(&s->windows, w);
+		window_remove_ref(w, __func__);
+		if (session_alive(app_s) &&
+		    options_get_number(app_s->options, "renumber-windows"))
+			session_renumber_windows(app_s);
+		recalculate_sizes();
+	}
+	/* Checked before the window was looked for, so this can't fail. */
+	cmd_new_window_options(args, w->options, &cause);
+	options_set_string(w->options, mark, 0, "1");
+
+	TAILQ_FOREACH(wp, &w->panes, entry) {
+		if (wp->fd != -1)
+			continue;
+		if (spawn_relaunch(item, s, wl, wp, &cause) != 0) {
+			cmdq_error(item, "relaunch failed: %s", cause);
+			free(cause);
+			cause = NULL;
+			failed = 1;
+		} else if (wp == w->active)
+			relaunched = wp;
+	}
+
+	if (args_has(args, 'P')) {
+		if ((template = args_get(args, 'F')) == NULL)
+			template = NEW_WINDOW_TEMPLATE;
+		cp = format_single(item, template, tc, s, wl, w->active);
+		cmdq_print(item, "%s", cp);
+		free(cp);
+	}
+
+	if (wc != NULL) {
+		if (relaunched != NULL && relaunched->draw_wait == NULL) {
+			cmd_new_window_wait(item, relaunched, wc, s);
+			return (CMD_RETURN_WAIT);
+		}
+		new_window_switch(wc, s, wl);
+	} else if (!args_has(args, 'd')) {
+		if (session_set_current(s, wl) == 0)
+			server_redraw_session(s);
+		if (c != NULL && c->session != NULL)
+			w->latest = c;
+		recalculate_sizes();
+	} else
+		server_status_session_group(s);
+	return (failed ? CMD_RETURN_ERROR : CMD_RETURN_NORMAL);
+}
+
 static enum cmd_retval
 cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 {
@@ -238,8 +433,11 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 	struct cmd_find_state	 fs;
 	struct args_value	*av;
 	struct client		*wc = NULL;
-	struct new_window_draw	*nwd;
-	int			 detached;
+	int			 detached, argc;
+	const char		*app = NULL;
+	char			*mark = NULL, **argv = NULL;
+	struct session		*app_s;
+	enum cmd_retval		 retval;
 
 	if (args_has(args, 'W')) {
 		wc = cmd_find_client(item, args_get(args, 'W'), 0);
@@ -262,6 +460,31 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 			free(cause);
 			return (CMD_RETURN_ERROR);
 		}
+	}
+
+	/*
+	 * -M name: an app with one place (TMUX-167). Its window, found in any
+	 * session, moves into the target session, gets the -o options, has a
+	 * dead pane's program started again and is selected; only with none is
+	 * a window made, marked @<name>-window and named for the app.
+	 */
+	if ((app = args_get(args, 'M')) != NULL) {
+		if (*app == '\0' || app[strcspn(app, "=:. \t")] != '\0') {
+			cmdq_error(item, "bad app name: %s", app);
+			return (CMD_RETURN_ERROR);
+		}
+		xasprintf(&mark, "@%s-window", app);
+		args_to_vector(args, &argc, &argv);
+		wl = cmd_new_window_find_app(mark, argc, argv, &app_s);
+		if (argv != NULL)
+			cmd_free_argv(argc, argv);
+		if (wl != NULL) {
+			retval = cmd_new_window_app(item, args, wl, app_s, s,
+			    target->idx, mark, wc, c, tc);
+			free(mark);
+			return (retval);
+		}
+		wl = target->wl;
 	}
 
 	/*
@@ -311,6 +534,8 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 	sc.tc = tc;
 
 	sc.name = args_get(args, 'n');
+	if (sc.name == NULL)
+		sc.name = app;
 	args_to_vector(args, &sc.argc, &sc.argv);
 	sc.environ = environ_create();
 
@@ -334,6 +559,7 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 	if ((new_wl = spawn_window(&sc, &cause)) == NULL) {
 		cmdq_error(item, "create window failed: %s", cause);
 		free(cause);
+		free(mark);
 		if (sc.argv != NULL)
 			cmd_free_argv(sc.argc, sc.argv);
 		environ_free(sc.environ);
@@ -341,6 +567,10 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 	}
 	/* Checked above, so this can't fail. */
 	cmd_new_window_options(args, new_wl->window->options, &cause);
+	if (mark != NULL) {
+		options_set_string(new_wl->window->options, mark, 0, "1");
+		free(mark);
+	}
 	if (!detached || new_wl == s->curw) {
 		cmd_find_from_winlink(current, new_wl, 0);
 		server_redraw_session_group(s);
@@ -364,14 +594,7 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 	environ_free(sc.environ);
 
 	if (wc != NULL) {
-		nwd = xcalloc(1, sizeof *nwd);
-		nwd->item = item;
-		nwd->wp = new_wl->window->active;
-		nwd->tc = wc;
-		wc->references++;
-		nwd->session = s->id;
-		TAILQ_INSERT_TAIL(&new_window_draws, nwd, entry);
-		nwd->wp->draw_wait = nwd;
+		cmd_new_window_wait(item, new_wl->window->active, wc, s);
 		return (CMD_RETURN_WAIT);
 	}
 	return (CMD_RETURN_NORMAL);
