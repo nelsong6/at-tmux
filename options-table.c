@@ -1397,6 +1397,16 @@ const struct options_table_entry options_table[] = {
 		  "while the mouse is on it."
 	},
 
+	{ .name = "pane-hidden-text",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
+	  .flags = OPTIONS_TABLE_IS_ARRAY,
+	  .default_str = "",
+	  .separator = "",
+	  .text = "Text drawn as blanks where a pane's row starts with it, after "
+		  "any spaces. The first that matches is hidden."
+	},
+
 	{ .name = "pane-border-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,

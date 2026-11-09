@@ -1075,6 +1075,7 @@ window_pane_create(struct window *w, u_int sx, u_int sy, u_int hlimit)
 	colour_palette_from_option(&wp->palette, wp->options);
 
 	screen_init(&wp->base, sx, sy, hlimit);
+	wp->base.hidden_text = wp->options;
 	wp->screen = &wp->base;
 	window_pane_default_cursor(wp);
 

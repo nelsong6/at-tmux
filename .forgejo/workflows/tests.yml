@@ -176,6 +176,11 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-wrap.sh
 
+      - name: Hidden text tests
+        shell: bash
+        timeout-minutes: 3
+        run: TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-hidden-text.sh
+
       - name: Client name tests
         shell: bash
         timeout-minutes: 3

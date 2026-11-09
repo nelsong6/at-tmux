@@ -773,6 +773,7 @@ struct colour_palette {
 #define GRID_LINE_DOUBLE_WIDTH 0x20
 #define GRID_LINE_DOUBLE_TOP 0x40
 #define GRID_LINE_DOUBLE_BOTTOM 0x80
+#define GRID_LINE_HIDDEN_TEXT 0x100
 #define GRID_LINE_SIZE \
 	(GRID_LINE_DOUBLE_WIDTH|GRID_LINE_DOUBLE_TOP|GRID_LINE_DOUBLE_BOTTOM)
 
@@ -1013,6 +1014,9 @@ struct screen {
 	struct screen_write_cline	*write_list;
 
 	struct hyperlinks		*hyperlinks;
+
+	/* Options holding pane-hidden-text, for a pane's own screen. */
+	struct options			*hidden_text;
 };
 
 /* Screen write context. */
@@ -3370,6 +3374,8 @@ void	 screen_set_cursor_style(u_int, enum screen_cursor_style *, int *);
 void	 screen_set_cursor_colour(struct screen *, int);
 int	 screen_set_title(struct screen *, const char *);
 u_int	 screen_line_size_x(struct screen *, u_int);
+int	 screen_hides_text(struct screen *);
+int	 screen_hidden_text(struct screen *, u_int, u_int *, u_int *);
 void	 screen_set_path(struct screen *, const char *);
 void	 screen_push_title(struct screen *);
 void	 screen_pop_title(struct screen *);

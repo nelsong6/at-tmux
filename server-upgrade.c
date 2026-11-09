@@ -846,6 +846,7 @@ upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
 	 */
 	screen_free(&wp->base);
 	screen_init(&wp->base, wp->sx, wp->sy, 0);
+	wp->base.hidden_text = wp->options;
 	upgrade_restore_screen(&o, &wp->base);
 	gd = wp->base.grid;
 	if (gd->sx != wp->sx || gd->sy != wp->sy)

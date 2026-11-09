@@ -98,6 +98,7 @@ screen_init(struct screen *s, u_int sx, u_int sy, u_int hlimit)
 
 	s->write_list = NULL;
 	s->hyperlinks = NULL;
+	s->hidden_text = NULL;
 
 	screen_reinit(s);
 }
@@ -263,6 +264,78 @@ screen_line_size_x(struct screen *s, u_int py)
 	if ((gl->flags & GRID_LINE_SIZE) && sx > 1)
 		return (sx / 2);
 	return (sx);
+}
+
+/* Whether a screen has pane-hidden-text to hide. */
+int
+screen_hides_text(struct screen *s)
+{
+	struct options_entry	*o;
+
+	if (s->hidden_text == NULL)
+		return (0);
+	o = options_get(s->hidden_text, "pane-hidden-text");
+	return (o != NULL && options_array_first(o) != NULL);
+}
+
+/*
+ * Find the cells of a line drawn as blanks: the first pane-hidden-text the
+ * line starts with, after any spaces. The line is marked as having had hidden
+ * text, so a later change to it redraws it whole rather than leaving blanks
+ * that text no longer hidden would fill.
+ */
+int
+screen_hidden_text(struct screen *s, u_int py, u_int *start, u_int *end)
+{
+	struct grid			*gd = s->grid;
+	struct grid_line		*gl;
+	struct grid_cell		 gc;
+	struct options_entry		*o;
+	struct options_array_item	*a;
+	const char			*text;
+	size_t				 len, off;
+	u_int				 x, first, used;
+
+	if (!screen_hides_text(s))
+		return (0);
+	o = options_get(s->hidden_text, "pane-hidden-text");
+
+	gl = grid_get_line(gd, gd->hsize + py);
+	used = gl->cellused;
+	for (first = 0; first < used; first++) {
+		grid_view_get_cell(gd, first, py, &gc);
+		if (gc.data.size != 1 || *gc.data.data != ' ')
+			break;
+	}
+
+	for (a = options_array_first(o); a != NULL; a = options_array_next(a)) {
+		text = options_array_item_value(a)->string;
+		len = strlen(text);
+		if (len == 0)
+			continue;
+		off = 0;
+		for (x = first; x < used && off < len; x++) {
+			grid_view_get_cell(gd, x, py, &gc);
+			if (gc.flags & GRID_FLAG_PADDING)
+				continue;
+			if (gc.data.size > len - off ||
+			    memcmp(text + off, gc.data.data, gc.data.size) != 0)
+				break;
+			off += gc.data.size;
+		}
+		if (off != len)
+			continue;
+		for (; x < used; x++) {
+			grid_view_get_cell(gd, x, py, &gc);
+			if (~gc.flags & GRID_FLAG_PADDING)
+				break;
+		}
+		*start = first;
+		*end = x;
+		gl->flags |= GRID_LINE_HIDDEN_TEXT;
+		return (1);
+	}
+	return (0);
 }
 
 /* Set screen path. */

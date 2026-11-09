@@ -1320,6 +1320,24 @@ tty_line_size_differs(struct tty *tty, const struct tty_ctx *ctx, u_int py)
 	return (tty_get_line_size(tty, ctx->yoff + py) != size);
 }
 
+/*
+ * A change to a line with pane-hidden-text, or that had some, is drawn by
+ * redrawing the line, so the text stays hidden and what replaces it shows.
+ */
+static int
+tty_hidden_text_line(const struct tty_ctx *ctx, u_int py)
+{
+	struct screen	*s = ctx->s;
+	u_int		 sx, ex;
+
+	if (!screen_hides_text(s))
+		return (0);
+	if (screen_hidden_text(s, py, &sx, &ex))
+		return (1);
+	return (grid_get_line(s->grid, s->grid->hsize + py)->flags &
+	    GRID_LINE_HIDDEN_TEXT);
+}
+
 /* Rows a pane clears entirely go back to normal size. */
 static void
 tty_clear_line_sizes(struct tty *tty, const struct tty_ctx *ctx, u_int py,
@@ -1872,7 +1890,8 @@ tty_cmd_insertcharacter(struct tty *tty, const struct tty_ctx *ctx)
 	    tty_fake_bce(tty, &ctx->defaults, ctx->bg) ||
 	    (!tty_term_has(tty->term, TTYC_ICH) &&
 	    !tty_term_has(tty->term, TTYC_ICH1)) ||
-	    (c->overlay_check != NULL || panel_width(c) != 0)) {
+	    (c->overlay_check != NULL || panel_width(c) != 0) ||
+	    tty_hidden_text_line(ctx, ctx->ocy)) {
 		tty_draw_pane(tty, ctx, ctx->ocy);
 		return;
 	}
@@ -1895,7 +1914,8 @@ tty_cmd_deletecharacter(struct tty *tty, const struct tty_ctx *ctx)
 	    tty_fake_bce(tty, &ctx->defaults, ctx->bg) ||
 	    (!tty_term_has(tty->term, TTYC_DCH) &&
 	    !tty_term_has(tty->term, TTYC_DCH1)) ||
-	    (c->overlay_check != NULL || panel_width(c) != 0)) {
+	    (c->overlay_check != NULL || panel_width(c) != 0) ||
+	    tty_hidden_text_line(ctx, ctx->ocy)) {
 		tty_draw_pane(tty, ctx, ctx->ocy);
 		return;
 	}
@@ -1911,6 +1931,11 @@ tty_cmd_deletecharacter(struct tty *tty, const struct tty_ctx *ctx)
 void
 tty_cmd_clearcharacter(struct tty *tty, const struct tty_ctx *ctx)
 {
+	if (tty_hidden_text_line(ctx, ctx->ocy)) {
+		tty_draw_pane(tty, ctx, ctx->ocy);
+		return;
+	}
+
 	tty_default_attributes(tty, &ctx->defaults, ctx->palette, ctx->bg,
 	    ctx->s->hyperlinks);
 
@@ -1978,6 +2003,11 @@ tty_cmd_deleteline(struct tty *tty, const struct tty_ctx *ctx)
 void
 tty_cmd_clearline(struct tty *tty, const struct tty_ctx *ctx)
 {
+	if (tty_hidden_text_line(ctx, ctx->ocy)) {
+		tty_draw_pane(tty, ctx, ctx->ocy);
+		return;
+	}
+
 	tty_default_attributes(tty, &ctx->defaults, ctx->palette, ctx->bg,
 	    ctx->s->hyperlinks);
 
@@ -1989,6 +2019,11 @@ tty_cmd_clearendofline(struct tty *tty, const struct tty_ctx *ctx)
 {
 	u_int	nx = ctx->sx - ctx->ocx;
 
+	if (tty_hidden_text_line(ctx, ctx->ocy)) {
+		tty_draw_pane(tty, ctx, ctx->ocy);
+		return;
+	}
+
 	tty_default_attributes(tty, &ctx->defaults, ctx->palette, ctx->bg,
 	    ctx->s->hyperlinks);
 
@@ -1998,6 +2033,11 @@ tty_cmd_clearendofline(struct tty *tty, const struct tty_ctx *ctx)
 void
 tty_cmd_clearstartofline(struct tty *tty, const struct tty_ctx *ctx)
 {
+	if (tty_hidden_text_line(ctx, ctx->ocy)) {
+		tty_draw_pane(tty, ctx, ctx->ocy);
+		return;
+	}
+
 	tty_default_attributes(tty, &ctx->defaults, ctx->palette, ctx->bg,
 	    ctx->s->hyperlinks);
 
@@ -2269,6 +2309,11 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 	    (gcp->data.width == 1 && !tty_check_overlay(tty, px, py)))
 		return;
 
+	if (tty_hidden_text_line(ctx, ctx->ocy)) {
+		tty_draw_pane(tty, ctx, ctx->ocy);
+		return;
+	}
+
 	if (tty_line_size_differs(tty, ctx, ctx->ocy)) {
 		tty_draw_pane(tty, ctx, ctx->ocy);
 		return;
@@ -2322,6 +2367,11 @@ tty_cmd_cells(struct tty *tty, const struct tty_ctx *ctx)
 
 	if (!tty_is_visible(tty, ctx, ctx->ocx, ctx->ocy, ctx->num, 1))
 		return;
+
+	if (tty_hidden_text_line(ctx, ctx->ocy)) {
+		tty_draw_pane(tty, ctx, ctx->ocy);
+		return;
+	}
 
 	if (tty_line_size_differs(tty, ctx, ctx->ocy)) {
 		tty_draw_pane(tty, ctx, ctx->ocy);

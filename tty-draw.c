@@ -125,8 +125,8 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 	struct grid_line	*gl;
 #endif
 	u_int			 i, j, last_i, cx, ex, width;
-	u_int			 cellsize, bg, lsx;
-	int			 flags, empty, wrapped = 0;
+	u_int			 cellsize, bg, lsx, hsx, hex;
+	int			 flags, empty, wrapped = 0, hidden;
 	char			 buf[1000];
 	size_t			 len;
 	enum tty_draw_line_state current_state, next_state;
@@ -240,6 +240,8 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 	last.bg = defaults->bg;
 	tty_default_attributes(tty, defaults, palette, 8, s->hyperlinks);
 
+	hidden = screen_hidden_text(s, py, &hsx, &hex);
+
 	/* Loop over each character in the range. */
 	last_i = i = 0;
 	len = 0;
@@ -258,6 +260,8 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 		} else {
 			/* Get the current cell. */
 			grid_view_get_cell(gd, px + i, py, &gc);
+			if (hidden && px + i >= hsx && px + i < hex)
+				memcpy(&gc, &grid_default_cell, sizeof gc);
 
 			/* Update for codeset if needed. */
 			gcp = tty_check_codeset(tty, &gc);

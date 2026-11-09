@@ -5672,6 +5672,13 @@ commands.
 .It Ic pane-footer-style Ar style
 Set the style of the pane's footer row.
 .Pp
+.It Ic pane-hidden-text[] Ar text
+Text drawn as blanks where a row of the pane starts with it, after any spaces.
+The first that matches is hidden; the rest of the row is drawn as it is.
+The text is still in the pane:
+.Ic capture-pane
+and copy mode show it.
+.Pp
 .It Ic pane-border-format Ar format
 Set the text shown in pane border status lines.
 .Pp
