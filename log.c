@@ -88,11 +88,14 @@ log_prune_messages(const char *dir)
 #endif
 }
 
-/* Command errors and failed exits, independent of the verbose debug log. */
-int
-log_message(const char *message)
+/*
+ * Append a line to this process's file in ~/.tmux/<kind> (or the directory
+ * named by variable), rolling it at MESSAGE_LOG_BYTES.
+ */
+static int
+log_record(const char *kind, const char *variable, int *pruned,
+    const char *message)
 {
-	static int	 pruned;
 	const char	*dir, *home;
 	char		*owned = NULL, *path, *previous;
 	char		*escaped = NULL, *socket = NULL, *record = NULL;
@@ -110,7 +113,7 @@ log_message(const char *message)
 	}
 	strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%SZ", utc);
 
-	dir = getenv("TMUX_ERROR_LOG_DIR");
+	dir = getenv(variable);
 	if (dir == NULL || *dir == '\0') {
 		if ((home = find_home()) == NULL) {
 			errno = ENOENT;
@@ -123,7 +126,7 @@ log_message(const char *message)
 		mkdir(owned, S_IRWXU);
 #endif
 		free(owned);
-		xasprintf(&owned, "%s/.tmux/errors", home);
+		xasprintf(&owned, "%s/.tmux/%s", home, kind);
 		dir = owned;
 	}
 #ifdef _WIN32
@@ -137,9 +140,9 @@ log_message(const char *message)
 		errno = error;
 		return (-1);
 	}
-	if (!pruned) {
+	if (!*pruned) {
 		log_prune_messages(dir);
-		pruned = 1;
+		*pruned = 1;
 	}
 	xasprintf(&path, "%s/tmux-%ld.log", dir, (long)getpid());
 	xasprintf(&previous, "%s.1", path);
@@ -175,6 +178,27 @@ done:
 	free(path);
 	errno = error;
 	return (error == 0 ? 0 : -1);
+}
+
+/*
+ * Command errors and failed exits, independent of the verbose debug log.
+ * Everything here is a failure: the Switchyard shows each line as one.
+ */
+int
+log_message(const char *message)
+{
+	static int	 pruned;
+
+	return (log_record("errors", "TMUX_ERROR_LOG_DIR", &pruned, message));
+}
+
+/* Things the server did that are worth checking later but are not failures. */
+int
+log_event(const char *message)
+{
+	static int	 pruned;
+
+	return (log_record("events", "TMUX_EVENT_LOG_DIR", &pruned, message));
 }
 
 /* Log callback for libevent. */

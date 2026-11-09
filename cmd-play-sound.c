@@ -98,7 +98,10 @@ cmd_play_sound_find_player(void)
 }
 #endif
 
-/* Record a sound played, or why it wasn't, with the window it was for. */
+/*
+ * Record a sound played, or why it wasn't, with the window it was for, in the
+ * events log: neither is a failure. One that can't play is a command error.
+ */
 static void
 cmd_play_sound_record(struct window *w, const char *path, const char *why)
 {
@@ -112,7 +115,7 @@ cmd_play_sound_record(struct window *w, const char *path, const char *why)
 	else
 		xasprintf(&line, "play-sound did not play %s%s: %s", path,
 		    window != NULL ? window : "", why);
-	log_message(line);
+	log_event(line);
 	free(line);
 	free(window);
 }

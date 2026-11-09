@@ -11,7 +11,8 @@ TMUX="$TEST_TMUX -Lflight-$$"
 OUT=$(mktemp -d) || exit 1
 TMUX_FLIGHT_DIR=$OUT/flight
 TMUX_ERROR_LOG_DIR=$OUT/errors
-export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR
+TMUX_EVENT_LOG_DIR=$OUT/events
+export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR TMUX_EVENT_LOG_DIR
 trap '$TMUX kill-server 2>/dev/null; rm -rf "$OUT"' 0 1 15
 
 fail() {

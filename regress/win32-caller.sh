@@ -60,12 +60,15 @@ out=$($TMUX play-sound 'C:\no\such\file.wav' 2>&1) &&
     fail "play-sound of a missing file succeeded"
 echo "$out" | grep -q "can't read" || fail "play-sound: wrong error: $out"
 
-# -s plays nothing and records why in the server's log, as a format for the target.
+# -s plays nothing and records why in the server's events log, as a format for
+# the target; a sound held back is not a failure, so not in the errors log (TMUX-169).
 $TMUX set -w -t p:front @hold 'landing x #1' || fail "set @hold"
 $TMUX play-sound -t p:front -s 'held: #{@hold}' 'C:/no/such/file.wav' ||
     fail "play-sound -s failed"
-cat "$TMUX_ERROR_LOG_DIR"/tmux-*.log | tr -d '\r' |
+cat "$TMUX_EVENT_LOG_DIR"/tmux-*.log | tr -d '\r' |
     grep -q 'play-sound did not play C:/no/such/file.wav for window @[0-9]* (front): held: landing x #1$' ||
-    fail "play-sound -s: no record in: $(cat "$TMUX_ERROR_LOG_DIR"/tmux-*.log)"
+    fail "play-sound -s: no record in: $(cat "$TMUX_EVENT_LOG_DIR"/tmux-*.log)"
+cat "$TMUX_ERROR_LOG_DIR"/tmux-*.log 2>/dev/null | grep -q 'play-sound did not play' &&
+    fail "play-sound -s: recorded as an error: $(cat "$TMUX_ERROR_LOG_DIR"/tmux-*.log)"
 
 exit 0

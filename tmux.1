@@ -1632,6 +1632,12 @@ The
 .Ev TMUX_ERROR_LOG_DIR
 environment variable selects another directory.
 Failed pane exits are recorded even when the pane closes.
+Lines that record what the server did but are not failures, such as
+.Ic play-sound
+calls, go to
+.Pa ~/.tmux/events/tmux-PID.log
+in the same format and with the same limits, or to the directory named by
+.Ev TMUX_EVENT_LOG_DIR .
 .Fl J
 and
 .Fl T
@@ -7479,8 +7485,8 @@ With
 nothing is played and
 .Ar reason ,
 a format, is recorded as why.
-Each call is recorded in the server's error log, played or not, with why and the
-window it was for.
+Each call is recorded in the server's events log, played or not, with why and
+the window it was for; a sound that can't be played is a command error.
 .It Ic start-program Ar program Op Ar argument ...
 Start
 .Ar program

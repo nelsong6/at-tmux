@@ -1,9 +1,9 @@
 #!/bin/sh
 
 # play-sound runs the platform's player from the server, without waiting, and a
-# new sound stops the one playing. Each call leaves a line in the server's log,
-# played or held back with -s (TMUX-168). Windows has its own check in
-# win32-caller.sh.
+# new sound stops the one playing. Each call leaves a line in the server's events
+# log, played or held back with -s (TMUX-168), and none in the errors log, which
+# holds only failures (TMUX-169). Windows has its own check in win32-caller.sh.
 
 TERM=screen
 
@@ -13,9 +13,10 @@ $TMUX kill-server 2>/dev/null
 
 DIR=$(mktemp -d)
 trap '$TMUX kill-server 2>/dev/null; rm -rf "$DIR"' 0 1 15
-mkdir "$DIR/bin" "$DIR/empty" "$DIR/log"
+mkdir "$DIR/bin" "$DIR/empty" "$DIR/log" "$DIR/events"
 TMUX_ERROR_LOG_DIR=$DIR/log
-export TMUX_ERROR_LOG_DIR
+TMUX_EVENT_LOG_DIR=$DIR/events
+export TMUX_ERROR_LOG_DIR TMUX_EVENT_LOG_DIR
 : >"$DIR/one.wav"
 : >"$DIR/two.wav"
 : >"$DIR/three.wav"
@@ -60,8 +61,8 @@ wait_for "started $DIR/one.wav"
 $TMUX play-sound "$DIR/two.wav" || fail "the second sound failed"
 wait_for "stopped $DIR/one.wav"
 wait_for "started $DIR/two.wav"
-cat "$DIR"/log/*.log | grep -q "play-sound played $DIR/two.wav\$" ||
-	fail "no record of the sound played: $(cat "$DIR"/log/*.log)"
+cat "$DIR"/events/*.log | grep -q "play-sound played $DIR/two.wav\$" ||
+	fail "no record of the sound played: $(cat "$DIR"/events/*.log)"
 
 # -s plays nothing and records why, as a format for the target.
 $TMUX set -w @hold 'landing x #1'
@@ -70,10 +71,14 @@ $TMUX play-sound -t: "$DIR/three.wav" || fail "a sound for a window failed"
 wait_for "started $DIR/three.wav"
 [ "$(grep -c "started $DIR/one.wav" "$DIR/played")" = 1 ] ||
 	fail "-s played the sound: $(cat "$DIR/played")"
-cat "$DIR"/log/*.log | grep -q "play-sound did not play $DIR/one.wav for window @0 (.*): held: landing x #1\$" ||
-	fail "no record of the sound held back: $(cat "$DIR"/log/*.log)"
-cat "$DIR"/log/*.log | grep -q "play-sound played $DIR/three.wav for window @0 " ||
-	fail "no record of the window's sound: $(cat "$DIR"/log/*.log)"
+cat "$DIR"/events/*.log | grep -q "play-sound did not play $DIR/one.wav for window @0 (.*): held: landing x #1\$" ||
+	fail "no record of the sound held back: $(cat "$DIR"/events/*.log)"
+cat "$DIR"/events/*.log | grep -q "play-sound played $DIR/three.wav for window @0 " ||
+	fail "no record of the window's sound: $(cat "$DIR"/events/*.log)"
+cat "$DIR"/log/*.log | grep -q "play-sound" &&
+	fail "a sound played or held back is in the errors log: $(cat "$DIR"/log/*.log)"
+cat "$DIR"/log/*.log | grep -q "can't read $DIR/missing.wav" ||
+	fail "a sound that failed is missing from the errors log: $(cat "$DIR"/log/*.log)"
 
 $TMUX set-environment -g PATH "$DIR/empty"
 out=$($TMUX play-sound "$DIR/two.wav" 2>&1) && fail "no player succeeded"

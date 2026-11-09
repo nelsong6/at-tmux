@@ -41,14 +41,15 @@ if [ -n "$left" ]; then
 	exit 1
 fi
 
-# The servers a test starts keep their crash records and error logs in a
+# The servers a test starts keep their crash records, error and event logs in a
 # folder of their own, removed after the run. In ~/.tmux they sat beside the
 # live server's, where a test server's end read as a crash (TMUX-164). A test
 # that checks those records points them somewhere of its own.
 records=$(mktemp -d)
 TMUX_FLIGHT_DIR=$(cygpath -m "$records/flight")
 TMUX_ERROR_LOG_DIR=$(cygpath -m "$records/errors")
-export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR
+TMUX_EVENT_LOG_DIR=$(cygpath -m "$records/events")
+export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR TMUX_EVENT_LOG_DIR
 
 timeout --foreground --kill-after=5 "${TEST_TIMEOUT:-300}" bash "$dir/$1"
 status=$?
