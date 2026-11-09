@@ -386,16 +386,18 @@ screen_redraw_check_cell(struct screen_redraw_ctx *ctx, u_int px, u_int py,
 			if (pane_status == PANE_STATUS_TOP)
 				line = wp->yoff - 1;
 			else
-				line = wp->yoff + wp->sy;
+				line = wp->yoff + wp->sy + wp->footer_rows;
 
 			/*
 			 * Check if py could lie within a scrollbar. If the
 			 * pane is at the top then py == 0 to sy; if the pane
-			 * is not at the top, then yoff to yoff + sy.
+			 * is not at the top, then yoff to yoff + sy. The
+			 * scrollbar is sy rows high, so not on a footer row.
 			 */
 			sb_w = wp->scrollbar_style.width +
 			    wp->scrollbar_style.pad;
-			if ((pane_status && py != line) ||
+			if ((pane_status && py != line &&
+			    (wp->footer_rows == 0 || py != wp->yoff + wp->sy)) ||
 			    (wp->yoff == 0 && py < wp->sy) ||
 			     (py >= wp->yoff && py < wp->yoff + wp->sy)) {
 				/* Check if px lies within a scrollbar. */
@@ -487,7 +489,7 @@ screen_redraw_make_pane_status(struct client *c, struct window_pane *wp,
 		if (pane_status == PANE_STATUS_TOP)
 			py = wp->yoff - 1;
 		else
-			py = wp->yoff + wp->sy;
+			py = wp->yoff + wp->sy + wp->footer_rows;
 		cell_type = screen_redraw_type_of_cell(rctx, px, py);
 		screen_redraw_border_set(w, wp, pane_lines, cell_type, &gc);
 		screen_write_cell(&ctx, &gc);
@@ -568,7 +570,7 @@ screen_redraw_draw_pane_status(struct screen_redraw_ctx *ctx)
 		if (ctx->pane_status == PANE_STATUS_TOP)
 			yoff = wp->yoff - 1;
 		else
-			yoff = wp->yoff + wp->sy;
+			yoff = wp->yoff + wp->sy + wp->footer_rows;
 		screen_redraw_draw_pane_row(ctx, &wp->status_screen,
 		    wp->status_size, wp->xoff + 2, yoff);
 	}

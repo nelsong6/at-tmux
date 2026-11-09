@@ -130,6 +130,32 @@ wait_until dragged || {
     echo "dragging the border under a footer did not resize: $before -> $(height %0)"
     screen; exit 1
 }
+
+# A bottom status line goes below the footer: on that border for the pane above,
+# on the window's last row for the pane at the bottom (TMUX-174).
+$TMUX set -p -t "$below" @row 1
+$TMUX set -w -t %0 pane-border-format ' STATUS_#{pane_id} '
+$TMUX set -w -t %0 pane-border-status bottom
+line() { screen | sed -n "$(($1 + 1))p"; } # a 0-based window row
+under_footer() {
+    end=$(($(top "$1") + $(height "$1")))
+    line "$end" | grep -q "^ROW_$1_" && line $((end + 1)) | grep -q "STATUS_$1 "
+}
+statuses() { under_footer %0 && under_footer "$below" && line 23 | grep -q "STATUS_$below "; }
+wait_until statuses || { echo 'a bottom status line is not under its footer'; screen; exit 1; }
+border=$(top "$below")
+before=$(height %0)
+mouse "0;2;${border}M"
+mouse "32;2;$((border - 2))M"
+mouse "0;2;$((border - 2))m"
+dragged() { [ "$(height %0)" = $((before - 2)) ]; }
+wait_until dragged || {
+    echo "dragging a status line under a footer did not resize: $before -> $(height %0)"
+    screen; exit 1
+}
+wait_until statuses || { echo 'a status line left its footer after a drag'; screen; exit 1; }
+$TMUX set -wu -t %0 pane-border-status
+$TMUX set -wu -t %0 pane-border-format
 $TMUX kill-pane -t "$below"
 
 # It survives an upgrade: same panes, same rows.

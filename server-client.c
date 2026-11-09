@@ -783,16 +783,20 @@ server_client_check_mouse_in_pane(struct window_pane *wp, u_int px, u_int py,
 		sb_w = 0;
 		sb_pad = 0;
 	}
-	/* A pane's footer row sits between its content and the border below. */
+	/*
+	 * A pane's footer row sits between its content and the border below,
+	 * where a bottom status line goes.
+	 */
 	bottom = wp->yoff + wp->sy + wp->footer_rows;
 	if (pane_status == PANE_STATUS_TOP)
 		line = wp->yoff - 1;
 	else if (pane_status == PANE_STATUS_BOTTOM)
-		line = wp->yoff + wp->sy;
+		line = bottom;
 
 	/* Check if point is within the pane or scrollbar. */
 	if (((pane_status != PANE_STATUS_OFF &&
-	    py != line && py != bottom) ||
+	    py != line && py != bottom &&
+	    (wp->footer_rows == 0 || py != wp->yoff + wp->sy)) ||
 	    (wp->yoff == 0 && py < wp->sy) ||
 	    (py >= wp->yoff && py < wp->yoff + wp->sy)) &&
 	    ((sb_pos == PANE_SCROLLBARS_RIGHT &&
