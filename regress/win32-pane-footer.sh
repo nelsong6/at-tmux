@@ -112,6 +112,26 @@ wait_until changed || { echo 'a new command did not run the row job'; exit 1; }
 $TMUX set -pu -t %0 pane-footer
 wait_until row_is ROW_%0_ || { echo 'the row did not go back'; screen; exit 1; }
 
+# The border under a footer is found and dragged like any other: the footer row
+# sits between the pane and its border (TMUX-172).
+below=$($TMUX split-window -v -d -P -F '#{pane_id}' -t %0 | tr -d '\r')
+top() { $TMUX display -p -t "$1" '#{pane_top}' | tr -d '\r'; }
+footer_above() { screen | sed -n "$(($(top "$below") - 1))p" | grep -q '^ROW_%0_'; }
+wait_until footer_above || { echo 'the split has no footer above it'; screen; exit 1; }
+border=$(top "$below") # pane_top counts from 0, so as a 1-based mouse row it is the border
+before=$(height %0)
+mouse() { $OUTER send-keys -H $(printf '\033[<%s' "$1" | od -An -tx1); }
+mouse "0;2;${border}M"
+mouse "32;2;$((border - 1))M"
+mouse "32;2;$((border - 3))M"
+mouse "0;2;$((border - 3))m"
+dragged() { [ "$(height %0)" = $((before - 3)) ]; }
+wait_until dragged || {
+    echo "dragging the border under a footer did not resize: $before -> $(height %0)"
+    screen; exit 1
+}
+$TMUX kill-pane -t "$below"
+
 # It survives an upgrade: same panes, same rows.
 old=$($TMUX display -p '#{pid}' | tr -d '\r')
 panes=$($TMUX list-panes -a -F '#{pane_id}|#{pane_pid}')

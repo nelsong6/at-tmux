@@ -770,7 +770,7 @@ server_client_check_mouse_in_pane(struct window_pane *wp, u_int px, u_int py,
 	struct options		*wo = w->options;
 	struct window_pane	*fwp;
 	int			 pane_status, sb, sb_pos, sb_w, sb_pad;
-	u_int			 line, sl_top, sl_bottom;
+	u_int			 line, sl_top, sl_bottom, bottom;
 
 	sb = options_get_number(wo, "pane-scrollbars");
 	sb_pos = options_get_number(wo, "pane-scrollbars-position");
@@ -783,6 +783,8 @@ server_client_check_mouse_in_pane(struct window_pane *wp, u_int px, u_int py,
 		sb_w = 0;
 		sb_pad = 0;
 	}
+	/* A pane's footer row sits between its content and the border below. */
+	bottom = wp->yoff + wp->sy + wp->footer_rows;
 	if (pane_status == PANE_STATUS_TOP)
 		line = wp->yoff - 1;
 	else if (pane_status == PANE_STATUS_BOTTOM)
@@ -790,7 +792,7 @@ server_client_check_mouse_in_pane(struct window_pane *wp, u_int px, u_int py,
 
 	/* Check if point is within the pane or scrollbar. */
 	if (((pane_status != PANE_STATUS_OFF &&
-	    py != line && py != wp->yoff + wp->sy) ||
+	    py != line && py != bottom) ||
 	    (wp->yoff == 0 && py < wp->sy) ||
 	    (py >= wp->yoff && py < wp->yoff + wp->sy)) &&
 	    ((sb_pos == PANE_SCROLLBARS_RIGHT &&
@@ -828,8 +830,8 @@ server_client_check_mouse_in_pane(struct window_pane *wp, u_int px, u_int py,
 			    (sb_pos == PANE_SCROLLBARS_LEFT &&
 			    fwp->xoff + fwp->sx == px)) &&
 			    fwp->yoff <= 1 + py &&
-			    fwp->yoff + fwp->sy >= py) ||
-			    (fwp->yoff + fwp->sy == py &&
+			    fwp->yoff + fwp->sy + fwp->footer_rows >= py) ||
+			    (fwp->yoff + fwp->sy + fwp->footer_rows == py &&
 			    fwp->xoff <= 1 + px &&
 			    fwp->xoff + fwp->sx >= px))
 				break;
