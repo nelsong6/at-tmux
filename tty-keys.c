@@ -228,6 +228,47 @@ static const struct tty_default_key_raw tty_default_raw_keys[] = {
 	{ "\033[?997;2n", KEYC_REPORT_LIGHT_THEME },
 };
 
+/*
+ * Keys the kitty keyboard protocol numbers in the Unicode private use area
+ * (CAPS_LOCK at 57358 to ISO_LEVEL5_SHIFT at 57454). It sends the numeric
+ * keypad this way as soon as it is asked for, so each keypad key is read as
+ * the key its vt100 sequence above is. A zero is a key tmux has no name for
+ * (F13 and up, media, lone modifiers), which is dropped rather than typed
+ * into the pane as a private use character.
+ */
+#define TTY_KITTY_FIRST 57358
+#define TTY_KITTY_LAST 57454
+static const key_code tty_kitty_keys[TTY_KITTY_LAST - TTY_KITTY_FIRST + 1] = {
+	[57399 - TTY_KITTY_FIRST] = KEYC_KP_ZERO|KEYC_KEYPAD,
+	[57400 - TTY_KITTY_FIRST] = KEYC_KP_ONE|KEYC_KEYPAD,
+	[57401 - TTY_KITTY_FIRST] = KEYC_KP_TWO|KEYC_KEYPAD,
+	[57402 - TTY_KITTY_FIRST] = KEYC_KP_THREE|KEYC_KEYPAD,
+	[57403 - TTY_KITTY_FIRST] = KEYC_KP_FOUR|KEYC_KEYPAD,
+	[57404 - TTY_KITTY_FIRST] = KEYC_KP_FIVE|KEYC_KEYPAD,
+	[57405 - TTY_KITTY_FIRST] = KEYC_KP_SIX|KEYC_KEYPAD,
+	[57406 - TTY_KITTY_FIRST] = KEYC_KP_SEVEN|KEYC_KEYPAD,
+	[57407 - TTY_KITTY_FIRST] = KEYC_KP_EIGHT|KEYC_KEYPAD,
+	[57408 - TTY_KITTY_FIRST] = KEYC_KP_NINE|KEYC_KEYPAD,
+	[57409 - TTY_KITTY_FIRST] = KEYC_KP_PERIOD|KEYC_KEYPAD,
+	[57410 - TTY_KITTY_FIRST] = KEYC_KP_SLASH|KEYC_KEYPAD,
+	[57411 - TTY_KITTY_FIRST] = KEYC_KP_STAR|KEYC_KEYPAD,
+	[57412 - TTY_KITTY_FIRST] = KEYC_KP_MINUS|KEYC_KEYPAD,
+	[57413 - TTY_KITTY_FIRST] = KEYC_KP_PLUS|KEYC_KEYPAD,
+	[57414 - TTY_KITTY_FIRST] = KEYC_KP_ENTER|KEYC_KEYPAD,
+	[57415 - TTY_KITTY_FIRST] = '=',
+	[57416 - TTY_KITTY_FIRST] = ',',
+	[57417 - TTY_KITTY_FIRST] = KEYC_LEFT|KEYC_CURSOR,
+	[57418 - TTY_KITTY_FIRST] = KEYC_RIGHT|KEYC_CURSOR,
+	[57419 - TTY_KITTY_FIRST] = KEYC_UP|KEYC_CURSOR,
+	[57420 - TTY_KITTY_FIRST] = KEYC_DOWN|KEYC_CURSOR,
+	[57421 - TTY_KITTY_FIRST] = KEYC_PPAGE,
+	[57422 - TTY_KITTY_FIRST] = KEYC_NPAGE,
+	[57423 - TTY_KITTY_FIRST] = KEYC_HOME,
+	[57424 - TTY_KITTY_FIRST] = KEYC_END,
+	[57425 - TTY_KITTY_FIRST] = KEYC_IC,
+	[57426 - TTY_KITTY_FIRST] = KEYC_DC,
+};
+
 /* Default xterm keys. */
 struct tty_default_key_xterm {
 	const char	*template;
@@ -1117,17 +1158,22 @@ tty_keys_extended_key(struct tty *tty, const char *buf, size_t len,
 	bspace = tty->tio.c_cc[VERASE];
 	if (bspace != _POSIX_VDISABLE && number == bspace)
 		nkey = KEYC_BSPACE;
-	else
-		nkey = number;
-
-	/* Convert UTF-32 codepoint into internal representation. */
-	if (nkey != KEYC_BSPACE && nkey & ~0x7f) {
-		if (utf8_fromwc(nkey, &ud) == UTF8_DONE &&
+	else if (number >= TTY_KITTY_FIRST && number <= TTY_KITTY_LAST) {
+		nkey = tty_kitty_keys[number - TTY_KITTY_FIRST];
+		if (nkey == 0) {
+			log_debug("%s: ignoring kitty key %u", c->name, number);
+			*key = KEYC_UNKNOWN;
+			return (0);
+		}
+	} else if (number & ~0x7f) {
+		/* Convert UTF-32 codepoint into internal representation. */
+		if (utf8_fromwc(number, &ud) == UTF8_DONE &&
 		    utf8_from_data(&ud, &uc) == UTF8_DONE)
 			nkey = uc;
 		else
 			return (-1);
-	}
+	} else
+		nkey = number;
 
 	/* Update the modifiers. */
 	if (modifiers > 0) {

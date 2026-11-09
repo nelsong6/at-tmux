@@ -3,8 +3,11 @@
 # A key the terminal sends in the kitty keyboard protocol's short form,
 # ESC [ key u with the modifier left out, is read as that key (TMUX-30:
 # Windows Terminal sends Esc as ESC [ 27 u once tmux asks for the protocol,
-# and tmux read it as M-[ and then typed 27u into the pane). The client runs
-# in a pane of a second server, which stands in for Windows Terminal: keys
+# and tmux read it as M-[ and then typed 27u into the pane). The numeric
+# keypad comes as numbers in Unicode's private use area (ESC [ 57414 u is
+# keypad Enter), read as the keypad's keys; one tmux has no key for (F13,
+# 57376) is dropped. Before TMUX-177 each was typed into the pane as a
+# private use character. The client runs in a pane of a second server, which stands in for Windows Terminal: keys
 # sent to that pane reach the client as its terminal's input.
 
 PATH=/bin:/usr/bin
@@ -38,6 +41,12 @@ bind -n Escape set -g @got Escape
 bind -n M-[ set -g @got M-[
 bind -n C-a set -g @got C-a
 bind -n M-Escape set -g @got M-Escape
+bind -n KPEnter set -g @got KPEnter
+bind -n KP5 set -g @got KP5
+bind -n KP. set -g @got KP.
+bind -n Up set -g @got Up
+bind -n PageDown set -g @got PageDown
+bind -n = set -g @got =
 EOF
 
 $TMUX -f "$CFG" new -d -x40 -y10 "Start-Sleep 60" </dev/null || exit 1
@@ -69,5 +78,30 @@ check() {
 check "ESC [ 27 u is Escape" Escape 1b 5b 32 37 75
 check "ESC [ 97 ; 5 u is still C-a" C-a 1b 5b 39 37 3b 35 75
 check "ESC [ 27 ; 3 u is still M-Escape" M-Escape 1b 5b 32 37 3b 33 75
+check "ESC [ 57414 u is KPEnter" KPEnter 1b 5b 35 37 34 31 34 75
+check "ESC [ 57404 u is KP5" KP5 1b 5b 35 37 34 30 34 75
+check "ESC [ 57409 u is KP." KP. 1b 5b 35 37 34 30 39 75
+check "ESC [ 57419 u (keypad Up, Num Lock off) is Up" Up \
+    1b 5b 35 37 34 31 39 75
+check "ESC [ 57422 u (keypad PageDown) is PageDown" PageDown \
+    1b 5b 35 37 34 32 32 75
+check "ESC [ 57415 u (keypad =) is =" = 1b 5b 35 37 34 31 35 75
+
+# In a shell's pane, keypad Enter runs the typed line as Enter does and F13
+# adds nothing to it. A private use character would leave the line reading
+# kp-ran and something more; the \n tmux sent for keypad Enter before
+# TMUX-177 opened a continuation line in PowerShell instead of running it.
+$TMUX unbind -n KPEnter
+$TMUX new-window -n shell
+wait_ready shell || { echo "FAIL: shell never drew a prompt"; exit 1; }
+$OUTER send-keys -l "echo kp-ran"
+$OUTER send-keys -H 1b 5b 35 37 33 37 36 75
+$OUTER send-keys -H 1b 5b 35 37 34 31 34 75
+if wait_for shell '^kp-ran$'; then
+	echo "PASS: keypad Enter runs the line, F13 is dropped"
+else
+	fail "keypad Enter in a shell pane"
+	$TMUX capture-pane -t shell -p
+fi
 
 exit $FAIL

@@ -56,7 +56,7 @@ The tests run on Forgejo (`.forgejo/workflows/tests.yml`), never ahead of a chan
 - `win32-conf-syntax.sh` — config file parsing (21 files)
 - `win32-pty-close.sh` — closing four consoles producing output leaves the server responsive and releases its workers before freeing them (tested with both Windows' console and packaged ConPTY)
 - `win32-keys.sh` — key handling (13 tests, tests effects not raw codes)
-- `win32-csi-u.sh` — a key in the kitty keyboard protocol's short form (`ESC [ 27 u`) is read as that key, not as `M-[` and typed text (client in a pane of a second server)
+- `win32-csi-u.sh` — a key in the kitty keyboard protocol's short form (`ESC [ 27 u`) is read as that key, not as `M-[` and typed text; the numeric keypad's private use numbers (`ESC [ 57414 u`) are read as keypad keys, keypad Enter runs a PowerShell line, and one tmux has no key for (F13) is dropped rather than typed into the pane (TMUX-177) (client in a pane of a second server)
 - `win32-late-terminal.sh` — `terminal-features`, `terminal-overrides` and `extended-keys` set after a client attached reach it at once, and setting them again sends the kitty keyboard request no second time (TMUX-157: a config loaded after the first attach left Ctrl+Tab dead until the window reopened)
 - `win32-detach-exec.sh` — a client started by `detach-client -E` has the same terminal features as the one it replaced, in a pseudo-console (TMUX-161: the replaced client stays alive and the terminal's first reply went missing, so the new client lost `clipboard` and `sixel`)
 - `win32-has-session.sh` — exit code validation

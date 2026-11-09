@@ -237,7 +237,7 @@ static struct input_key_entry input_key_defaults[] = {
 	  .data = "3"
 	},
 	{ .key = KEYC_KP_ENTER,
-	  .data = "\n"
+	  .data = "\r"
 	},
 	{ .key = KEYC_KP_ZERO,
 	  .data = "0"
