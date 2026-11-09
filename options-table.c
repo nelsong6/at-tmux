@@ -1388,6 +1388,15 @@ const struct options_table_entry options_table[] = {
 	  .text = "Style of a pane's footer row."
 	},
 
+	{ .name = "pane-footer-hover-style",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
+	  .flags = OPTIONS_TABLE_IS_STYLE,
+	  .default_str = "reverse",
+	  .text = "Style added to the click range in a pane's footer row "
+		  "while the mouse is on it."
+	},
+
 	{ .name = "pane-border-format",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,

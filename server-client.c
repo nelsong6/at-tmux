@@ -1058,6 +1058,8 @@ have_event:
 			m->w = wp->window->id;
 		}
 	}
+	if (type == MOVE)
+		window_set_footer_hover(w, footer ? wp : NULL, m->pane_footer_x);
 
 	/* Reset click type or add a click timer if needed. */
 	if (type == DOWN ||
@@ -3218,6 +3220,10 @@ server_client_reset_state(struct client *c)
 			mode &= ~ALL_MOUSE_MODES;
 			TAILQ_FOREACH(loop, &w->panes, entry) {
 				if (loop->screen->mode & MODE_MOUSE_ALL)
+					mode |= MODE_MOUSE_ALL;
+				/* A footer's ranges show where the mouse is. */
+				if (loop->footer_rows != 0 &&
+				    !TAILQ_EMPTY(&loop->footer_ranges))
 					mode |= MODE_MOUSE_ALL;
 			}
 		}

@@ -76,6 +76,18 @@ for click in '1 a' '2 b' '3 c'; do
     on_it() { [ "$($TMUX show -gqv @click | tr -d '\r')" = "$want" ]; }
     wait_until on_it || { echo "column $1 reached '$($TMUX show -gqv @click)', not '$want'"; exit 1; }
 done
+# The range under the mouse takes pane-footer-hover-style, and loses it when the mouse
+# leaves: the client asks its terminal for every mouse move while a footer has ranges
+# (TMUX-182). The outer copy shows how the client drew the row.
+row24() { $OUTER capture-pane -p -e -S 23 -E 23 | tr -d '\r'; }
+reversed() { row24 | grep -q "$(printf '\033')\[7m$1"; }
+move() { $OUTER send-keys -H $(printf '\033[<35;%d;24M' "$1" | od -An -tx1); }
+move 2
+wait_until reversed b || { echo 'the range under the mouse is not highlighted'; row24 | od -c | head; exit 1; }
+reversed a && { echo 'a range the mouse is not on is highlighted'; exit 1; }
+move 60
+gone() { ! row24 | grep -q "$(printf '\033')\[7m"; }
+wait_until gone || { echo 'the highlight stayed after the mouse left'; exit 1; }
 $TMUX set -pu -t %0 pane-footer
 
 # A row of pane output doesn't overwrite the footer, and the condition gives it back.

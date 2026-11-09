@@ -700,6 +700,30 @@ window_pane_footer_get_range(struct window_pane *wp, u_int x)
 	return (NULL);
 }
 
+/*
+ * Note which footer range the mouse is on: the one at x in wp's footer, or none
+ * when wp is NULL. Only entering or leaving a range redraws.
+ */
+void
+window_set_footer_hover(struct window *w, struct window_pane *wp, u_int x)
+{
+	struct window_pane	*loop;
+	struct style_range	*sr;
+	int			 hover, changed = 0;
+
+	TAILQ_FOREACH(loop, &w->panes, entry) {
+		hover = -1;
+		if (loop == wp && (sr = window_pane_footer_get_range(wp, x)) != NULL)
+			hover = sr->start;
+		if (loop->footer_hover != hover) {
+			loop->footer_hover = hover;
+			changed = 1;
+		}
+	}
+	if (changed)
+		server_redraw_window_borders(w);
+}
+
 struct window_pane *
 window_find_string(struct window *w, const char *s)
 {
@@ -1057,6 +1081,7 @@ window_pane_create(struct window *w, u_int sx, u_int sy, u_int hlimit)
 	screen_init(&wp->status_screen, 1, 1, 0);
 	screen_init(&wp->footer_screen, 1, 1, 0);
 	TAILQ_INIT(&wp->footer_ranges);
+	wp->footer_hover = wp->footer_hover_drawn = -1;
 
 	if (gethostname(host, sizeof host) == 0)
 		screen_set_title(&wp->base, host);

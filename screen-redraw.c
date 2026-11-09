@@ -577,6 +577,38 @@ screen_redraw_draw_pane_status(struct screen_redraw_ctx *ctx)
 	tty_cursor(&c->tty, 0, 0);
 }
 
+/* Add the hover style to the footer range the mouse is on, if it still has one. */
+static void
+screen_redraw_hover_pane_footer(struct window_pane *wp)
+{
+	struct grid		*gd = wp->footer_screen.grid;
+	struct style_range	*sr;
+	struct grid_cell	 hover, cell;
+	u_int			 x;
+
+	wp->footer_hover_drawn = wp->footer_hover;
+	if (wp->footer_hover < 0)
+		return;
+	TAILQ_FOREACH(sr, &wp->footer_ranges, entry) {
+		if (sr->start == (u_int)wp->footer_hover)
+			break;
+	}
+	if (sr == NULL) {
+		wp->footer_hover = wp->footer_hover_drawn = -1;
+		return;
+	}
+	style_apply(&hover, wp->options, "pane-footer-hover-style", NULL);
+	for (x = sr->start; x < sr->end && x < gd->sx; x++) {
+		grid_get_cell(gd, x, 0, &cell);
+		cell.attr |= hover.attr;
+		if (hover.fg != 8)
+			cell.fg = hover.fg;
+		if (hover.bg != 8)
+			cell.bg = hover.bg;
+		grid_set_cell(gd, x, 0, &cell);
+	}
+}
+
 /* Update a pane's footer row. */
 static int
 screen_redraw_make_pane_footer(struct client *c, struct window_pane *wp)
@@ -597,7 +629,8 @@ screen_redraw_make_pane_footer(struct client *c, struct window_pane *wp)
 	    options_get_string(wp->options, "pane-footer"));
 	format_free(ft);
 	force = screen_size_x(&wp->footer_screen) != width ||
-	    !grid_cells_equal(&gc, &wp->footer_style);
+	    !grid_cells_equal(&gc, &wp->footer_style) ||
+	    wp->footer_hover != wp->footer_hover_drawn;
 	if (!force && wp->footer_expanded != NULL &&
 	    strcmp(expanded, wp->footer_expanded) == 0) {
 		free(expanded);
@@ -613,6 +646,7 @@ screen_redraw_make_pane_footer(struct client *c, struct window_pane *wp)
 	status_free_ranges(&wp->footer_ranges);
 	format_draw(&ctx, &gc, width, expanded, &wp->footer_ranges, 0);
 	screen_write_stop(&ctx);
+	screen_redraw_hover_pane_footer(wp);
 	free(wp->footer_expanded);
 	wp->footer_expanded = expanded;
 	return (1);

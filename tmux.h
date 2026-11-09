@@ -1292,6 +1292,8 @@ struct window_pane {
 	struct grid_cell footer_style;
 	char		*footer_expanded;
 	struct style_ranges footer_ranges;
+	int		 footer_hover;	/* start of the range under the mouse, or -1 */
+	int		 footer_hover_drawn;
 
 	TAILQ_HEAD(, window_mode_entry) modes;
 
@@ -3418,6 +3420,8 @@ struct window_pane *window_get_active_at(struct window *, u_int, u_int);
 struct window_pane *window_find_string(struct window *, const char *);
 void		 window_update_pane_footers(struct window *);
 struct style_range *window_pane_footer_get_range(struct window_pane *, u_int);
+void		 window_set_footer_hover(struct window *, struct window_pane *,
+		     u_int);
 int		 window_has_pane(struct window *, struct window_pane *);
 int		 window_set_active_pane(struct window *, struct window_pane *,
 		     int);
