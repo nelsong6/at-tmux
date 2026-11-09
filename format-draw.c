@@ -945,7 +945,7 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 		if (srs != NULL) {
 			if (fr != NULL && !format_is_type(fr, &sy)) {
 				if (s[current].cx != fr->start) {
-					fr->end = s[current].cx + 1;
+					fr->end = s[current].cx;
 					TAILQ_INSERT_TAIL(&frs, fr, entry);
 				} else
 					free(fr);

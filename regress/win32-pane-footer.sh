@@ -63,6 +63,21 @@ $OUTER send-keys -H 1b 5b 3c 30 3b 32 3b 32 34 4d 1b 5b 3c 30 3b 32 3b 32 34 6d
 clicked() { [ "$($TMUX show -gqv @click | tr -d '\r')" = '%0 links' ]; }
 wait_until clicked || { echo 'click did not reach its pane'; $TMUX show -gqv @click; exit 1; }
 
+# A range ends where the next begins, so one a column wide is clicked on its own column
+# (TMUX-178: each ended a column late, and a click there reached the range before it).
+$TMUX set -p -t %0 pane-footer '#[range=user|a]a#[range=user|b]b#[range=user|c]c#[norange]'
+for click in '1 a' '2 b' '3 c'; do
+    set -- $click
+    want="%0 $2"
+    # Each click waits out tmux's 300 ms click timer, or it is a double or triple click.
+    sleep 0.4
+    $TMUX set -gu @click
+    $OUTER send-keys -H $(printf '\033[<0;%d;24M\033[<0;%d;24m' "$1" "$1" | od -An -tx1)
+    on_it() { [ "$($TMUX show -gqv @click | tr -d '\r')" = "$want" ]; }
+    wait_until on_it || { echo "column $1 reached '$($TMUX show -gqv @click)', not '$want'"; exit 1; }
+done
+$TMUX set -pu -t %0 pane-footer
+
 # A row of pane output doesn't overwrite the footer, and the condition gives it back.
 $TMUX send-keys -t %0 'echo OUTPUT' Enter
 wait_until two_rows || { echo 'output overwrote the footer'; screen; exit 1; }
