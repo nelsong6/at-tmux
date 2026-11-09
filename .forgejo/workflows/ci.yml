@@ -9,6 +9,12 @@ on:
   # a push when its ref is master.
   workflow_dispatch:
 
+# Master runs go one at a time, so each numbers its release after the
+# previous one's tag exists.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # A PR run keeps its package under its tree, so a merge with that tree could release
   # that package; a job's token can't download it yet (TMUX-134), so it builds.
@@ -153,11 +159,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Releases are numbered on the tmux version the fork is built on (v3.6a.1,
+      # v3.6a.2, ...), so a new tmux base starts a new series. A commit that
+      # already has a number keeps it.
       - name: Version
+        env:
+          PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
         run: |
-          # A release's own tag is never the base of the next release.
-          version=$(git describe --tags --always --exclude '*-g*')
+          base=$(sed -n 's/.*PACKAGE_VERSION="\([^"-]*\).*/\1/p' CMakeLists.txt)
+          [ -n "$base" ] || { echo "::error::CMakeLists.txt has no PACKAGE_VERSION"; exit 1; }
+          prefix="v$base"
+          pattern="^${prefix//./\\.}\.[0-9]+$"
+          if [ "$PUBLISH" != true ]; then
+            version="validation-$(git rev-parse --short=7 HEAD)"
+          else
+            version=$(git tag --points-at HEAD | grep -E "$pattern" | sort -V | tail -1 || true)
+            if [ -z "$version" ]; then
+              last=$(git tag -l | grep -E "$pattern" | sort -V | tail -1 || true)
+              version="$prefix.$(( ${last##*.} + 1 ))"
+            fi
+          fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Version $version"
 
       - uses: https://data.forgejo.org/forgejo/download-artifact@v4
         with:
@@ -175,32 +198,6 @@ jobs:
           echo "$hash  $zip" > "$zip.sha256"
           echo "Packaged $zip; SHA256 $hash"
 
-      # A describe-shaped name resolves as a revision even without a tag ref.
-      # Create the exact ref explicitly, then verify the server advertises it.
-      # PRs exercise local tag creation; only master pushes publish the ref.
-      - name: Create and verify release tag
-        env:
-          PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
-        run: |
-          sha=$(git rev-parse HEAD)
-          tag_ref="refs/tags/$VERSION"
-          git show-ref --verify --quiet "$tag_ref" || git tag "$VERSION" "$sha"
-          target=$(git rev-parse "$tag_ref^{}")
-          if [ "$target" != "$sha" ]; then
-            echo "::error::$tag_ref points to $target instead of $sha"
-            exit 1
-          fi
-          if [ "$PUBLISH" = true ]; then
-            git push origin "$tag_ref"
-            remote=$(git ls-remote origin "$tag_ref" | cut -f1)
-            object=$(git rev-parse "$tag_ref")
-            if [ "$remote" != "$object" ]; then
-              echo "::error::$tag_ref was not published"
-              exit 1
-            fi
-          fi
-          echo "$tag_ref points to $sha (publish=$PUBLISH)"
-
       - name: Release
         id: release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
@@ -212,17 +209,18 @@ jobs:
           zip="tmux-windows-$VERSION.zip"
           code=$(curl -sS -o release.json -w '%{http_code}' -H "$auth" "$api/releases/tags/$VERSION")
           if [ "$code" = 404 ]; then
+            # A draft release creates no tag: take the number first, so a later
+            # run sees it taken even if this release fails. A number another run
+            # took makes this fail rather than share it.
+            if ! git show-ref --verify --quiet "refs/tags/$VERSION"; then
+              jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" '{tag_name: $tag, target: $sha}' |
+                curl -fsS -H "$auth" -H 'Content-Type: application/json' -d @- -o /dev/null "$api/tags"
+            fi
             hash=$(sha256sum "$zip" | cut -d' ' -f1)
             body=$(printf 'Commit %s\n\nSHA256 of %s: %s' "$GITHUB_SHA" "$zip" "$hash")
-            create() {
-              jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" --arg body "$body" \
-                '{tag_name: $tag, target_commitish: $sha, name: $tag, body: $body, draft: true}' |
-                curl -fsS -H "$auth" -H 'Content-Type: application/json' -d @- -o release.json "$api/releases"
-            }
-            # Forgejo records the tag pushed above as a tag-only release in the
-            # background; a create that collides with that record fails, and a
-            # second create turns the record into this release (TMUX-175).
-            create || create
+            jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" --arg body "$body" \
+              '{tag_name: $tag, target_commitish: $sha, name: $tag, body: $body, draft: true}' |
+              curl -fsS -H "$auth" -H 'Content-Type: application/json' -d @- -o release.json "$api/releases"
           elif [ "$code" != 200 ]; then
             echo "::error::reading release $VERSION returned $code"
             exit 1
