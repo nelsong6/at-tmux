@@ -214,9 +214,15 @@ jobs:
           if [ "$code" = 404 ]; then
             hash=$(sha256sum "$zip" | cut -d' ' -f1)
             body=$(printf 'Commit %s\n\nSHA256 of %s: %s' "$GITHUB_SHA" "$zip" "$hash")
-            jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" --arg body "$body" \
-              '{tag_name: $tag, target_commitish: $sha, name: $tag, body: $body, draft: true}' |
-              curl -fsS -H "$auth" -H 'Content-Type: application/json' -d @- -o release.json "$api/releases"
+            create() {
+              jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" --arg body "$body" \
+                '{tag_name: $tag, target_commitish: $sha, name: $tag, body: $body, draft: true}' |
+                curl -fsS -H "$auth" -H 'Content-Type: application/json' -d @- -o release.json "$api/releases"
+            }
+            # Forgejo records the tag pushed above as a tag-only release in the
+            # background; a create that collides with that record fails, and a
+            # second create turns the record into this release (TMUX-175).
+            create || create
           elif [ "$code" != 200 ]; then
             echo "::error::reading release $VERSION returned $code"
             exit 1
