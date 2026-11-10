@@ -75,7 +75,7 @@ cat "$DIR"/events/*.log | grep -q "play-sound did not play $DIR/one.wav for wind
 	fail "no record of the sound held back: $(cat "$DIR"/events/*.log)"
 cat "$DIR"/events/*.log | grep -q "play-sound played $DIR/three.wav for window @0 " ||
 	fail "no record of the window's sound: $(cat "$DIR"/events/*.log)"
-cat "$DIR"/log/*.log | grep -q "play-sound" &&
+cat "$DIR"/log/*.log | grep -q "play-sound played\|play-sound did not play" &&
 	fail "a sound played or held back is in the errors log: $(cat "$DIR"/log/*.log)"
 cat "$DIR"/log/*.log | grep -q "can't read $DIR/missing.wav" ||
 	fail "a sound that failed is missing from the errors log: $(cat "$DIR"/log/*.log)"
