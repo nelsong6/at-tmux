@@ -429,14 +429,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Resolve home services on the home network
-        env:
-          HOME_FORGEJO_IP: ${{ vars.HOME_FORGEJO_IP }}
-        run: |
-          if [ -n "$HOME_FORGEJO_IP" ]; then
-            printf '%s forgejo.romaine.life ntfy.home.romaine.life\n' "$HOME_FORGEJO_IP" | sudo tee -a /etc/hosts >/dev/null
-          fi
-
       - name: Report to Alerts
         env:
           NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
