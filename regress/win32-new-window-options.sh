@@ -16,6 +16,7 @@ $TMUX kill-server 2>/dev/null
 wait_gone
 
 CMDEXE=$(cygpath -w "$SYSTEMROOT/System32/cmd.exe")
+PING=$(cygpath -w "$SYSTEMROOT/System32/PING.EXE")
 CFG=$(mktemp)
 printf "set -g default-shell '%s'\n" "$COMSPEC" >$CFG
 OUT=$(mktemp)
@@ -63,10 +64,13 @@ $TMUX new-window -d -a -t w:home -n failing -o remain-on-exit=failed \
     "$CMDEXE" //c "echo boom& exit 3" >$OUT 2>&1 || fail "1: $(cat $OUT)"
 wait_until pane_dead w:failing || fail "1: the pane didn't stay, dead"
 window_exists failing || fail "1: window gone"
-# The dead message goes on a new last line, scrolling the screen by one as
-# upstream does, so the first line of output can be in the history.
-$TMUX capture-pane -p -S - -t w:failing | tr -d '\r' | grep -q '^boom' ||
-    fail "1: output gone"
+# The dead message goes on the row below the output, which stays on screen
+# (TMUX-192: upstream scrolls by one, losing a lone line to the history).
+SEEN=$($TMUX capture-pane -p -t w:failing | tr -d '\r' | sed '/^ *$/d' |
+    head -2)
+echo "$SEEN" | sed -n 1p | grep -qx 'boom' &&
+    echo "$SEEN" | sed -n 2p | grep -q '^Pane is dead (status 3, ' ||
+    fail "1: the screen reads '$SEEN', not the output above the dead line"
 ST=$($TMUX display -p -t w:failing '#{pane_dead_status}' | tr -d '\r')
 [ "$ST" = 3 ] || fail "1: dead status $ST"
 [ "$($TMUX show -wv -t w:failing remain-on-exit | tr -d '\r')" = failed ] ||
@@ -75,6 +79,21 @@ ST=$($TMUX display -p -t w:failing '#{pane_dead_status}' | tr -d '\r')
     fail "1: the global option changed"
 pass "1: a failing program keeps its window"
 $TMUX kill-window -t w:failing
+
+# --- Test 1b: output reaching the bottom row scrolls up one row for the dead
+# message, the last line just above it. The last line has no newline, so it
+# fills the bottom row; Windows' built-in console drops such a line written as
+# the program exits, so the program waits a second (ping) before exiting. ---
+$TMUX new-window -d -a -t w:home -n full -o remain-on-exit=failed \
+    "$CMDEXE" //c "(for /l %i in (1,1,30) do @echo line%i) & <nul set /p =last& $PING -n 2 127.0.0.1 >nul & exit 3" \
+    >$OUT 2>&1 || fail "1b: $(cat $OUT)"
+wait_until pane_dead w:full || fail "1b: the pane didn't stay, dead"
+SEEN=$($TMUX capture-pane -p -t w:full | tr -d '\r' | tail -2)
+echo "$SEEN" | sed -n 1p | grep -qx 'last' &&
+    echo "$SEEN" | sed -n 2p | grep -q '^Pane is dead (status 3, ' ||
+    fail "1b: the bottom rows read '$SEEN'"
+pass "1b: a full screen scrolls for the dead line"
+$TMUX kill-window -t w:full
 
 # --- Test 2: one that succeeds closes its window. ---
 $TMUX new-window -d -a -t w:home -n fine -o remain-on-exit=failed \

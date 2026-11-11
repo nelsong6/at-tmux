@@ -312,6 +312,22 @@ server_unlink_window(struct session *s, struct winlink *wl)
 		server_redraw_session_group(s);
 }
 
+/*
+ * The row for a dead pane's message: the one below the last row with
+ * anything on it, so a program's last lines stay on screen. The screen's
+ * height means it is full and has to scroll.
+ */
+static u_int
+server_dead_line(struct screen *s)
+{
+	struct grid	*gd = s->grid;
+	u_int		 y = screen_size_y(s);
+
+	while (y > 0 && grid_line_length(gd, gd->hsize + y - 1) == 0)
+		y--;
+	return (y);
+}
+
 void
 server_destroy_pane(struct window_pane *wp, int notify)
 {
@@ -323,6 +339,7 @@ server_destroy_pane(struct window_pane *wp, int notify)
 	char			*expanded;
 	u_int			 sx = screen_size_x(&wp->base);
 	u_int			 sy = screen_size_y(&wp->base);
+	u_int			 y;
 
 	/* What it wrote before exiting may not have been parsed yet. */
 	if (wp->draw_wait != NULL && wp->event != NULL)
@@ -378,8 +395,13 @@ server_destroy_pane(struct window_pane *wp, int notify)
 		if (*s != '\0') {
 			screen_write_start_pane(&ctx, wp, &wp->base);
 			screen_write_scrollregion(&ctx, 0, sy - 1);
-			screen_write_cursormove(&ctx, 0, sy - 1, 0);
-			screen_write_linefeed(&ctx, 1, 8);
+			y = server_dead_line(&wp->base);
+			if (y < sy)
+				screen_write_cursormove(&ctx, 0, y, 0);
+			else {
+				screen_write_cursormove(&ctx, 0, sy - 1, 0);
+				screen_write_linefeed(&ctx, 1, 8);
+			}
 			memcpy(&gc, &grid_default_cell, sizeof gc);
 
 			expanded = format_single(NULL, s, NULL, NULL, NULL, wp);
