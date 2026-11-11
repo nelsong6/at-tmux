@@ -32,6 +32,8 @@ set -g @go-menu 'display-menu -T go "#{session_name}" g "select-window -t first"
 set -s command-alias[100] 'go-to=run-shell -C "#{E:@go-menu}"'
 set -s command-alias-note[100] 'go-to=Go to a window = first'
 set -s command-alias-note[101] 'nothing-by-this-name=Never shown'
+set -s command-alias-tags[100] 'go-to=jump place,spot'
+set -s command-alias-tags[101] 'nothing-by-this-name=nevertag'
 set -g @no-menu 'display-menu -T none #{?#{==:1,0},"Never" n "kill-server",}'
 set -s command-alias[101] 'go-nowhere=run-shell -C "#{E:@no-menu}"'
 set -s command-alias[102] 'clock-mode=display-message clock'
@@ -112,6 +114,11 @@ row '^2	1: second	1 panes	' || fail_row "no window under a session" second
 # first '='; an alias with none is described by what it runs.
 row '^0	go-to	Go to a window = first	' || fail_row "no run-shell -C alias row with its note" go-to
 row 'Never shown' && fail_row "a note for no alias was shown" 'Never shown'
+# Its tags (command-alias-tags), split at spaces and commas, follow those of
+# the commands it runs; tags for no alias go nowhere.
+row '^0	go-to	Go to a window = first		[0-9]*	run shell miscellaneous jump place spot$' ||
+    fail_row "go-to does not carry its command-alias-tags" go-to
+row 'nevertag' && fail_row "tags for no alias were shown" nevertag
 row '^1	0		' || fail_row "no item in the run-shell -C menu" "^1	0"
 row "^0	go-nowhere	alias for run-shell.*		[0-9]*	run shell miscellaneous\$" ||
     fail_row "no row for a run-shell -C menu with nothing in it" go-nowhere

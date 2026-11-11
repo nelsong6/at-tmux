@@ -4621,6 +4621,18 @@ shows
 for the alias
 .Ar name
 in place of the command it runs.
+.It Xo Ic command-alias-tags[]
+.Ar name=tags
+.Xc
+Tags for the aliases in
+.Ic command-alias :
+.Ic display-palette
+adds
+.Ar tags ,
+separated by spaces,
+to those it gives the alias
+.Ar name
+from the commands it runs, for the picker's tag search.
 .It Ic codepoint-widths[] Ar string
 An array option allowing widths of Unicode codepoints to be overridden.
 Note the new width applies to all clients.

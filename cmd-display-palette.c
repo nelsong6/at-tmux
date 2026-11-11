@@ -38,8 +38,9 @@
  * A row is depth, name, description, the hint of a row that asks for text
  * (empty for the rest), id and tags, separated by tabs. A top-level row's tags
  * are the words of its commands' names and the manual sections they are in,
- * space separated, for the picker's tag search; deeper rows (a menu's items,
- * a chooser's choices) have none.
+ * and for an alias those command-alias-tags gives it, space separated, for the
+ * picker's tag search; deeper rows (a menu's items, a chooser's choices) have
+ * none.
  */
 
 static enum cmd_retval	cmd_display_palette_exec(struct cmd *,
@@ -728,16 +729,16 @@ palette_cmp_strings(const void *a, const void *b)
 	return (strcmp(*(const char **)a, *(const char **)b));
 }
 
-/* The description command-alias-note gives an alias, or NULL. */
+/* The value an alias has in option (command-alias-note or -tags), or NULL. */
 static const char *
-palette_alias_note(const char *name)
+palette_alias_value(const char *option, const char *name)
 {
 	struct options_entry		*o;
 	struct options_array_item	*a;
 	const char			*value;
 	size_t				 len = strlen(name);
 
-	o = options_get_only(global_options, "command-alias-note");
+	o = options_get_only(global_options, option);
 	if (o == NULL)
 		return (NULL);
 	for (a = options_array_first(o); a != NULL; a = options_array_next(a)) {
@@ -753,7 +754,7 @@ palette_add_aliases(struct palette *p)
 {
 	struct options_entry		*o;
 	struct options_array_item	*a;
-	const char			**list = NULL, *note;
+	const char			**list = NULL, *note, *tags;
 	struct cmd_list			*cmdlist;
 	char				*name, *target, *desc;
 	u_int				 n = 0, i;
@@ -781,7 +782,9 @@ palette_add_aliases(struct palette *p)
 			palette_set_tags(p, cmdlist);
 			cmd_list_free(cmdlist);
 		}
-		if ((note = palette_alias_note(name)) != NULL)
+		if ((tags = palette_alias_value("command-alias-tags", name)) != NULL)
+			palette_add_tags(&p->tags, tags, " ,");
+		if ((note = palette_alias_value("command-alias-note", name)) != NULL)
 			desc = xstrdup(note);
 		else
 			xasprintf(&desc, "alias for %s", target);
