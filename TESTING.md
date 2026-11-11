@@ -78,3 +78,7 @@ alone. Remove the preview split and private servers created for this task,
 restore the conversation's view and dimensions, and recheck the installed
 executable and visible result immediately before handing over. The user never
 needs to restart or reopen the terminal.
+
+A preview split shown to him before a change ships is read back before it's
+described: the shown pane is alive (`tmux display -p -t <pane> '#{pane_dead}'`
+prints `0`) and its capture shows the case being described.
