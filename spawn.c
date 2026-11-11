@@ -122,6 +122,7 @@ spawn_respawn_failed(struct window_pane *wp, const char *cause)
 	wp->ictx = input_init(wp, NULL, &wp->palette, NULL);
 
 	/* At the bottom, so remain-on-exit's line scrolls it up, not away. */
+	window_pane_release(wp);
 	screen_write_start_pane(&ctx, wp, &wp->base);
 	screen_write_cursormove(&ctx, 0, screen_size_y(&wp->base) - 1, 0);
 	screen_write_puts(&ctx, &grid_default_cell, "%s", cause);
@@ -391,6 +392,7 @@ spawn_pane(struct spawn_context *sc, char **cause)
 			sc->wp0->fd = -1;
 		}
 		window_pane_reset_mode_all(sc->wp0);
+		window_pane_hold(sc->wp0);
 		screen_reinit(&sc->wp0->base);
 		input_free(sc->wp0->ictx);
 		sc->wp0->ictx = NULL;

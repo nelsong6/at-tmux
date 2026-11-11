@@ -393,6 +393,8 @@ server_destroy_pane(struct window_pane *wp, int notify)
 
 		s = options_get_string(wp->options, "remain-on-exit-format");
 		if (*s != '\0') {
+			/* A program that ended without drawing shows that. */
+			window_pane_release(wp);
 			screen_write_start_pane(&ctx, wp, &wp->base);
 			screen_write_scrollregion(&ctx, 0, sy - 1);
 			y = server_dead_line(&wp->base);

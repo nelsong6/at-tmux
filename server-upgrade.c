@@ -753,6 +753,8 @@ upgrade_save_pane(struct evbuffer *evb, struct window_pane *wp,
 	upw_time(o, &wp->dead_time);
 	options_upgrade_save(o, wp->options);
 	upgrade_save_palette(o, &wp->palette);
+	/* A held picture is not carried: the pane's own screen is. */
+	window_pane_release(wp);
 	upgrade_save_screen(o, &wp->base);
 
 #ifdef _WIN32

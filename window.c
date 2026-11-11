@@ -1097,6 +1097,7 @@ window_pane_destroy(struct window_pane *wp)
 	struct window_pane_resize	*r1;
 
 	window_pane_reset_mode_all(wp);
+	window_pane_release(wp);
 	free(wp->searchstr);
 
 	new_window_draw_end(wp, "closed before drawing");
@@ -1229,11 +1230,56 @@ window_pane_resize(struct window_pane *wp, u_int sx, u_int sy)
 	wp->sy = sy;
 
 	log_debug("%s: %%%u resize %ux%u", __func__, wp->id, sx, sy);
+	window_pane_release(wp);
 	screen_resize(&wp->base, sx, sy, wp->base.saved_grid == NULL);
 
 	wme = TAILQ_FIRST(&wp->modes);
 	if (wme != NULL && wme->mode->resize != NULL)
 		wme->mode->resize(wme, sx, sy);
+}
+
+/*
+ * Keep drawing what a pane shows while its program is replaced, so a respawn
+ * never shows it blank: the new program's output goes to the pane's own screen
+ * unseen until it first puts something on it (TMUX-193). A pane already held
+ * keeps the older picture.
+ */
+void
+window_pane_hold(struct window_pane *wp)
+{
+	struct screen	*s = &wp->base, *held;
+	u_int		 sy = screen_size_y(s);
+
+	if (wp->held != NULL || screen_is_blank(s))
+		return;
+	held = xcalloc(1, sizeof *held);
+	screen_init(held, screen_size_x(s), sy, 0);
+	grid_duplicate_lines(held->grid, 0, s->grid, s->grid->hsize, sy);
+	held->mode &= ~MODE_CURSOR;
+	wp->held = held;
+	wp->screen = held;
+}
+
+/* Draw the pane's own screen again, in place of what was held. */
+void
+window_pane_release(struct window_pane *wp)
+{
+	if (wp->held == NULL)
+		return;
+	if (wp->screen == wp->held)
+		wp->screen = &wp->base;
+	screen_free(wp->held);
+	free(wp->held);
+	wp->held = NULL;
+	wp->flags |= (PANE_REDRAW|PANE_CHANGED);
+}
+
+/* Release a held pane once its program has put something on its screen. */
+void
+window_pane_release_drawn(struct window_pane *wp)
+{
+	if (wp->held != NULL && !screen_is_blank(&wp->base))
+		window_pane_release(wp);
 }
 
 int
@@ -1246,6 +1292,8 @@ window_pane_set_mode(struct window_pane *wp, struct window_pane *swp,
 
 	if (!TAILQ_EMPTY(&wp->modes) && TAILQ_FIRST(&wp->modes)->mode == mode)
 		return (1);
+	/* A mode works on the pane's own screen. */
+	window_pane_release(wp);
 
 	TAILQ_FOREACH(wme, &wp->modes, entry) {
 		if (wme->mode == mode)

@@ -941,7 +941,7 @@ input_reset(struct input_ctx *ictx, int clear)
 	input_reset_cell(ictx);
 
 	if (clear && wp != NULL) {
-		if (TAILQ_EMPTY(&wp->modes))
+		if (TAILQ_EMPTY(&wp->modes) && wp->held == NULL)
 			screen_write_start_pane(sctx, wp, &wp->base);
 		else
 			screen_write_start(sctx, &wp->base);
@@ -1061,8 +1061,11 @@ input_parse_buffer(struct window_pane *wp, u_char *buf, size_t len)
 	if (!TAILQ_EMPTY(&wp->modes))
 		wp->flags |= PANE_UNSEENCHANGES;
 
-	/* NULL wp if there is a mode set as don't want to update the tty. */
-	if (TAILQ_EMPTY(&wp->modes))
+	/*
+	 * NULL wp if there is a mode set or a held picture shows, as don't
+	 * want to update the tty.
+	 */
+	if (TAILQ_EMPTY(&wp->modes) && wp->held == NULL)
 		screen_write_start_pane(sctx, wp, &wp->base);
 	else
 		screen_write_start(sctx, &wp->base);
@@ -1072,6 +1075,7 @@ input_parse_buffer(struct window_pane *wp, u_char *buf, size_t len)
 
 	input_parse(ictx, buf, len);
 	screen_write_stop(sctx);
+	window_pane_release_drawn(wp);
 
 	if (wp->draw_wait != NULL)
 		new_window_draw_check(wp);

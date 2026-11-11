@@ -137,6 +137,26 @@ screen_reinit(struct screen *s)
 	screen_reset_hyperlinks(s);
 }
 
+/* Whether nothing shows on a screen: every visible cell a default space. */
+int
+screen_is_blank(struct screen *s)
+{
+	struct grid		*gd = s->grid;
+	struct grid_line	*gl;
+	struct grid_cell	 gc;
+	u_int			 x, y;
+
+	for (y = 0; y < gd->sy; y++) {
+		gl = grid_get_line(gd, gd->hsize + y);
+		for (x = 0; x < gl->cellused; x++) {
+			grid_get_cell(gd, x, gd->hsize + y, &gc);
+			if (!grid_cells_equal(&gc, &grid_default_cell))
+				return (0);
+		}
+	}
+	return (1);
+}
+
 /* Reset hyperlinks of a screen. */
 void
 screen_reset_hyperlinks(struct screen *s)

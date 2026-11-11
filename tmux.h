@@ -1285,6 +1285,11 @@ struct window_pane {
 
 	struct screen	*screen;
 	struct screen	 base;
+	/*
+	 * What a respawned pane showed before, drawn until its new program
+	 * first changes the screen (TMUX-193).
+	 */
+	struct screen	*held;
 
 	struct screen	 status_screen;
 	size_t		 status_size;
@@ -3367,6 +3372,7 @@ void	 screen_redraw_pane(struct client *, struct window_pane *, int);
 /* screen.c */
 void	 screen_init(struct screen *, u_int, u_int, u_int);
 void	 screen_reinit(struct screen *);
+int	 screen_is_blank(struct screen *);
 void	 screen_free(struct screen *);
 void	 screen_reset_tabs(struct screen *);
 void	 screen_reset_hyperlinks(struct screen *);
@@ -3467,6 +3473,9 @@ int		 window_pane_set_mode(struct window_pane *,
 		     struct cmd_find_state *, struct args *);
 void		 window_pane_reset_mode(struct window_pane *);
 void		 window_pane_reset_mode_all(struct window_pane *);
+void		 window_pane_hold(struct window_pane *);
+void		 window_pane_release(struct window_pane *);
+void		 window_pane_release_drawn(struct window_pane *);
 int		 window_pane_key(struct window_pane *, struct client *,
 		     struct session *, struct winlink *, key_code,
 		     struct mouse_event *);
