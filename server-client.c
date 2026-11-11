@@ -3630,8 +3630,10 @@ server_client_dispatch(struct imsg *imsg, void *arg)
 				sy = 24;
 			log_debug("client %p resize from msg: %ux%u",
 			    c, sx, sy);
-			tty_set_size(&c->tty, sx, sy, 0, 0);
+			tty_set_size(&c->tty, sx, sy, c->tty.xpixel,
+			    c->tty.ypixel);
 			tty_invalidate(&c->tty);
+			tty_query_cell_size(&c->tty);
 		} else {
 			tty_resize(&c->tty);
 		}

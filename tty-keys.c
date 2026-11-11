@@ -716,6 +716,7 @@ tty_keys_winsz(struct tty *tty, const char *buf, size_t len, size_t *size)
 	size_t		 end;
 	char		 tmp[64];
 	u_int		 sx, sy, xpixel, ypixel, char_x, char_y;
+	int		 changed;
 
 	*size = 0;
 
@@ -763,8 +764,11 @@ tty_keys_winsz(struct tty *tty, const char *buf, size_t len, size_t *size)
 		/* Window size in pixels. */
 		char_x = (xpixel && tty->sx) ? xpixel / tty->sx : 0;
 		char_y = (ypixel && tty->sy) ? ypixel / tty->sy : 0;
+		changed = (char_x != tty->xpixel || char_y != tty->ypixel);
 		tty_set_size(tty, tty->sx, tty->sy, char_x, char_y);
 		tty_invalidate(tty);
+		if (changed)
+			server_redraw_client(c);
 
 		tty->flags &= ~TTY_WINSIZEQUERY;
 		*size = end + 1;

@@ -170,6 +170,22 @@ tty_resize(struct tty *tty)
 #endif
 }
 
+/*
+ * Ask the terminal its size in pixels, which tty_keys_winsz divides into a
+ * cell's size for scaling images. On Windows the console reports no pixels,
+ * so this is the only source.
+ */
+void
+tty_query_cell_size(struct tty *tty)
+{
+	if ((tty->flags & TTY_STARTED) &&
+	    !(tty->flags & TTY_WINSIZEQUERY) &&
+	    (tty->term->flags & TERM_VT100LIKE)) {
+		tty_puts(tty, "\033[14t");
+		tty->flags |= TTY_WINSIZEQUERY;
+	}
+}
+
 void
 tty_set_size(struct tty *tty, u_int sx, u_int sy, u_int xpixel, u_int ypixel)
 {
@@ -522,6 +538,9 @@ tty_send_requests(struct tty *tty)
 		tty->flags |= (TTY_WAITBG|TTY_WAITFG);
 	} else
 		tty->flags |= TTY_ALL_REQUEST_FLAGS;
+#ifdef _WIN32
+	tty_query_cell_size(tty);
+#endif
 	tty->last_requests = time(NULL);
 }
 

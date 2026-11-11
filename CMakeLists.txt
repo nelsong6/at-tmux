@@ -141,6 +141,8 @@ set(TMUX_SOURCES
     grid-reader.c
     grid-view.c
     hyperlinks.c
+    image.c
+    image-sixel.c
     input.c
     input-keys.c
     job.c
@@ -284,6 +286,7 @@ target_compile_definitions(tmux PRIVATE
     # The HAVE_IMSG flag tells tmux to use the compat imsg.
     HAVE_IMSG
     HAVE_EVENT2_EVENT_H
+    ENABLE_SIXEL
     HAVE_STDINT_H
 )
 

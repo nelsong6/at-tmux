@@ -323,6 +323,7 @@ jobs:
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pty-close.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-pane-clear.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-popup-output.sh || exit 1
+          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-sixel.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade.sh
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh panel.sh
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh panel-fill.sh
