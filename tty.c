@@ -3338,26 +3338,55 @@ tty_window_default_style(struct grid_cell *gc, struct window_pane *wp)
 	gc->bg = wp->palette.bg;
 }
 
-void
-tty_default_colours(struct grid_cell *gc, struct window_pane *wp)
+static void
+tty_window_pane_styles(struct window_pane *wp, struct grid_cell *gc,
+    struct grid_cell *active_gc)
 {
 	struct options		*oo = wp->options;
 	struct format_tree	*ft;
 
+	ft = format_create(NULL, NULL, FORMAT_PANE|wp->id, FORMAT_NOJOBS);
+	format_defaults(ft, NULL, NULL, NULL, wp);
+	tty_window_default_style(active_gc, wp);
+	style_add(active_gc, oo, "window-active-style", ft);
+	tty_window_default_style(gc, wp);
+	style_add(gc, oo, "window-style", ft);
+	format_free(ft);
+}
+
+/*
+ * Work out a pane's colours again after an option a format can read changed.
+ * Return 1 if they are not what the pane was drawn with.
+ */
+int
+tty_window_pane_styles_changed(struct window_pane *wp)
+{
+	struct grid_cell	gc, active_gc;
+
+	if (!options_is_format(wp->options, "window-style") &&
+	    !options_is_format(wp->options, "window-active-style"))
+		return (0);
+	if (wp->flags & PANE_STYLECHANGED)
+		return (1);
+	tty_window_pane_styles(wp, &gc, &active_gc);
+	if (grid_cells_equal(&gc, &wp->cached_gc) &&
+	    grid_cells_equal(&active_gc, &wp->cached_active_gc))
+		return (0);
+	memcpy(&wp->cached_gc, &gc, sizeof wp->cached_gc);
+	memcpy(&wp->cached_active_gc, &active_gc, sizeof wp->cached_active_gc);
+	return (1);
+}
+
+void
+tty_default_colours(struct grid_cell *gc, struct window_pane *wp)
+{
 	memcpy(gc, &grid_default_cell, sizeof *gc);
 
 	if (wp->flags & PANE_STYLECHANGED) {
 		log_debug("%%%u: style changed", wp->id);
 		wp->flags &= ~PANE_STYLECHANGED;
-
-		ft = format_create(NULL, NULL, FORMAT_PANE|wp->id,
-		    FORMAT_NOJOBS);
-		format_defaults(ft, NULL, NULL, NULL, wp);
-		tty_window_default_style(&wp->cached_active_gc, wp);
-		style_add(&wp->cached_active_gc, oo, "window-active-style", ft);
-		tty_window_default_style(&wp->cached_gc, wp);
-		style_add(&wp->cached_gc, oo, "window-style", ft);
-		format_free(ft);
+		tty_window_pane_styles(wp, &wp->cached_gc,
+		    &wp->cached_active_gc);
 	}
 
 	if (gc->fg == 8) {

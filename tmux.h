@@ -2595,6 +2595,7 @@ int		 options_from_string(struct options *,
 		     const char *, int, char **);
 int	 	 options_find_choice(const struct options_table_entry *,
 		     const char *, char **);
+int		 options_is_format(struct options *, const char *);
 void		 options_push_changes(const char *);
 int		 options_remove_or_default(struct options_entry *, int,
 		     char **);
@@ -2740,6 +2741,7 @@ void	tty_cmd_sixelimage(struct tty *, const struct tty_ctx *);
 #endif
 
 void	tty_cmd_syncstart(struct tty *, const struct tty_ctx *);
+int	tty_window_pane_styles_changed(struct window_pane *);
 void	tty_default_colours(struct grid_cell *, struct window_pane *);
 
 /* tty-term.c */

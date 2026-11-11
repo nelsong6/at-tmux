@@ -1178,6 +1178,94 @@ options_from_string(struct options *oo, const struct options_table_entry *oe,
 	return (-1);
 }
 
+/* Is a string option a format, so its value follows what the format reads? */
+int
+options_is_format(struct options *oo, const char *name)
+{
+	return (strstr(options_get_string(oo, name), "#{") != NULL);
+}
+
+/*
+ * Options that only the status line, pane borders and their status lines,
+ * pane footers and the terminal title read, directly or through formats:
+ * user options and these. Panes read them only through window-style and
+ * window-active-style, and in a mode.
+ */
+static const char *options_outside_panes_names[] = {
+	"pane-active-border-style",
+	"pane-border-format",
+	"pane-border-style",
+	"set-titles-string",
+	"status-format",
+	"status-justify",
+	"status-left",
+	"status-left-length",
+	"status-left-style",
+	"status-right",
+	"status-right-length",
+	"status-right-style",
+	"status-style",
+	"window-status-activity-style",
+	"window-status-bell-style",
+	"window-status-current-format",
+	"window-status-current-style",
+	"window-status-format",
+	"window-status-last-style",
+	"window-status-separator",
+	"window-status-style",
+};
+
+static int
+options_outside_panes(const char *name)
+{
+	u_int	i;
+
+	if (*name == '@')
+		return (1);
+	for (i = 0; i < nitems(options_outside_panes_names); i++) {
+		if (strcmp(name, options_outside_panes_names[i]) == 0)
+			return (1);
+	}
+	return (0);
+}
+
+/*
+ * Redraw what can show an option outside panes. A full redraw clears every
+ * pane row and sends every image again, so pane contents are redrawn only
+ * where window-style or window-active-style now gives other colours, and a
+ * mode is told its styles may have changed.
+ */
+static void
+options_redraw_outside_panes(const char *name)
+{
+	struct client			*loop;
+	struct window_pane		*wp;
+	struct options			*wo;
+
+	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
+		if (tty_window_pane_styles_changed(wp))
+			wp->flags |= PANE_REDRAW;
+		if (!TAILQ_EMPTY(&wp->modes))
+			wp->flags |= PANE_STYLECHANGED;
+	}
+
+	/*
+	 * The status line, border status lines and footers are drawn again
+	 * where their text or style changed. Borders are drawn again only for
+	 * a border option, or when their styles are formats.
+	 */
+	TAILQ_FOREACH(loop, &clients, entry) {
+		if (loop->session == NULL)
+			continue;
+		loop->flags |= CLIENT_REDRAWSTATUS;
+		wo = loop->session->curw->window->options;
+		if (strncmp(name, "pane-", 5) == 0 ||
+		    options_is_format(wo, "pane-border-style") ||
+		    options_is_format(wo, "pane-active-border-style"))
+			loop->flags |= CLIENT_REDRAWBORDERS;
+	}
+}
+
 void
 options_push_changes(const char *name)
 {
@@ -1246,10 +1334,6 @@ options_push_changes(const char *name)
 		RB_FOREACH(wp, window_pane_tree, &all_window_panes)
 			wp->flags |= (PANE_STYLECHANGED|PANE_THEMECHANGED);
 	}
-	if (*name == '@') {
-		RB_FOREACH(wp, window_pane_tree, &all_window_panes)
-			wp->flags |= PANE_STYLECHANGED;
-	}
 	if (strcmp(name, "pane-colours") == 0) {
 		RB_FOREACH(wp, window_pane_tree, &all_window_panes)
 			colour_palette_from_option(&wp->palette, wp->options);
@@ -1279,6 +1363,10 @@ options_push_changes(const char *name)
 	RB_FOREACH(s, sessions, &sessions)
 		status_update_cache(s);
 
+	if (options_outside_panes(name)) {
+		options_redraw_outside_panes(name);
+		return;
+	}
 	recalculate_sizes();
 	TAILQ_FOREACH(loop, &clients, entry) {
 		if (loop->session != NULL)
