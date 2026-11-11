@@ -959,7 +959,6 @@ struct image {
 	u_int			 sx;
 	u_int			 sy;
 
-	TAILQ_ENTRY (image)	 all_entry;
 	TAILQ_ENTRY (image)	 entry;
 };
 TAILQ_HEAD(images, image);
@@ -1009,6 +1008,8 @@ struct screen {
 #ifdef ENABLE_SIXEL
 	struct images			 images;
 	struct images			 saved_images;
+	u_int				 image_count;
+	u_int				 saved_image_count;
 #endif
 
 	struct screen_write_cline	*write_list;
@@ -3924,6 +3925,9 @@ char		*regsub(const char *, const char *, const char *, int);
 #ifdef ENABLE_SIXEL
 /* image.c */
 int		 image_free_all(struct screen *);
+void		 image_save(struct screen *);
+void		 image_restore(struct screen *);
+void		 image_free_screen(struct screen *);
 struct image	*image_store(struct screen *, struct sixel_image *);
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);

@@ -94,6 +94,8 @@ screen_init(struct screen *s, u_int sx, u_int sy, u_int hlimit)
 #ifdef ENABLE_SIXEL
 	TAILQ_INIT(&s->images);
 	TAILQ_INIT(&s->saved_images);
+	s->image_count = 0;
+	s->saved_image_count = 0;
 #endif
 
 	s->write_list = NULL;
@@ -188,7 +190,7 @@ screen_free(struct screen *s)
 	screen_free_titles(s);
 
 #ifdef ENABLE_SIXEL
-	image_free_all(s);
+	image_free_screen(s);
 #endif
 }
 
@@ -757,7 +759,7 @@ screen_alternate_on(struct screen *s, struct grid_cell *gc, int cursor)
 	memcpy(&s->saved_cell, gc, sizeof s->saved_cell);
 
 #ifdef ENABLE_SIXEL
-	TAILQ_CONCAT(&s->saved_images, &s->images, entry);
+	image_save(s);
 #endif
 
 	grid_view_clear(s->grid, 0, 0, sx, sy, 8);
@@ -815,8 +817,7 @@ screen_alternate_off(struct screen *s, struct grid_cell *gc, int cursor)
 	s->saved_grid = NULL;
 
 #ifdef ENABLE_SIXEL
-	image_free_all(s);
-	TAILQ_CONCAT(&s->images, &s->saved_images, entry);
+	image_restore(s);
 #endif
 
 	if (s->cx > screen_size_x(s) - 1)

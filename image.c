@@ -23,8 +23,7 @@
 
 #include "tmux.h"
 
-static struct images	all_images = TAILQ_HEAD_INITIALIZER(all_images);
-static u_int		all_images_count;
+/* The images one screen keeps: storing another frees that screen's oldest. */
 #define MAX_IMAGE_COUNT 20
 
 static void printflike(3, 4)
@@ -57,10 +56,8 @@ image_free(struct image *im)
 
 	image_log(im, __func__, NULL);
 
-	TAILQ_REMOVE(&all_images, im, all_entry);
-	all_images_count--;
-
 	TAILQ_REMOVE(&s->images, im, entry);
+	s->image_count--;
 	sixel_free(im->data);
 	free(im->fallback);
 	free(im);
@@ -77,6 +74,33 @@ image_free_all(struct screen *s)
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1)
 		image_free(im);
 	return (redraw);
+}
+
+/* Put a screen's images aside while the alternate screen is on. */
+void
+image_save(struct screen *s)
+{
+	TAILQ_CONCAT(&s->saved_images, &s->images, entry);
+	s->saved_image_count = s->image_count;
+	s->image_count = 0;
+}
+
+/* Free the alternate screen's images and bring back those put aside. */
+void
+image_restore(struct screen *s)
+{
+	image_free_all(s);
+	TAILQ_CONCAT(&s->images, &s->saved_images, entry);
+	s->image_count = s->saved_image_count;
+	s->saved_image_count = 0;
+}
+
+/* Free every image of a screen, those put aside too. */
+void
+image_free_screen(struct screen *s)
+{
+	image_restore(s);
+	image_free_all(s);
 }
 
 /* Create text placeholder for an image. */
@@ -138,10 +162,8 @@ image_store(struct screen *s, struct sixel_image *si)
 
 	image_log(im, __func__, NULL);
 	TAILQ_INSERT_TAIL(&s->images, im, entry);
-
-	TAILQ_INSERT_TAIL(&all_images, im, all_entry);
-	if (++all_images_count == MAX_IMAGE_COUNT)
-		image_free(TAILQ_FIRST(&all_images));
+	if (++s->image_count > MAX_IMAGE_COUNT)
+		image_free(TAILQ_FIRST(&s->images));
 
 	return (im);
 }
