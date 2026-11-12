@@ -4,13 +4,8 @@ Read [AGENTS.md](AGENTS.md) for the required live-terminal preparation and manua
 testing handoff. Interactive changes must be ready in the existing terminal
 before reporting completion.
 
-## Checkout and temporary work locations
+## Staged runtimes
 
-`D:\repos\at-tmux` is the default-branch checkout. Create every branch worktree
-under `D:\workspace\at-tmux\<branch>`, including release preparation,
-verification and throwaway worktrees. Never create sibling `at-tmux-*` folders
-under `D:\repos`; a release or temporary build is not an exception. Before
-`git worktree add`, verify the absolute destination is under the workspace root.
 Keep staged runtimes outside both the repos directory and build output, as
 described in `AGENTS.md`.
 

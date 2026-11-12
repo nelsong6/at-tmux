@@ -1,8 +1,6 @@
 # Testing at-tmux interactive changes
 
-Use a branch worktree under `D:\workspace\at-tmux\<branch>`. Read `CLAUDE.md`
-for the native build and test commands. Local compiler work is capped at four
-jobs; release builds belong to CI.
+Read `CLAUDE.md` for the native build and test commands.
 
 ## Isolated regression checks
 
