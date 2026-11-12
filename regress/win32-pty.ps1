@@ -1,11 +1,15 @@
 # Run a command in a pseudo-console, as Windows Terminal does, and resize the
 # pseudo-console whenever ResizeFile appears (it holds "COLS ROWS" and is
-# deleted once applied). Exits when the command does.
+# deleted once applied). Exits when the command does. Given a cell size, it
+# answers the command's CSI 14 t with the console's size in pixels, as Windows
+# Terminal does; the console itself passes the question on and answers nothing.
 param(
     [Parameter(Mandatory)][string]$Command,
     [Parameter(Mandatory)][int]$Cols,
     [Parameter(Mandatory)][int]$Rows,
-    [Parameter(Mandatory)][string]$ResizeFile
+    [Parameter(Mandatory)][string]$ResizeFile,
+    [int]$CellWidth = 0,
+    [int]$CellHeight = 0
 )
 Add-Type -TypeDefinition @'
 using System;
@@ -27,15 +31,36 @@ public static class Pty {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool CreateProcessW(string a, string c, IntPtr pa, IntPtr ta, bool ih, uint f, IntPtr env, string dir, ref STARTUPINFOEX si, out PI pi);
     [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr h, uint ms);
     static IntPtr pc, proc;
-    public static void Start(string cmd, short cols, short rows) {
+    static short width, height;
+    public static void Start(string cmd, short cols, short rows, int cellWidth, int cellHeight) {
+        width = cols; height = rows;
         IntPtr inR, inW, outR, outW;
         CreatePipe(out inR, out inW, IntPtr.Zero, 0);
         CreatePipe(out outR, out outW, IntPtr.Zero, 0);
         int hr = CreatePseudoConsole(new COORD { X = cols, Y = rows }, inR, outW, 0, out pc);
         if (hr != 0) throw new Exception("CreatePseudoConsole " + hr);
-        // Drain the output so the command never blocks writing.
+        // Drain the output so the command never blocks writing, answering the
+        // size question in it, which may be split across reads.
         var drain = new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(outR, true), FileAccess.Read);
-        new Thread(() => { var b = new byte[4096]; try { while (drain.Read(b, 0, b.Length) > 0) { } } catch { } }) { IsBackground = true }.Start();
+        var input = new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(inW, true), FileAccess.Write);
+        new Thread(() => {
+            var b = new byte[4096]; var seen = "";
+            try {
+                int n;
+                while ((n = drain.Read(b, 0, b.Length)) > 0) {
+                    if (cellWidth == 0) continue;
+                    seen += System.Text.Encoding.ASCII.GetString(b, 0, n);
+                    int at;
+                    while ((at = seen.IndexOf("\u001b[14t")) >= 0) {
+                        seen = seen.Substring(at + 5);
+                        var reply = System.Text.Encoding.ASCII.GetBytes(
+                            "\u001b[4;" +(height * cellHeight) + ";" + (width * cellWidth) + "t");
+                        input.Write(reply, 0, reply.Length); input.Flush();
+                    }
+                    if (seen.Length > 4) seen = seen.Substring(seen.Length - 4);
+                }
+            } catch { }
+        }) { IsBackground = true }.Start();
         IntPtr size = IntPtr.Zero;
         InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
         var si = new STARTUPINFOEX();
@@ -50,11 +75,11 @@ public static class Pty {
         proc = pi.hp;
     }
     public static bool Exited(uint ms) { return WaitForSingleObject(proc, ms) == 0; }
-    public static void Resize(short cols, short rows) { ResizePseudoConsole(pc, new COORD { X = cols, Y = rows }); }
+    public static void Resize(short cols, short rows) { width = cols; height = rows; ResizePseudoConsole(pc, new COORD { X = cols, Y = rows }); }
     public static void Close() { ClosePseudoConsole(pc); }
 }
 '@
-[Pty]::Start($Command, $Cols, $Rows)
+[Pty]::Start($Command, $Cols, $Rows, $CellWidth, $CellHeight)
 while (-not [Pty]::Exited(50)) {
     if (Test-Path $ResizeFile) {
         $c, $r = (Get-Content $ResizeFile -Raw).Trim() -split '\s+'

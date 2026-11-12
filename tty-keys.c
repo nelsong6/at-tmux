@@ -767,10 +767,14 @@ tty_keys_winsz(struct tty *tty, const char *buf, size_t len, size_t *size)
 		changed = (char_x != tty->xpixel || char_y != tty->ypixel);
 		tty_set_size(tty, tty->sx, tty->sy, char_x, char_y);
 		tty_invalidate(tty);
-		if (changed)
-			server_redraw_client(c);
-
 		tty->flags &= ~TTY_WINSIZEQUERY;
+		if (tty->flags & TTY_CELLWAIT)
+			tty_cell_size_known(tty);
+		else if (changed) {
+			recalculate_sizes();
+			server_redraw_client(c);
+		}
+
 		*size = end + 1;
 		return (0);
 	}
@@ -1556,6 +1560,7 @@ tty_keys_device_attributes(struct tty *tty, const char *buf, size_t len,
 
 	tty_update_features(tty);
 	tty->flags |= TTY_HAVEDA;
+	tty_cell_size_known(tty);
 
 	return (0);
 }

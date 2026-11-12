@@ -186,6 +186,20 @@ tty_query_cell_size(struct tty *tty)
 	}
 }
 
+/*
+ * Stop holding a new client's size out of window sizing: its terminal has
+ * answered how big its cells are, or shown by answering what was asked after
+ * it, or by the start timer, that it won't.
+ */
+void
+tty_cell_size_known(struct tty *tty)
+{
+	if (~tty->flags & TTY_CELLWAIT)
+		return;
+	tty->flags &= ~TTY_CELLWAIT;
+	recalculate_sizes();
+}
+
 void
 tty_set_size(struct tty *tty, u_int sx, u_int sy, u_int xpixel, u_int ypixel)
 {
@@ -435,6 +449,7 @@ tty_start_timer_callback(__unused int fd, __unused short events, void *data)
 	tty->flags |= TTY_ALL_REQUEST_FLAGS;
 
 	tty->flags &= ~(TTY_WAITBG|TTY_WAITFG);
+	tty_cell_size_known(tty);
 }
 
 static void
@@ -513,6 +528,21 @@ tty_start_tty(struct tty *tty)
 	tty->flags |= TTY_STARTED;
 	tty_invalidate(tty);
 
+#ifdef _WIN32
+	/*
+	 * A window sized for this client before its cell size is known keeps
+	 * tmux's default cell, and a program that asked meanwhile hears of no
+	 * change, since the console tells it only of new rows or columns. So a
+	 * new client sizes no window until its terminal answers. The primary
+	 * device attributes, which every terminal answers, are asked after
+	 * this, so their answer coming first means this one never will.
+	 */
+	tty_query_cell_size(tty);
+	if ((tty->flags & TTY_WINSIZEQUERY) && (~tty->flags & TTY_HAVEDA) &&
+	    tty->xpixel == 0)
+		tty->flags |= TTY_CELLWAIT;
+#endif
+
 	if (tty->ccolour != -1)
 		tty_force_cursor_colour(tty, -1);
 
@@ -538,9 +568,6 @@ tty_send_requests(struct tty *tty)
 		tty->flags |= (TTY_WAITBG|TTY_WAITFG);
 	} else
 		tty->flags |= TTY_ALL_REQUEST_FLAGS;
-#ifdef _WIN32
-	tty_query_cell_size(tty);
-#endif
 	tty->last_requests = time(NULL);
 }
 

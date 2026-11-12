@@ -172,6 +172,11 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-attach-size.sh
 
+      - name: Run cell size tests
+        shell: bash
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-cell-size.sh
+
       - name: Run wrap tests
         shell: bash
         run: |

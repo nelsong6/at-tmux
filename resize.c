@@ -74,6 +74,8 @@ ignore_client_size(struct client *c)
 		return (1);
 	if (c->flags & CLIENT_NOSIZEFLAGS)
 		return (1);
+	if (c->tty.flags & TTY_CELLWAIT)
+		return (1);
 	if (c->flags & CLIENT_IGNORESIZE) {
 		/*
 		 * Ignore flagged clients if there are any attached clients
@@ -349,6 +351,22 @@ recalculate_size_skip_client(struct client *loop, __unused int type,
 	return (session_has(loop->session, w) == 0);
 }
 
+/*
+ * Whether the clients know a cell size other than the window's. A window
+ * whose clients know none keeps what it has.
+ */
+static int
+cell_changed(u_int wxpixel, u_int wypixel, u_int xpixel, u_int ypixel)
+{
+	if (xpixel == 0 || ypixel == 0)
+		return (0);
+	if (wxpixel == 0)
+		wxpixel = DEFAULT_XPIXEL;
+	if (wypixel == 0)
+		wypixel = DEFAULT_YPIXEL;
+	return (wxpixel != xpixel || wypixel != ypixel);
+}
+
 void
 recalculate_size(struct window *w, int now)
 {
@@ -380,10 +398,12 @@ recalculate_size(struct window *w, int now)
 	 * got a resize scheduled, then use the new size; otherwise the old.
 	 */
 	if (w->flags & WINDOW_RESIZE) {
-		if (!now && changed && w->new_sx == sx && w->new_sy == sy)
+		if (!now && changed && w->new_sx == sx && w->new_sy == sy &&
+		    !cell_changed(w->new_xpixel, w->new_ypixel, xpixel, ypixel))
 			changed = 0;
 	} else {
-		if (!now && changed && w->sx == sx && w->sy == sy)
+		if (!now && changed && w->sx == sx && w->sy == sy &&
+		    !cell_changed(w->xpixel, w->ypixel, xpixel, ypixel))
 			changed = 0;
 	}
 

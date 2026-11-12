@@ -1701,6 +1701,7 @@ struct tty {
 #define TTY_LINESIZED 0x8000
 #define TTY_INHERITED 0x10000
 #define TTY_EXTKEYS 0x20000
+#define TTY_CELLWAIT 0x40000
 #define TTY_ALL_REQUEST_FLAGS \
 	(TTY_HAVEDA|TTY_HAVEDA2|TTY_HAVEXDA)
 	int		 flags;
@@ -2683,6 +2684,7 @@ int	tty_init(struct tty *, struct client *);
 void	tty_resize(struct tty *);
 void	tty_set_size(struct tty *, u_int, u_int, u_int, u_int);
 void	tty_query_cell_size(struct tty *);
+void	tty_cell_size_known(struct tty *);
 void	tty_invalidate(struct tty *);
 void	tty_start_tty(struct tty *);
 void	tty_send_requests(struct tty *);
