@@ -316,7 +316,7 @@ jobs:
 
       - name: Fetch ConPTY
         run: |
-          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Windows.Console.ConPTY/$env:CONPTY_VERSION" -OutFile conpty.zip
+          Invoke-WebRequest "https://artifacts.home.romaine.life/nuget/nuget/v3/flatcontainer/microsoft.windows.console.conpty/$env:CONPTY_VERSION/microsoft.windows.console.conpty.$env:CONPTY_VERSION.nupkg" -OutFile conpty.zip
           Expand-Archive conpty.zip conpty
 
       # A console changes hands only through conpty.dll, so the Debug build
@@ -391,6 +391,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: romaine-life/pipeline-templates/actions/home-cache@main
 
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y autoconf automake pkg-config bison libevent-dev libncurses-dev libutf8proc-dev

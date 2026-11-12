@@ -27,6 +27,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: romaine-life/pipeline-templates/actions/check-fetches@main
 
       - name: Find the package already built from this tree
         id: find
@@ -56,7 +57,7 @@ jobs:
 
       - name: Make it this run's package
         if: steps.find.outputs.found == 'true'
-        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        uses: forgejo/upload-artifact@v4
         with:
           name: tmux-windows
           path: package/
@@ -109,7 +110,7 @@ jobs:
 
       - name: Fetch ConPTY
         run: |
-          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Windows.Console.ConPTY/$env:CONPTY_VERSION" -OutFile conpty.zip
+          Invoke-WebRequest "https://artifacts.home.romaine.life/nuget/nuget/v3/flatcontainer/microsoft.windows.console.conpty/$env:CONPTY_VERSION/microsoft.windows.console.conpty.$env:CONPTY_VERSION.nupkg" -OutFile conpty.zip
           Expand-Archive conpty.zip conpty
 
       - name: Package Release with ConPTY
@@ -139,7 +140,7 @@ jobs:
           Write-Host "Signer $($signature.SignerCertificate.Thumbprint)"
 
       - name: Upload Release package
-        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        uses: forgejo/upload-artifact@v4
         with:
           name: tmux-windows
           path: package/
@@ -182,7 +183,7 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "Version $version"
 
-      - uses: https://data.forgejo.org/forgejo/download-artifact@v4
+      - uses: forgejo/download-artifact@v4
         with:
           name: tmux-windows
           path: package

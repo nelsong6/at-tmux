@@ -21,9 +21,9 @@ jobs:
           export GIT_CONFIG_COUNT=2
           export GIT_CONFIG_KEY_0=http.https://forgejo.romaine.life/.extraheader
           export GIT_CONFIG_VALUE_0="Authorization: token $FORGEJO_TOKEN"
-          export GIT_CONFIG_KEY_1=http.https://github.com/.extraheader
+          export GIT_CONFIG_KEY_1=http.https://github.com/.extraheader # internet: authenticate GitHub sync
           export GIT_CONFIG_VALUE_1="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_PUSH_TOKEN" | base64 -w0)"
-          github=https://github.com/nelsong6/at-tmux.git
+          github=https://github.com/nelsong6/at-tmux.git # internet: sync and push to GitHub
           git init -q sync && cd sync
           git fetch -q https://forgejo.romaine.life/nelsong6/at-tmux.git master
           ours=$(git rev-parse FETCH_HEAD)
