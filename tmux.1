@@ -1140,6 +1140,15 @@ If
 is used, the
 .Ic update-environment
 option will not be applied.
+.It Xo Ic copy-session-name-to-clipboard
+.Op Fl c Ar target-client
+.Op Fl t Ar target-session
+.Xc
+Copy the name of
+.Ar target-session
+to the system clipboard and a new paste buffer, as
+.Ic copy-window-name-to-clipboard
+does for a window.
 .Tg detach
 .It Xo Ic detach-client
 .Op Fl aP
@@ -2960,6 +2969,20 @@ starts without the preview or if given twice with the larger preview.
 includes all sessions in any session groups in the tree rather than only the
 first.
 This command works only if at least one client is attached.
+.It Xo Ic copy-window-name-to-clipboard
+.Op Fl c Ar target-client
+.Op Fl t Ar target-window
+.Xc
+Copy the name of
+.Ar target-window
+to the system clipboard and a new paste buffer, as copy mode copies a
+selection.
+It goes through the clipboard of
+.Ar target-client Ns 's
+terminal (the
+.Ql clipboard
+terminal feature), and fails, copying nothing, if that terminal has none or
+the window has no name.
 .It Xo
 .Ic customize-mode
 .Op Fl NZ

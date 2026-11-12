@@ -64,6 +64,7 @@ set(TMUX_SOURCES
     cmd-command-prompt.c
     cmd-confirm-before.c
     cmd-copy-mode.c
+    cmd-copy-name.c
     cmd-detach-client.c
     cmd-display-menu.c
     cmd-display-message.c
