@@ -35,7 +35,7 @@ const struct cmd_entry cmd_copy_window_name_entry = {
 	.alias = NULL,
 
 	.args = { "c:t:", 0, 0, NULL },
-	.usage = CMD_TARGET_CLIENT_USAGE " " CMD_TARGET_WINDOW_USAGE,
+	.usage = "[-c target-client] " CMD_TARGET_WINDOW_USAGE,
 
 	.target = { 't', CMD_FIND_WINDOW, 0 },
 
@@ -48,7 +48,7 @@ const struct cmd_entry cmd_copy_session_name_entry = {
 	.alias = NULL,
 
 	.args = { "c:t:", 0, 0, NULL },
-	.usage = CMD_TARGET_CLIENT_USAGE " " CMD_TARGET_SESSION_USAGE,
+	.usage = "[-c target-client] " CMD_TARGET_SESSION_USAGE,
 
 	.target = { 't', CMD_FIND_SESSION, 0 },
 

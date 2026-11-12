@@ -38,6 +38,13 @@ $TMUX -f "$CFG" new -d -s 'work session' -n 'build window' -x40 -y10 \
     </dev/null || exit 1
 $TMUX new-window -d -t 'work session' -n 'other window' || exit 1
 
+# The client is -c, the window or session -t.
+for c in window session; do
+	$TMUX list-commands copy-$c-name-to-clipboard | grep -q \
+	    "^copy-$c-name-to-clipboard \[-c target-client\] \[-t target-$c\]" || \
+	    fail "copy-$c-name-to-clipboard usage: $($TMUX list-commands copy-$c-name-to-clipboard)"
+done
+
 # No client yet: nothing to copy to.
 $TMUX copy-window-name-to-clipboard -t 'work session:build window' \
     2>/dev/null && fail "copied with no client attached"
