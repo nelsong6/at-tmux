@@ -7557,6 +7557,7 @@ Start
 from the server with no shell and no pane, without waiting for it.
 It keeps running if the server ends.
 .It Xo Ic display-palette
+.Op Fl P
 .Op Fl b Ar border-lines
 .Op Fl c Ar target-client
 .Op Fl h Ar height
@@ -7615,6 +7616,20 @@ For example, with fzt:
 bind -n C-b display-palette -w 90% -h 80% fzt -tiered \e
     -accept-nth 4 -input-col 3 -layout reverse
 .Ed
+.Pp
+With
+.Fl P ,
+the rows are instead the actions of the side panel showing on
+.Ar target-client
+(see
+.Ic display-panel ) ,
+each at depth zero: every item that runs a command, named by its text without
+styles and with its key as the description, a tab named as one, then the
+panel's own actions (closing it, giving the keyboard back to the pane and
+scrolling a page up or down).
+A pick runs as choosing it in the panel would, if the panel still offers it
+when the popup closes; otherwise nothing runs.
+It is an error if no panel is showing.
 .Tg menu
 .It Xo Ic display-panel
 .Op Fl C
@@ -7656,6 +7671,16 @@ Escape closes the focused panel and
 .Fl C
 closes it from a command.
 Actions keep the panel open.
+Any other key the focused panel does not use runs its binding in the
+.Ql panel
+key table, if it has one, with the source pane as the target; while
+.Ql /
+is bound there the panel's footer names it, as the panel's prompt.
+For example:
+.Bd -literal -offset indent
+bind -T panel / display-palette -P -w 60% -h 60% fzt -tiered \e
+    -accept-nth 4 -layout reverse
+.Ed
 Use the terminal's Shift-drag gesture to select displayed panel text.
 Other popups and prompts may be used above it.
 .Pp

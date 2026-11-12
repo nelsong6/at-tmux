@@ -5,7 +5,9 @@
 # text is given, and exits with status. Dir/done appears as it exits. With
 # stderr given, it saves its standard error handle's kind to Dir/stderr
 # (console, invalid, or another type) and writes the text there first. With
-# size given, it saves its console's columns and rows to Dir/size.
+# size given, it saves its console's columns and rows to Dir/size. With hold
+# given, it waits for Dir/release before it picks, so a test can change what
+# the pick will act on while the popup is open.
 param(
     [Parameter(Mandatory)][string]$Dir
 )
@@ -52,6 +54,10 @@ public static string Read() {
 }
 '@
     [IO.File]::WriteAllText("$Dir/size", [PalettePick.Size]::Read(), $utf8)
+}
+
+if ($spec.ContainsKey('hold')) {
+    while (-not (Test-Path "$Dir/release")) { Start-Sleep -Milliseconds 50 }
 }
 
 $parent = $null

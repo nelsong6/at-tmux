@@ -4046,6 +4046,15 @@ void panel_resized(void);
 void panel_clear(struct client *);
 void panel_draw(struct client *);
 int panel_key(struct client *, struct key_event *);
+#define PANEL_ACTION_ROW 0
+#define PANEL_ACTION_CLOSE 1
+#define PANEL_ACTION_UNFOCUS 2
+#define PANEL_ACTION_PAGE_UP 3
+#define PANEL_ACTION_PAGE_DOWN 4
+typedef void (*panel_action_cb)(void *, int, const char *, const char *,
+    const char *, int);
+void panel_actions(struct client *, panel_action_cb, void *);
+void panel_act(struct client *, int, const char *);
 struct screen *panel_mode(struct client *);
 int panel_open(struct client *, struct menu *, struct window_pane *, u_int,
     const char *, int, const char *);

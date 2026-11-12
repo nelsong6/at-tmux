@@ -267,9 +267,14 @@ panel_draw(struct client *c)
 	struct grid_cell gc, selected;
 	u_int width = panel_width(c), height, y, top, row, i, x, w;
 	const char *text;
+	struct key_table *table;
+	int prompt;
 	if (width == 0)
 		return;
 	panel_reflow(c);
+	/* The footer names / as the panel's prompt when the panel key table binds it. */
+	table = key_bindings_get_table("panel", 0);
+	prompt = table != NULL && key_bindings_get(table, '/') != NULL;
 	height = c->tty.sy - status_line_size(c);
 	top = status_at_line(c) == 0 ? status_line_size(c) : 0;
 	screen_resize(&pd->screen, width, height, 0);
@@ -295,9 +300,10 @@ panel_draw(struct client *c)
 			}
 			continue;
 		} else if (y == height - 1)
-			text = pd->focused ?
-			    "#[dim] Esc close   Tab back to pane   Shift-drag select" :
-			    "#[dim] Click to use   Shift-drag select";
+			text = !pd->focused ?
+			    "#[dim] Click to use   Shift-drag select" : prompt ?
+			    "#[dim] / commands   Esc close   Tab back to pane   Shift-drag select" :
+			    "#[dim] Esc close   Tab back to pane   Shift-drag select";
 		else {
 			row = pd->top + y - 1 - (pd->tabs != 0);
 			text = row < pd->nlines ? pd->lines[row].text : NULL;
@@ -317,17 +323,179 @@ panel_draw(struct client *c)
 		    c->tty.sx - width, top + y, &gc, NULL);
 }
 
+/* An item that runs something: not blank, not an informational row. */
+static int
+panel_item_selectable(struct panel_data *pd, u_int item)
+{
+	const char *name;
+	if (item >= pd->menu->count)
+		return (0);
+	name = pd->menu->items[item].name;
+	return (name != NULL && *name != '-' &&
+	    pd->menu->items[item].command != NULL &&
+	    *pd->menu->items[item].command != '\0');
+}
+
 static int
 panel_selectable(struct panel_data *pd, int row)
 {
-	const char *name;
 	if (row < 0 || row >= (int)pd->nlines)
 		return (0);
-	row = pd->lines[row].item;
-	name = pd->menu->items[row].name;
-	return (name != NULL && *name != '-' &&
-	    pd->menu->items[row].command != NULL &&
-	    *pd->menu->items[row].command != '\0');
+	return (panel_item_selectable(pd, pd->lines[row].item));
+}
+
+/* The rows the panel has for its items, between its title, tab row and footer. */
+static u_int
+panel_rows(struct client *c)
+{
+	return (c->tty.sy - status_line_size(c) - 2 - (c->panel->tabs != 0));
+}
+
+/* Scroll a page up or down; the highlight goes, as it does for the keys. */
+static void
+panel_page(struct client *c, int up)
+{
+	struct panel_data *pd = c->panel;
+	u_int rows = panel_rows(c);
+
+	pd->choice = -1;
+	if (up)
+		pd->top = pd->top >= pd->tabs + rows ? pd->top - rows : pd->tabs;
+	else if (pd->top + rows < pd->nlines)
+		pd->top = panel_min(pd->top + rows, pd->nlines - rows);
+	c->flags |= CLIENT_REDRAWOVERLAY;
+}
+
+/*
+ * Run an item's command from the source pane, as a click or its key would. A
+ * command naming #{panel_action_generation} gets a fresh generation first.
+ */
+static void
+panel_run(struct client *c, u_int item)
+{
+	struct panel_data *pd = c->panel;
+	struct window_pane *wp;
+	struct cmd_find_state fs;
+	struct cmdq_state *state;
+	const char *command;
+	char *error;
+
+	if (!panel_item_selectable(pd, item))
+		return;
+	wp = window_pane_find_by_id(pd->source);
+	if (wp == NULL) {
+		panel_clear(c);
+		return;
+	}
+	command = pd->menu->items[item].command;
+	cmd_find_from_pane(&fs, wp, 0);
+	state = cmdq_new_state(&fs, NULL, 0);
+	if (strstr(command, "#{panel_action_generation}") != NULL) {
+		free(pd->generation);
+		xasprintf(&pd->generation, "p%lu-%llu", (unsigned long)getpid(),
+		    (unsigned long long)++panel_next_generation);
+		cmdq_add_format(state, "panel_action_generation", "%s", pd->generation);
+	}
+	if (cmd_parse_and_append(command, NULL, c, state, &error) == CMD_PARSE_ERROR) {
+		cmdq_append(c, cmdq_get_error(error));
+		free(error);
+	}
+	cmdq_free_state(state);
+}
+
+/* Run a key bound in the panel key table from the source pane; 0 if unbound. */
+static int
+panel_bound(struct client *c, struct key_event *event, key_code key)
+{
+	struct key_table *table;
+	struct key_binding *bd;
+	struct window_pane *wp;
+	struct cmd_find_state fs;
+
+	table = key_bindings_get_table("panel", 0);
+	if (table == NULL || (bd = key_bindings_get(table, key)) == NULL)
+		return (0);
+	wp = window_pane_find_by_id(c->panel->source);
+	if (wp == NULL) {
+		panel_clear(c);
+		return (1);
+	}
+	cmd_find_from_pane(&fs, wp, 0);
+	key_bindings_dispatch(bd, NULL, c, event, &fs);
+	return (1);
+}
+
+/*
+ * Every action the panel offers, for a palette (display-palette -P): each item
+ * that runs something, with its name as drawn, its key and whether it is a tab,
+ * then the panel's own actions, told apart from a row by their number.
+ */
+void
+panel_actions(struct client *c, panel_action_cb cb, void *arg)
+{
+	struct panel_data *pd = c->panel;
+	struct menu_item *mi;
+	const char *key;
+	u_int i;
+
+	if (pd == NULL)
+		return;
+	for (i = 0; i < pd->menu->count; i++) {
+		if (!panel_item_selectable(pd, i))
+			continue;
+		mi = &pd->menu->items[i];
+		key = NULL;
+		if (mi->key != KEYC_UNKNOWN && mi->key != KEYC_NONE)
+			key = key_string_lookup_key(mi->key, 0);
+		cb(arg, PANEL_ACTION_ROW, mi->name, key, mi->command, i < pd->tabs);
+	}
+	cb(arg, PANEL_ACTION_CLOSE, "Close the panel", "Escape", NULL, 0);
+	cb(arg, PANEL_ACTION_UNFOCUS, "Give the keyboard back to the pane", "Tab",
+	    NULL, 0);
+	cb(arg, PANEL_ACTION_PAGE_UP, "Scroll the panel up a page", "PageUp", NULL,
+	    0);
+	cb(arg, PANEL_ACTION_PAGE_DOWN, "Scroll the panel down a page", "PageDown",
+	    NULL, 0);
+}
+
+/*
+ * Do an action panel_actions offered. A row runs only if the panel still has an
+ * item with its command, and runs as that item, so a pick made while the panel
+ * moved to another view does nothing.
+ */
+void
+panel_act(struct client *c, int action, const char *command)
+{
+	struct panel_data *pd = c->panel;
+	u_int i;
+
+	if (pd == NULL)
+		return;
+	switch (action) {
+	case PANEL_ACTION_ROW:
+		for (i = 0; command != NULL && i < pd->menu->count; i++) {
+			if (panel_item_selectable(pd, i) &&
+			    strcmp(pd->menu->items[i].command, command) == 0) {
+				panel_run(c, i);
+				return;
+			}
+		}
+		break;
+	case PANEL_ACTION_CLOSE:
+		panel_clear(c);
+		break;
+	case PANEL_ACTION_UNFOCUS:
+		pd->focused = 0;
+		c->flags |= CLIENT_REDRAWOVERLAY;
+		break;
+	case PANEL_ACTION_PAGE_UP:
+	case PANEL_ACTION_PAGE_DOWN:
+		if (panel_width(c) != 0) {
+			panel_reflow(c);
+			panel_page(c, action == PANEL_ACTION_PAGE_UP);
+		}
+		break;
+	}
 }
 
 int
@@ -335,10 +503,6 @@ panel_key(struct client *c, struct key_event *event)
 {
 	struct panel_data *pd = c->panel;
 	struct mouse_event *m = &event->m;
-	struct window_pane *wp;
-	struct cmd_find_state fs;
-	struct cmdq_state *state;
-	char *error;
 	u_int width = panel_width(c), height, top, i, rows, x, w;
 	int row, step, n, click, released, held;
 	key_code key = event->key & ~KEYC_MASK_FLAGS;
@@ -347,7 +511,7 @@ panel_key(struct client *c, struct key_event *event)
 	panel_reflow(c);
 	height = c->tty.sy - status_line_size(c);
 	top = status_at_line(c) == 0 ? status_line_size(c) : 0;
-	rows = height - 2 - (pd->tabs != 0);
+	rows = panel_rows(c);
 	if (KEYC_IS_MOUSE(key)) {
 		/* Motion with no button held is encoded as a dragged release. */
 		click = !MOUSE_WHEEL(m->b) && !MOUSE_DRAG(m->b);
@@ -429,14 +593,12 @@ panel_key(struct client *c, struct key_event *event)
 	if (key == '\r')
 		goto chosen;
 	if (key == KEYC_PPAGE || key == KEYC_NPAGE) {
-		pd->choice = -1;
-		if (key == KEYC_PPAGE)
-			pd->top = pd->top >= pd->tabs + rows ? pd->top - rows : pd->tabs;
-		else if (pd->top + rows < pd->nlines)
-			pd->top = panel_min(pd->top + rows, pd->nlines - (rows));
-		goto redraw;
+		panel_page(c, key == KEYC_PPAGE);
+		return (1);
 	}
 	step = key == KEYC_UP ? -1 : key == KEYC_DOWN ? 1 : 0;
+	if (step == 0 && panel_bound(c, event, key))
+		return (1);
 	if (step != 0) {
 		row = pd->choice < 0 ? (step > 0 ? -1 : 0) : pd->choice;
 		for (n = 0; n < (int)pd->nlines; n++) {
@@ -455,28 +617,8 @@ redraw:
 	c->flags |= CLIENT_REDRAWOVERLAY;
 	return (1);
 chosen:
-	if (!panel_selectable(pd, pd->choice))
-		return (1);
-	wp = window_pane_find_by_id(pd->source);
-	if (wp == NULL) {
-		panel_clear(c);
-		return (1);
-	}
-	cmd_find_from_pane(&fs, wp, 0);
-	state = cmdq_new_state(&fs, NULL, 0);
-	if (strstr(pd->menu->items[pd->lines[pd->choice].item].command,
-	    "#{panel_action_generation}") != NULL) {
-		free(pd->generation);
-		xasprintf(&pd->generation, "p%lu-%llu", (unsigned long)getpid(),
-		    (unsigned long long)++panel_next_generation);
-		cmdq_add_format(state, "panel_action_generation", "%s", pd->generation);
-	}
-	if (cmd_parse_and_append(pd->menu->items[pd->lines[pd->choice].item].command, NULL, c,
-	    state, &error) == CMD_PARSE_ERROR) {
-		cmdq_append(c, cmdq_get_error(error));
-		free(error);
-	}
-	cmdq_free_state(state);
+	if (panel_selectable(pd, pd->choice))
+		panel_run(c, pd->lines[pd->choice].item);
 	return (1);
 }
 #ifdef HAVE_SERVER_UPGRADE

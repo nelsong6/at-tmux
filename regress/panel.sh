@@ -22,6 +22,7 @@ set -g mouse on
 set -g @show-footer 1
 set -g pane-footer 'PANEL_FOOTER_#{client_panel_width}_#{client_panel_focused}'
 set -g pane-footer-condition '#{==:#{@show-footer},1}'
+bind -T panel / set -gF @slash '#{pane_id}'
 EOF
 cat >"$OUT/outer.conf" <<EOF
 set -g default-shell "$PS"
@@ -53,6 +54,11 @@ $TMUX send-keys -K -c "$CLIENT" x
 wait_until option_is @picked yes || { echo 'action failed'; exit 1; }
 wait_until width_is 80 || exit 1
 wait_until contains PANEL_FOOTER_40_1 || { echo 'conditional footer lost panel formats'; exit 1; }
+# A key the focused panel doesn't take runs its binding in the panel key table, from
+# the source pane, and the footer names / as the panel's prompt while it is bound.
+wait_until contains '/ commands' || { echo 'the footer does not name the panel prompt'; $OUTER capture-pane -p; exit 1; }
+MSYS2_ARG_CONV_EXCL="*" $TMUX send-keys -K -c "$CLIENT" /
+wait_until option_is @slash "$SOURCE" || { echo "the panel key table did not run from the source pane: $($TMUX show -gqv @slash)"; exit 1; }
 $TMUX send-keys -K -c "$CLIENT" Tab
 focused_is() { [ "$($TMUX display -c "$CLIENT" -p '#{client_panel_focused}' | tr -d '\r')" = "$1" ]; }
 wait_until focused_is 0 || exit 1

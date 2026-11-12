@@ -50,8 +50,8 @@ const struct cmd_entry cmd_display_palette_entry = {
 	.name = "display-palette",
 	.alias = NULL,
 
-	.args = { "b:c:h:t:w:", 1, -1, NULL },
-	.usage = "[-b border-lines] [-c target-client] [-h height] "
+	.args = { "b:c:h:Pt:w:", 1, -1, NULL },
+	.usage = "[-P] [-b border-lines] [-c target-client] [-h height] "
 		 CMD_TARGET_PANE_USAGE
 		 " [-w width] program [argument ...]",
 
@@ -82,11 +82,16 @@ extern const struct cmd_entry cmd_run_shell_entry;
 /* A prefix binding with no note is named by its command, cut to this. */
 #define PALETTE_NAME_MAX 48
 
-/* What a row runs: a binding's commands, a command, or a template. */
+/*
+ * What a row runs: a binding's commands, a command, a template, or with -P one
+ * of the side panel's actions (panel is one more than the action, and command
+ * the row's own command).
+ */
 struct palette_entry {
 	struct cmd_list		*cmdlist;
 	char			*command;
 	char			*template;
+	int			 panel;
 };
 
 struct palette {
@@ -363,6 +368,51 @@ palette_strip_styles(char *s)
 		*out++ = *s++;
 	}
 	*out = '\0';
+}
+
+/*
+ * A row for one of the side panel's actions (panel_actions): its text as the
+ * panel draws it, without styles or the "[key]" it may already end in, and the
+ * key as its description; a tab is named as one.
+ */
+static void
+palette_panel_row(void *arg, int action, const char *name, const char *key,
+    const char *command, int tab)
+{
+	struct palette		*p = arg;
+	struct palette_entry	*pe;
+	char			*text, *start, *end, *label, *desc = NULL;
+	size_t			 n, len;
+
+	text = xstrdup(name);
+	palette_strip_styles(text);
+	for (start = text; *start == ' '; start++)
+		/* nothing */;
+	end = start + strlen(start);
+	while (end > start && end[-1] == ' ')
+		*--end = '\0';
+	if (key != NULL) {
+		xasprintf(&desc, "[%s]", key);
+		n = strlen(start);
+		len = strlen(desc);
+		if (n > len && strcmp(start + n - len, desc) == 0) {
+			end = start + n - len;
+			*end = '\0';
+			while (end > start && end[-1] == ' ')
+				*--end = '\0';
+		}
+	}
+	if (tab)
+		xasprintf(&label, "Show the %s tab", start);
+	else
+		label = xstrdup(start);
+	pe = palette_add(p, 0, label, desc, NULL);
+	pe->panel = 1 + action;
+	if (command != NULL)
+		pe->command = xstrdup(command);
+	free(label);
+	free(desc);
+	free(text);
 }
 
 /* A folder of a session's windows, each running the template with its id. */
@@ -938,7 +988,11 @@ cmd_display_palette_close(int status, void *arg)
 	}
 	pe = &p->entries[id];
 
-	if (pe->cmdlist != NULL) {
+	if (pe->panel != 0) {
+		/* The panel may have closed or moved on; panel_act checks. */
+		if (~p->tc->flags & CLIENT_DEAD)
+			panel_act(p->tc, pe->panel - 1, pe->command);
+	} else if (pe->cmdlist != NULL) {
 		cmdq_insert_after(item, cmdq_get_command(pe->cmdlist,
 		    cmdq_get_state(item)));
 	} else {
@@ -996,6 +1050,10 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 
 	if (tc->overlay_draw != NULL)
 		return (CMD_RETURN_NORMAL);
+	if (args_has(args, 'P') && panel_width(tc) == 0) {
+		cmdq_error(item, "no side panel is showing on %s", tc->name);
+		return (CMD_RETURN_ERROR);
+	}
 
 	h = tty->sy / 2;
 	if (args_has(args, 'h')) {
@@ -1048,9 +1106,13 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	if ((p->rows = evbuffer_new()) == NULL)
 		fatalx("out of memory");
 
-	palette_add_commands(p);
-	palette_add_aliases(p);
-	palette_add_bindings(p);
+	if (args_has(args, 'P'))
+		panel_actions(tc, palette_panel_row, p);
+	else {
+		palette_add_commands(p);
+		palette_add_aliases(p);
+		palette_add_bindings(p);
+	}
 
 	/*
 	 * A picker that fails (not 0, nor 130 for a cancel) leaves the popup
