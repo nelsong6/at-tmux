@@ -79,6 +79,12 @@ struct popup_data {
 	u_int			  lx;
 	u_int			  ly;
 	u_int			  lb;
+
+	/* The key that opened it, held (popup_hold). */
+	key_code		  hold_modifiers;
+	key_code		  hold_key;
+	int			  held;
+	struct event		  hold_timer;
 };
 
 struct popup_editor {
@@ -333,6 +339,8 @@ popup_free_cb(struct client *c, void *data)
 	struct popup_data	*pd = data;
 	struct cmdq_item	*item = pd->item;
 
+	if (pd->hold_modifiers != 0)
+		evtimer_del(&pd->hold_timer);
 	if (pd->md != NULL)
 		menu_free_cb(c, pd->md);
 
@@ -552,6 +560,84 @@ popup_handle_drag(struct client *c, struct popup_data *pd,
 	}
 }
 
+/*
+ * The key a held popup's program gets. With the modifiers of the key that
+ * opened it down, Tab or that key again is Down and Shift+Tab is Up; the
+ * first key pressed ends the hold, so releasing them no longer chooses.
+ */
+static key_code
+popup_hold_key(struct popup_data *pd, key_code key)
+{
+	key_code	stripped;
+
+	if (pd->hold_modifiers == 0 || KEYC_IS_MOUSE(key))
+		return (key);
+	if (pd->held) {
+		pd->held = 0;
+		evtimer_del(&pd->hold_timer);
+	}
+	if ((key & pd->hold_modifiers) != pd->hold_modifiers)
+		return (key);
+	stripped = key & ~(KEYC_MASK_FLAGS|pd->hold_modifiers);
+	if (stripped == KEYC_BTAB || stripped == ('\011'|KEYC_SHIFT))
+		return (KEYC_UP);
+	if (stripped == '\011' || stripped == pd->hold_key)
+		return (KEYC_DOWN);
+	return (key);
+}
+
+#ifdef HAVE_DESKTOP_KEYBOARD
+static int	popup_key_cb(struct client *, void *, struct key_event *);
+
+/* Check the held modifiers again in 10 milliseconds. */
+static void
+popup_hold_poll(struct popup_data *pd)
+{
+	struct timeval	tv = { .tv_sec = 0, .tv_usec = 10000 };
+
+	evtimer_add(&pd->hold_timer, &tv);
+}
+
+/* Hold timer callback: released with no key pressed, choose with Enter. */
+static void
+popup_hold_timer(__unused evutil_socket_t fd, __unused short events,
+    void *data)
+{
+	struct popup_data	*pd = data;
+
+	/* @palette-hold-held stands in for a held key in the tests. */
+	if (desktop_modifiers_held(pd->hold_modifiers) ||
+	    options_get_only(global_s_options, "@palette-hold-held") != NULL) {
+		popup_hold_poll(pd);
+		return;
+	}
+	pd->held = 0;
+	if (pd->job != NULL)
+		input_key(&pd->s, job_get_event(pd->job), '\r');
+}
+
+/*
+ * Hold the popup a client shows while the modifiers of the key that opened it
+ * are down: releasing them with no other key pressed sends Enter to its
+ * program. Terminals report presses, not releases, so the desktop's keyboard
+ * is asked.
+ */
+void
+popup_hold(struct client *c, key_code key)
+{
+	struct popup_data	*pd = c->overlay_data;
+	key_code		 modifiers = key & (KEYC_CTRL|KEYC_META|KEYC_SHIFT);
+
+	if (c->overlay_key != popup_key_cb || pd == NULL || modifiers == 0)
+		return;
+	pd->hold_modifiers = modifiers;
+	pd->hold_key = key & ~(KEYC_MASK_FLAGS|modifiers);
+	pd->held = 1;
+	evtimer_set(&pd->hold_timer, popup_hold_timer, pd);
+	popup_hold_poll(pd);
+}
+#endif
+
 static int
 popup_key_cb(struct client *c, void *data, struct key_event *event)
 {
@@ -637,7 +723,8 @@ popup_key_cb(struct client *c, void *data, struct key_event *event)
 			bufferevent_write(job_get_event(pd->job), buf, len);
 			return (0);
 		}
-		input_key(&pd->s, job_get_event(pd->job), event->key);
+		input_key(&pd->s, job_get_event(pd->job),
+		    popup_hold_key(pd, event->key));
 	}
 	return (0);
 

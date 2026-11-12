@@ -50,8 +50,8 @@ const struct cmd_entry cmd_display_palette_entry = {
 	.name = "display-palette",
 	.alias = NULL,
 
-	.args = { "b:c:h:Pt:w:", 1, -1, NULL },
-	.usage = "[-P] [-b border-lines] [-c target-client] [-h height] "
+	.args = { "b:c:h:PRt:w:", 1, -1, NULL },
+	.usage = "[-PR] [-b border-lines] [-c target-client] [-h height] "
 		 CMD_TARGET_PANE_USAGE
 		 " [-w width] program [argument ...]",
 
@@ -1047,9 +1047,22 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	char			*cause = NULL, **argv = NULL;
 	int			 argc = 0, in[2], out[2];
 	u_int			 w, h;
+	key_code		 key = cmdq_get_event(item)->key;
 
 	if (tc->overlay_draw != NULL)
 		return (CMD_RETURN_NORMAL);
+	if (args_has(args, 'R')) {
+#ifdef HAVE_DESKTOP_KEYBOARD
+		if ((key & (KEYC_CTRL|KEYC_META|KEYC_SHIFT)) == 0) {
+			cmdq_error(item, "-R needs a key with a modifier");
+			return (CMD_RETURN_ERROR);
+		}
+#else
+		cmdq_error(item, "-R is only supported on Windows, macOS and "
+		    "Linux");
+		return (CMD_RETURN_ERROR);
+#endif
+	}
 	if (args_has(args, 'P') && panel_width(tc) == 0) {
 		cmdq_error(item, "no side panel is showing on %s", tc->name);
 		return (CMD_RETURN_ERROR);
@@ -1137,6 +1150,10 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	cmd_free_argv(argc, argv);
 	close(in[0]);
 	close(out[1]);
+#ifdef HAVE_DESKTOP_KEYBOARD
+	if (args_has(args, 'R'))
+		popup_hold(tc, key);
+#endif
 
 	palette_send_rows(in[1], p->rows);
 	return (CMD_RETURN_WAIT);

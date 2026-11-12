@@ -7557,7 +7557,7 @@ Start
 from the server with no shell and no pane, without waiting for it.
 It keeps running if the server ends.
 .It Xo Ic display-palette
-.Op Fl P
+.Op Fl PR
 .Op Fl b Ar border-lines
 .Op Fl c Ar target-client
 .Op Fl h Ar height
@@ -7630,6 +7630,20 @@ scrolling a page up or down).
 A pick runs as choosing it in the panel would, if the panel still offers it
 when the popup closes; otherwise nothing runs.
 It is an error if no panel is showing.
+.Pp
+With
+.Fl R
+(Windows, macOS and Linux), the palette is held while the modifiers of the key
+that opened it (Ctrl, Alt or Shift) are down: releasing them with no other key
+pressed sends Enter to
+.Ar program ,
+choosing what it has selected, and any key pressed first ends the hold, so the
+palette stays open.
+While the modifiers are down, Tab or the key that opened it reaches
+.Ar program
+as Down and Shift+Tab as Up.
+For example, Ctrl+Tab steps through a palette opened on a list, as Alt+Tab
+does, and a second Ctrl+Tab keeps it open to search.
 .Tg menu
 .It Xo Ic display-panel
 .Op Fl C
