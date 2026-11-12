@@ -1204,6 +1204,7 @@ static const char *options_outside_panes_names[] = {
 	"status-right",
 	"status-right-length",
 	"status-right-style",
+	"status-single-window",
 	"status-style",
 	"window-status-activity-style",
 	"window-status-bell-style",

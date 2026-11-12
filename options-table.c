@@ -116,7 +116,8 @@ static const char *options_table_allow_passthrough_list[] = {
 	"#{T;=/#{status-left-length}:status-left}" \
 	"#[pop-default]" \
 	"#[norange default]" \
-	"#[list=on align=#{status-justify}]" \
+	"#[list=#{?status-single-window,focus-only,collapse} " \
+		"align=#{status-justify}]" \
 	"#[list=left-marker]\xe2\x97\x80 #[list=right-marker] \xe2\x96\xb6" \
 	"#[list=on]" \
 	"#{W:" \
@@ -1032,6 +1033,14 @@ const struct options_table_entry options_table[] = {
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .default_num = 1,
 	  .text = "Show the window bar when 'status' is on."
+	},
+
+	{ .name = "status-single-window",
+	  .type = OPTIONS_TABLE_FLAG,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .default_num = 0,
+	  .text = "Show only the current window in the window bar, even when "
+		  "every window would fit."
 	},
 
 	{ .name = "pane-status-current-style",

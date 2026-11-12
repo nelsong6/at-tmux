@@ -5326,6 +5326,7 @@ is drawn above it.
 Specify the format to be used for each line of the status line.
 The default builds the top status line from the various individual status
 options below.
+Its window list shows only the current window when the whole list does not fit.
 .It Xo Ic status-session-bar
 .Op Ic on | off
 .Xc
@@ -5347,6 +5348,15 @@ These options do not affect custom status lines selected with
 .Ic status 2
 through
 .Ic status 5 .
+.It Xo Ic status-single-window
+.Op Ic on | off
+.Xc
+Show only the current window in the window bar, even when every window would
+fit.
+The
+.Ic toggle-single-window
+command turns this on and off.
+The default is off.
 .It Ic status-sessions-format Ar format
 The format of the sessions row drawn above the status line when
 .Ic status
@@ -7012,6 +7022,8 @@ Align text to the left, centre or right of the available space if appropriate.
 .It Ic fill=colour
 Fill the available space with a background colour if appropriate.
 .It Xo Ic list=on ,
+.Ic list=collapse ,
+.Ic list=focus-only ,
 .Ic list=focus ,
 .Ic list=left-marker ,
 .Ic list=right-marker ,
@@ -7022,6 +7034,11 @@ Mark the position of the various window list components in the
 option:
 .Ic list=on
 marks the start of the list;
+.Ic list=collapse
+marks the start of a list that draws only its focus when the whole format won't
+fit in the available space, and
+.Ic list=focus-only
+one that always draws only its focus;
 .Ic list=focus
 is the part of the list that should be kept in focus if the entire list won't
 fit in the available space (typically the current window);
@@ -7333,6 +7350,11 @@ The session bar appears when there is more than one session on the server.
 These commands select the standard bars
 .Pq Ic status on
 in place of any custom multiline status.
+.It Ic toggle-single-window
+Show only the current window in the window bar, or every window that fits.
+This sets the global
+.Ic status-single-window
+option, so it affects every session that has no value of its own.
 .Tg clearphist
 .It Xo Ic clear-prompt-history
 .Op Fl T Ar prompt-type

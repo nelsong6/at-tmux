@@ -119,6 +119,27 @@ format_draw_put(struct screen_write_ctx *octx, u_int ocx, u_int ocy,
 	format_update_ranges(frs, s, offset, start, width);
 }
 
+/* Copy the focus of a list to a screen of its own, with its ranges. */
+static void
+format_draw_focus(struct screen *focus, struct screen *list, u_int start,
+    u_int end, struct format_ranges *frs)
+{
+	struct screen_write_ctx	 ctx;
+	struct format_range	*fr;
+	u_int			 width = end - start;
+
+	screen_write_start(&ctx, focus);
+	screen_write_fast_copy(&ctx, list, start, 0, width, 1);
+	screen_write_cursormove(&ctx, width, 0, 0);
+	screen_write_stop(&ctx);
+
+	format_update_ranges(frs, list, 0, start, width);
+	TAILQ_FOREACH(fr, frs, entry) {
+		if (fr->s == list)
+			fr->s = focus;
+	}
+}
+
 /* Draw list part of format. */
 static void
 format_draw_put_list(struct screen_write_ctx *octx,
@@ -698,6 +719,7 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 	       LIST_LEFT,
 	       LIST_RIGHT,
 	       AFTER,
+	       FOCUS,
 	       TOTAL } current = LEFT, last = LEFT;
 	const char	        *names[] = { "LEFT",
 					     "CENTRE",
@@ -706,7 +728,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 					     "LIST",
 					     "LIST_LEFT",
 					     "LIST_RIGHT",
-					     "AFTER" };
+					     "AFTER",
+					     "FOCUS" };
 	size_t			 size = strlen(expanded);
 	struct screen		*os = octx->s, s[TOTAL];
 	struct screen_write_ctx	 ctx[TOTAL];
@@ -718,6 +741,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 					   ABSOLUTE_CENTRE };
 	int			 focus_start = -1, focus_end = -1;
 	int			 list_state = -1, fill = -1, even;
+	enum style_list		 list_kind = STYLE_LIST_ON;
+	struct screen		*list;
 	enum style_align	 list_align = STYLE_ALIGN_DEFAULT;
 	struct grid_cell	 gc, current_default, base_default;
 	struct style		 sy, saved_sy;
@@ -860,6 +885,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 		/* Check the list state. */
 		switch (sy.list) {
 		case STYLE_LIST_ON:
+		case STYLE_LIST_COLLAPSE:
+		case STYLE_LIST_FOCUS_ONLY:
 			/*
 			 * Entering the list, exiting a marker, or exiting the
 			 * focus.
@@ -869,6 +896,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 					free(fr);
 					fr = NULL;
 				}
+				if (list_state == -1)
+					list_kind = sy.list;
 				list_state = 0;
 				list_align = sy.align;
 			}
@@ -989,6 +1018,25 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 	}
 
 	/*
+	 * A list that keeps only its focus draws that part alone: always for
+	 * list=focus-only, and for list=collapse when everything will not fit.
+	 */
+	list = &s[LIST];
+	if (list_align != STYLE_ALIGN_DEFAULT &&
+	    focus_start != -1 &&
+	    focus_end > focus_start &&
+	    (list_kind == STYLE_LIST_FOCUS_ONLY ||
+	    (list_kind == STYLE_LIST_COLLAPSE &&
+	    s[LEFT].cx + s[CENTRE].cx + s[RIGHT].cx + s[ABSOLUTE_CENTRE].cx +
+	    s[LIST].cx + s[AFTER].cx > available))) {
+		format_draw_focus(&s[FOCUS], &s[LIST], focus_start,
+		    focus_end, &frs);
+		list = &s[FOCUS];
+		focus_end -= focus_start;
+		focus_start = 0;
+	}
+
+	/*
 	 * Draw the screens. How they are arranged depends on where the list
 	 * appears.
 	 */
@@ -1001,28 +1049,28 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 	case STYLE_ALIGN_LEFT:
 		/* List is part of the left. */
 		format_draw_left(octx, available, ocx, ocy, &s[LEFT],
-		    &s[CENTRE], &s[RIGHT], &s[ABSOLUTE_CENTRE], &s[LIST],
+		    &s[CENTRE], &s[RIGHT], &s[ABSOLUTE_CENTRE], list,
 		    &s[LIST_LEFT], &s[LIST_RIGHT], &s[AFTER],
 		    focus_start, focus_end, &frs);
 		break;
 	case STYLE_ALIGN_CENTRE:
 		/* List is part of the centre. */
 		format_draw_centre(octx, available, ocx, ocy, &s[LEFT],
-		    &s[CENTRE], &s[RIGHT], &s[ABSOLUTE_CENTRE], &s[LIST],
+		    &s[CENTRE], &s[RIGHT], &s[ABSOLUTE_CENTRE], list,
 		    &s[LIST_LEFT], &s[LIST_RIGHT], &s[AFTER],
 		    focus_start, focus_end, &frs);
 		break;
 	case STYLE_ALIGN_RIGHT:
 		/* List is part of the right. */
 		format_draw_right(octx, available, ocx, ocy, &s[LEFT],
-		    &s[CENTRE], &s[RIGHT], &s[ABSOLUTE_CENTRE], &s[LIST],
+		    &s[CENTRE], &s[RIGHT], &s[ABSOLUTE_CENTRE], list,
 		    &s[LIST_LEFT], &s[LIST_RIGHT], &s[AFTER],
 		    focus_start, focus_end, &frs);
 		break;
 	case STYLE_ALIGN_ABSOLUTE_CENTRE:
 		/* List is in the centre of the entire horizontal space. */
 		format_draw_absolute_centre(octx, available, ocx, ocy, &s[LEFT],
-		    &s[CENTRE], &s[RIGHT], &s[ABSOLUTE_CENTRE], &s[LIST],
+		    &s[CENTRE], &s[RIGHT], &s[ABSOLUTE_CENTRE], list,
 		    &s[LIST_LEFT], &s[LIST_RIGHT], &s[AFTER],
 		    focus_start, focus_end, &frs);
 		break;

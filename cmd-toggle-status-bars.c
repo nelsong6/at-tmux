@@ -22,6 +22,8 @@
 
 static enum cmd_retval	cmd_toggle_status_bars_exec(struct cmd *,
 			    struct cmdq_item *);
+static enum cmd_retval	cmd_toggle_single_window_exec(struct cmd *,
+			    struct cmdq_item *);
 
 const struct cmd_entry cmd_toggle_status_bars_entry = {
 	.name = "toggle-status-bars",
@@ -62,6 +64,17 @@ const struct cmd_entry cmd_toggle_session_bar_entry = {
 	.exec = cmd_toggle_status_bars_exec
 };
 
+const struct cmd_entry cmd_toggle_single_window_entry = {
+	.name = "toggle-single-window",
+	.alias = NULL,
+
+	.args = { "", 0, 0, NULL },
+	.usage = "",
+
+	.flags = CMD_AFTERHOOK,
+	.exec = cmd_toggle_single_window_exec
+};
+
 static enum cmd_retval
 cmd_toggle_status_bars_exec(struct cmd *self, struct cmdq_item *item)
 {
@@ -93,5 +106,17 @@ cmd_toggle_status_bars_exec(struct cmd *self, struct cmdq_item *item)
 		options_set_number(oo, "status", 1);
 	}
 	options_push_changes("status");
+	return (CMD_RETURN_NORMAL);
+}
+
+static enum cmd_retval
+cmd_toggle_single_window_exec(__unused struct cmd *self,
+    __unused struct cmdq_item *item)
+{
+	const char	*name = "status-single-window";
+
+	options_set_number(global_s_options, name,
+	    !options_get_number(global_s_options, name));
+	options_push_changes(name);
 	return (CMD_RETURN_NORMAL);
 }

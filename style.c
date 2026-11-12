@@ -111,6 +111,10 @@ style_parse(struct style *sy, const struct grid_cell *base, const char *in)
 				sy->list = STYLE_LIST_LEFT_MARKER;
 			else if (strcasecmp(tmp + 5, "right-marker") == 0)
 				sy->list = STYLE_LIST_RIGHT_MARKER;
+			else if (strcasecmp(tmp + 5, "collapse") == 0)
+				sy->list = STYLE_LIST_COLLAPSE;
+			else if (strcasecmp(tmp + 5, "focus-only") == 0)
+				sy->list = STYLE_LIST_FOCUS_ONLY;
 			else
 				goto error;
 		} else if (strcasecmp(tmp, "norange") == 0) {
@@ -272,6 +276,10 @@ style_tostring(struct style *sy)
 			tmp = "left-marker";
 		else if (sy->list == STYLE_LIST_RIGHT_MARKER)
 			tmp = "right-marker";
+		else if (sy->list == STYLE_LIST_COLLAPSE)
+			tmp = "collapse";
+		else if (sy->list == STYLE_LIST_FOCUS_ONLY)
+			tmp = "focus-only";
 		off += xsnprintf(s + off, sizeof s - off, "%slist=%s", comma,
 		    tmp);
 		comma = ",";
