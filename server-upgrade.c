@@ -406,12 +406,12 @@ upgrade_restore_environ(struct upgrade_reader *r, struct environ *env)
 		r->error = 1;
 }
 
+/* Every table's bindings, or with defaults set this build's own defaults. */
 static void
-upgrade_save_keys(struct evbuffer *evb)
+upgrade_save_key_tables(struct evbuffer *o, int defaults)
 {
-	struct evbuffer		*o = evbuffer_new();
 	struct key_table	*table;
-	struct key_binding	*bd;
+	struct key_binding	*bd, *first;
 	char			*s;
 	u_int			 n;
 
@@ -423,13 +423,13 @@ upgrade_save_keys(struct evbuffer *evb)
 	for (table = key_bindings_first_table(); table != NULL;
 	    table = key_bindings_next_table(table)) {
 		upw_str(o, table->name);
+		first = defaults ? key_bindings_first_default(table) :
+		    key_bindings_first(table);
 		n = 0;
-		for (bd = key_bindings_first(table); bd != NULL;
-		    bd = key_bindings_next(table, bd))
+		for (bd = first; bd != NULL; bd = key_bindings_next(table, bd))
 			n++;
 		upw_u32(o, n);
-		for (bd = key_bindings_first(table); bd != NULL;
-		    bd = key_bindings_next(table, bd)) {
+		for (bd = first; bd != NULL; bd = key_bindings_next(table, bd)) {
 			upw_key(o, bd->key);
 			upw_str(o, bd->note);
 			upw_u32(o, bd->flags);
@@ -438,6 +438,20 @@ upgrade_save_keys(struct evbuffer *evb)
 			free(s);
 		}
 	}
+}
+
+/*
+ * The bindings, then this build's defaults, from which the next build tells
+ * which bindings were never changed. Builds before TMUX-207 stop reading
+ * before the defaults.
+ */
+static void
+upgrade_save_keys(struct evbuffer *evb)
+{
+	struct evbuffer	*o = evbuffer_new();
+
+	upgrade_save_key_tables(o, 0);
+	upgrade_save_key_tables(o, 1);
 	upw_obj(evb, o);
 	evbuffer_free(o);
 }
@@ -478,66 +492,166 @@ upgrade_legacy_has_footer(struct upgrade_reader *r)
 	return (found);
 }
 
-/* Take out every binding of this build's own, then put the old server's in. */
+/* A key binding as an upgrade carries it. */
+struct upgrade_key {
+	char		*table;
+	key_code	 key;
+	char		*note;
+	u_int		 flags;
+	char		*cmd;
+};
+
+static struct upgrade_key *
+upgrade_read_key_tables(struct upgrade_reader *o, u_int *count)
+{
+	struct upgrade_key	*list = NULL, *k;
+	char			*name;
+	u_int			 ntables, n, i, j;
+
+	*count = 0;
+	ntables = upr_u32(o);
+	for (i = 0; i < ntables && !o->error; i++) {
+		name = upr_str(o);
+		n = upr_u32(o);
+		for (j = 0; j < n && !o->error; j++) {
+			list = xreallocarray(list, *count + 1, sizeof *list);
+			k = &list[(*count)++];
+			k->table = (name == NULL) ? NULL : xstrdup(name);
+			k->key = upr_key(o);
+			k->note = upr_str(o);
+			k->flags = upr_u32(o);
+			k->cmd = upr_str(o);
+		}
+		free(name);
+	}
+	return (list);
+}
+
+static void
+upgrade_free_key_tables(struct upgrade_key *list, u_int count)
+{
+	u_int	i;
+
+	for (i = 0; i < count; i++) {
+		free(list[i].table);
+		free(list[i].note);
+		free(list[i].cmd);
+	}
+	free(list);
+}
+
+static struct upgrade_key *
+upgrade_find_key(struct upgrade_key *list, u_int count, const char *table,
+    key_code key)
+{
+	u_int	i;
+
+	for (i = 0; i < count; i++) {
+		if (list[i].table != NULL && list[i].key == key &&
+		    strcmp(list[i].table, table) == 0)
+			return (&list[i]);
+	}
+	return (NULL);
+}
+
+static int
+upgrade_same_string(const char *a, const char *b)
+{
+	if (a == NULL || b == NULL)
+		return (a == b);
+	return (strcmp(a, b) == 0);
+}
+
+/*
+ * Take out every binding of this build's own, then put the old server's in.
+ * One still as the old build's default becomes this build's default, or goes
+ * if this build has none; a default new in this build is added unless the old
+ * server had it and it was unbound.
+ */
 static void
 upgrade_restore_keys(struct upgrade_reader *r)
 {
 	struct upgrade_reader	 o;
+	struct upgrade_key	*keys, *old = NULL, *k, *d;
 	struct key_table	*table;
 	struct key_binding	*bd;
 	struct cmd_parse_result	*pr;
 	struct cmd_parse_input	 pi;
-	key_code		*keys = NULL, key;
-	char			*name, *note, *cmd;
-	u_int			 ntables, n, i, j, k, flags;
+	key_code		*own = NULL;
+	u_int			 nkeys, nold = 0, n, i;
+	int			 defaults, untouched;
 
 	for (table = key_bindings_first_table(); table != NULL;
 	    table = key_bindings_next_table(table)) {
 		n = 0;
 		for (bd = key_bindings_first(table); bd != NULL;
 		    bd = key_bindings_next(table, bd)) {
-			keys = xreallocarray(keys, n + 1, sizeof *keys);
-			keys[n++] = bd->key;
+			own = xreallocarray(own, n + 1, sizeof *own);
+			own[n++] = bd->key;
 		}
-		for (k = 0; k < n; k++)
-			key_bindings_remove(table->name, keys[k]);
+		for (i = 0; i < n; i++)
+			key_bindings_remove(table->name, own[i]);
 	}
-	free(keys);
+	free(own);
 
 	upr_obj(r, &o);
-	ntables = upr_u32(&o);
-	for (i = 0; i < ntables && !o.error; i++) {
-		name = upr_str(&o);
-		n = upr_u32(&o);
-		for (j = 0; j < n && !o.error; j++) {
-			key = upr_key(&o);
-			note = upr_str(&o);
-			flags = upr_u32(&o);
-			cmd = upr_str(&o);
-			if (name != NULL && cmd != NULL) {
-				/*
-				 * A saved binding is commands the old server
-				 * had already resolved: an alias that has since
-				 * taken one of their names is not what it ran.
-				 */
-				memset(&pi, 0, sizeof pi);
-				pi.flags = CMD_PARSE_NOALIAS;
-				pr = cmd_parse_from_string(cmd, &pi);
-				if (pr->status == CMD_PARSE_SUCCESS) {
-					key_bindings_add(name, key, note,
-					    flags & KEY_BINDING_REPEAT,
-					    pr->cmdlist);
-				} else {
-					log_debug("%s: %s: %s", __func__, name,
-					    pr->error);
-					free(pr->error);
-				}
-			}
-			free(note);
-			free(cmd);
+	keys = upgrade_read_key_tables(&o, &nkeys);
+	defaults = (!o.error && o.left != 0);
+	if (defaults)
+		old = upgrade_read_key_tables(&o, &nold);
+
+	for (i = 0; i < nkeys && !o.error; i++) {
+		k = &keys[i];
+		if (k->table == NULL || k->cmd == NULL)
+			continue;
+		/*
+		 * A saved binding is commands the old server had already
+		 * resolved: an alias that has since taken one of their names is
+		 * not what it ran.
+		 */
+		memset(&pi, 0, sizeof pi);
+		pi.flags = CMD_PARSE_NOALIAS;
+		pr = cmd_parse_from_string(k->cmd, &pi);
+		if (pr->status != CMD_PARSE_SUCCESS) {
+			log_debug("%s: %s: %s", __func__, k->table, pr->error);
+			free(pr->error);
+			continue;
 		}
-		free(name);
+		key_bindings_add(k->table, k->key, k->note,
+		    k->flags & KEY_BINDING_REPEAT, pr->cmdlist);
+
+		if (defaults) {
+			d = upgrade_find_key(old, nold, k->table, k->key);
+			untouched = (d != NULL &&
+			    upgrade_same_string(d->cmd, k->cmd) &&
+			    upgrade_same_string(d->note, k->note) &&
+			    (d->flags & KEY_BINDING_REPEAT) ==
+			    (k->flags & KEY_BINDING_REPEAT));
+		} else {
+			untouched = key_bindings_legacy_default(k->table,
+			    k->key, k->cmd);
+		}
+		if (untouched)
+			key_bindings_reset(k->table, k->key);
 	}
+
+	for (table = key_bindings_first_table(); defaults && table != NULL;
+	    table = key_bindings_next_table(table)) {
+		for (bd = key_bindings_first_default(table); bd != NULL;
+		    bd = key_bindings_next(table, bd)) {
+			if (upgrade_find_key(keys, nkeys, table->name,
+			    bd->key) != NULL ||
+			    upgrade_find_key(old, nold, table->name,
+			    bd->key) != NULL)
+				continue;
+			bd->cmdlist->references++;
+			key_bindings_add(table->name, bd->key, bd->note,
+			    bd->flags & KEY_BINDING_REPEAT, bd->cmdlist);
+		}
+	}
+
+	upgrade_free_key_tables(keys, nkeys);
+	upgrade_free_key_tables(old, nold);
 	if (o.error)
 		r->error = 1;
 }

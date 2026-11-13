@@ -1825,6 +1825,10 @@ The old server exits once the new one has taken everything over; if the new
 one fails, the old one carries on.
 Key bindings and key-valued options travel by key name, so new mouse events
 do not change existing bindings during an upgrade.
+A key still bound as the old build's default takes the new build's default,
+or is unbound if the new build has none for it, and a default new in the new
+build is bound unless the old build had it and it was unbound; a key rebound
+or unbound since stays as it was.
 An upgrade to a build which cannot read the state or a saved key is refused;
 the old server continues running.
 The

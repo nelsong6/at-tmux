@@ -188,6 +188,117 @@ key_bindings_next(__unused struct key_table *table, struct key_binding *bd)
 	return (RB_NEXT(key_bindings, &table->key_bindings, bd));
 }
 
+/* The table's defaults, walked on with key_bindings_next. */
+struct key_binding *
+key_bindings_first_default(struct key_table *table)
+{
+	return (RB_MIN(key_bindings, &table->default_key_bindings));
+}
+
+/*
+ * Defaults since changed, as builds before TMUX-207 had them: those builds
+ * send no defaults with an upgrade, so a binding still exactly one of these is
+ * taken as never changed. Remove once no server runs such a build.
+ */
+#define LEGACY_WINDOW_MENU \
+	" '#{?#{>:#{session_windows},1},,-}Swap Left' 'l' {swap-window -t:-1}" \
+	" '#{?#{>:#{session_windows},1},,-}Swap Right' 'r' {swap-window -t:+1}" \
+	" '#{?pane_marked_set,,-}Swap Marked' 's' {swap-window}" \
+	" ''" \
+	" 'Kill' 'X' {kill-window}" \
+	" 'Respawn' 'R' {respawn-window -k}" \
+	" '#{?pane_marked,Unmark,Mark}' 'm' {select-pane -m}" \
+	" 'Rename' 'n' {command-prompt -FI \"#W\" {rename-window -t '#{window_id}' -- '%%'}}" \
+	" ''" \
+	" 'New After' 'w' {new-window -a}" \
+	" 'New At End' 'W' {new-window}"
+#define LEGACY_PANE_MENU \
+	" '#{?#{m/r:(copy|view)-mode,#{pane_mode}},Go To Top,}' '<' {send -X history-top}" \
+	" '#{?#{m/r:(copy|view)-mode,#{pane_mode}},Go To Bottom,}' '>' {send -X history-bottom}" \
+	" ''" \
+	" '#{?#{&&:#{buffer_size},#{!:#{pane_in_mode}}},Paste #[underscore]#{=/9/...:buffer_sample},}' 'p' {paste-buffer}" \
+	" ''" \
+	" '#{?mouse_word,Search For #[underscore]#{=/9/...:mouse_word},}' 'C-r' {if -F '#{?#{m/r:(copy|view)-mode,#{pane_mode}},0,1}' 'copy-mode -t='; send -Xt= search-backward -- \"#{q:mouse_word}\"}" \
+	" '#{?mouse_word,Type #[underscore]#{=/9/...:mouse_word},}' 'C-y' {copy-mode -q; send-keys -l -- \"#{q:mouse_word}\"}" \
+	" '#{?mouse_word,Copy #[underscore]#{=/9/...:mouse_word},}' 'c' {copy-mode -q; set-buffer -- \"#{q:mouse_word}\"}" \
+	" '#{?mouse_line,Copy Line,}' 'l' {copy-mode -q; set-buffer -- \"#{q:mouse_line}\"}" \
+	" ''" \
+	" '#{?mouse_hyperlink,Type #[underscore]#{=/9/...:mouse_hyperlink},}' 'C-h' {copy-mode -q; send-keys -l -- \"#{q:mouse_hyperlink}\"}" \
+	" '#{?mouse_hyperlink,Copy #[underscore]#{=/9/...:mouse_hyperlink},}' 'h' {copy-mode -q; set-buffer -- \"#{q:mouse_hyperlink}\"}" \
+	" ''" \
+	" 'Horizontal Split' 'h' {split-window -h}" \
+	" 'Vertical Split' 'v' {split-window -v}" \
+	" ''" \
+	" '#{?#{>:#{window_panes},1},,-}Swap Up' 'u' {swap-pane -U}" \
+	" '#{?#{>:#{window_panes},1},,-}Swap Down' 'd' {swap-pane -D}" \
+	" '#{?pane_marked_set,,-}Swap Marked' 's' {swap-pane}" \
+	" ''" \
+	" 'Kill' 'X' {kill-pane}" \
+	" 'Respawn' 'R' {respawn-pane -k}" \
+	" '#{?pane_marked,Unmark,Mark}' 'm' {select-pane -m}" \
+	" '#{?#{>:#{window_panes},1},,-}#{?window_zoomed_flag,Unzoom,Zoom}' 'z' {resize-pane -Z}"
+static const struct {
+	const char	*table;
+	const char	*key;
+	const char	*cmd;
+} key_bindings_legacy[] = {
+	{ "prefix", "&",
+	  "confirm-before -p\"kill-window #W? (y/n)\" kill-window" },
+	{ "prefix", "x",
+	  "confirm-before -p\"kill-pane #P? (y/n)\" kill-pane" },
+	{ "prefix", "<",
+	  "display-menu -xW -yW -T '#[align=centre]#{window_index}:#{window_name}' "
+	  LEGACY_WINDOW_MENU },
+	{ "prefix", ">",
+	  "display-menu -xP -yP -T '#[align=centre]#{pane_index} (#{pane_id})' "
+	  LEGACY_PANE_MENU },
+	{ "root", "MouseDown3Status",
+	  "display-menu -t= -xW -yW -T '#[align=centre]#{window_index}:#{window_name}' "
+	  LEGACY_WINDOW_MENU },
+	{ "root", "M-MouseDown3Status",
+	  "display-menu -t= -xW -yW -T '#[align=centre]#{window_index}:#{window_name}' "
+	  LEGACY_WINDOW_MENU },
+	{ "root", "MouseDown3Pane",
+	  "if -Ft= '#{||:#{mouse_any_flag},#{&&:#{pane_in_mode},#{?#{m/r:(copy|view)-mode,#{pane_mode}},0,1}}}' { select-pane -t=; send -M } { display-menu -t= -xM -yM -T '#[align=centre]#{pane_index} (#{pane_id})' "
+	  LEGACY_PANE_MENU " }" },
+	{ "root", "M-MouseDown3Pane",
+	  "display-menu -t= -xM -yM -T '#[align=centre]#{pane_index} (#{pane_id})' "
+	  LEGACY_PANE_MENU },
+};
+
+/* Whether a binding is one of the changed defaults above, as it was. */
+int
+key_bindings_legacy_default(const char *table, key_code key, const char *cmd)
+{
+	struct cmd_parse_input	 pi;
+	struct cmd_parse_result	*pr;
+	char			*s;
+	u_int			 i;
+	int			 found = 0;
+
+	for (i = 0; i < nitems(key_bindings_legacy); i++) {
+		if (strcmp(key_bindings_legacy[i].table, table) != 0)
+			continue;
+		if ((key_string_lookup_string(key_bindings_legacy[i].key) &
+		    ~KEYC_MASK_FLAGS) != (key & ~KEYC_MASK_FLAGS))
+			continue;
+		memset(&pi, 0, sizeof pi);
+		pi.flags = CMD_PARSE_NOALIAS;
+		pr = cmd_parse_from_string(key_bindings_legacy[i].cmd, &pi);
+		if (pr->status != CMD_PARSE_SUCCESS) {
+			free(pr->error);
+			continue;
+		}
+		s = cmd_list_print(pr->cmdlist, 0);
+		found = (strcmp(s, cmd) == 0);
+		free(s);
+		cmd_list_free(pr->cmdlist);
+		if (found)
+			break;
+	}
+	return (found);
+}
+
 void
 key_bindings_add(const char *name, key_code key, const char *note, int repeat,
     struct cmd_list *cmdlist)

@@ -2989,6 +2989,8 @@ struct key_binding *key_bindings_get(struct key_table *, key_code);
 struct key_binding *key_bindings_get_default(struct key_table *, key_code);
 struct key_binding *key_bindings_first(struct key_table *);
 struct key_binding *key_bindings_next(struct key_table *, struct key_binding *);
+struct key_binding *key_bindings_first_default(struct key_table *);
+int	 key_bindings_legacy_default(const char *, key_code, const char *);
 void	 key_bindings_add(const char *, key_code, const char *, int,
 	     struct cmd_list *);
 void	 key_bindings_remove(const char *, key_code);
