@@ -7640,24 +7640,29 @@ the rows are instead the actions of the side panel showing on
 .Ar target-client
 (see
 .Ic display-panel ) ,
-each at depth zero: every item that runs a command, named by its text without
-styles and with its key as the description, a tab named as one, then the
-panel's own actions (closing it, giving the keyboard back to the pane and
-scrolling a page up or down).
+each at depth zero: every item that runs a command, then the panel's own
+actions
+.Ql ( close-panel ,
+.Ql unfocus-panel ,
+.Ql page-up
+and
+.Ql page-down ) .
+A row is named by its command name, with its text without styles and its key
+as the description; an item given no command name is named by its text and
+described by its key, a tab named as one.
 A pick runs as choosing it in the panel would, if the panel still offers it
 when the popup closes; otherwise nothing runs.
 It is an error if no panel is showing.
 .Tg menu
 .It Xo Ic display-panel
-.Op Fl C
+.Op Fl CNu
 .Op Fl b Ar tab-count
 .Op Fl c Ar target-client
 .Op Fl g Ar generation
 .Op Fl G Ar expected-generation
 .Op Fl t Ar target-pane
 .Op Fl T Ar title
-.Op Fl u
-.Op Ar name key command ...
+.Op Ar name key command Oo Ar command-name Oc ...
 .Xc
 Display a persistent, native side panel beside the conversation on
 .Ar target-client .
@@ -7672,6 +7677,14 @@ windows. Closing the source pane hides its panel.
 .Pp
 Each item has a name, shortcut key and tmux command, as for
 .Ic display-menu .
+With
+.Fl N
+each item also has a
+.Ar command-name ,
+which names it in
+.Ic display-palette
+.Fl P ;
+an empty one leaves it unnamed.
 A name beginning with a hyphen is an informational row.
 Long rows wrap and reflow when the client is resized.
 .Fl b

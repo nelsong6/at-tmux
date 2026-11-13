@@ -28,7 +28,7 @@
  */
 
 #define UPGRADE_MAGIC "tmux-upgrade"
-#define UPGRADE_VERSION 3
+#define UPGRADE_VERSION 4
 #define UPGRADE_ACK_TIMEOUT 30000
 #define UPGRADE_FLUSH_TIMEOUT 5000
 
@@ -1334,7 +1334,7 @@ upgrade_restore_client(struct upgrade_reader *r)
 	}
 	c->tty.fg = (int)upr_u32(&o) - 1;
 	c->tty.bg = (int)upr_u32(&o) - 1;
-	panel_upgrade_restore(&o, c);
+	panel_upgrade_restore(&o, c, upgrade_version);
 	if (o.error) {
 		r->error = 1;
 		return;

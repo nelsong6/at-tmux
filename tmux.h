@@ -1106,6 +1106,7 @@ struct menu_item {
 	const char	*name;
 	key_code	 key;
 	const char	*command;
+	const char	*command_name; /* a side panel row's, for display-palette -P */
 };
 struct menu {
 	const char		*title;
@@ -4053,7 +4054,7 @@ int panel_key(struct client *, struct key_event *);
 #define PANEL_ACTION_PAGE_UP 3
 #define PANEL_ACTION_PAGE_DOWN 4
 typedef void (*panel_action_cb)(void *, int, const char *, const char *,
-    const char *, int);
+    const char *, const char *, int);
 void panel_actions(struct client *, panel_action_cb, void *);
 void panel_act(struct client *, int, const char *);
 struct screen *panel_mode(struct client *);
@@ -4062,7 +4063,7 @@ int panel_open(struct client *, struct menu *, struct window_pane *, u_int,
 
 #ifdef HAVE_SERVER_UPGRADE
 void panel_upgrade_save(struct evbuffer *, struct client *);
-void panel_upgrade_restore(struct upgrade_reader *, struct client *);
+void panel_upgrade_restore(struct upgrade_reader *, struct client *, u_int);
 #endif
 
 #endif /* TMUX_H */

@@ -427,8 +427,9 @@ panel_bound(struct client *c, struct key_event *event, key_code key)
 
 /*
  * Every action the panel offers, for a palette (display-palette -P): each item
- * that runs something, with its name as drawn, its key and whether it is a tab,
- * then the panel's own actions, told apart from a row by their number.
+ * that runs something, with the command name display-panel -N gave it (NULL
+ * without one), its name as drawn, its key and whether it is a tab, then the
+ * panel's own actions, told apart from a row by their number.
  */
 void
 panel_actions(struct client *c, panel_action_cb cb, void *arg)
@@ -447,15 +448,17 @@ panel_actions(struct client *c, panel_action_cb cb, void *arg)
 		key = NULL;
 		if (mi->key != KEYC_UNKNOWN && mi->key != KEYC_NONE)
 			key = key_string_lookup_key(mi->key, 0);
-		cb(arg, PANEL_ACTION_ROW, mi->name, key, mi->command, i < pd->tabs);
+		cb(arg, PANEL_ACTION_ROW, mi->command_name, mi->name, key,
+		    mi->command, i < pd->tabs);
 	}
-	cb(arg, PANEL_ACTION_CLOSE, "Close the panel", "Escape", NULL, 0);
-	cb(arg, PANEL_ACTION_UNFOCUS, "Give the keyboard back to the pane", "Tab",
+	cb(arg, PANEL_ACTION_CLOSE, "close-panel", "Close the panel", "Escape",
 	    NULL, 0);
-	cb(arg, PANEL_ACTION_PAGE_UP, "Scroll the panel up a page", "PageUp", NULL,
-	    0);
-	cb(arg, PANEL_ACTION_PAGE_DOWN, "Scroll the panel down a page", "PageDown",
-	    NULL, 0);
+	cb(arg, PANEL_ACTION_UNFOCUS, "unfocus-panel",
+	    "Give the keyboard back to the pane", "Tab", NULL, 0);
+	cb(arg, PANEL_ACTION_PAGE_UP, "page-up", "Scroll the panel up a page",
+	    "PageUp", NULL, 0);
+	cb(arg, PANEL_ACTION_PAGE_DOWN, "page-down",
+	    "Scroll the panel down a page", "PageDown", NULL, 0);
 }
 
 /*
@@ -644,11 +647,13 @@ panel_upgrade_save(struct evbuffer *o, struct client *c)
 		if (pd->menu->items[i].key != KEYC_UNKNOWN)
 			upw_key(o, pd->menu->items[i].key);
 		upw_str(o, pd->menu->items[i].command);
+		upw_str(o, pd->menu->items[i].command_name);
 	}
 }
 
 void
-panel_upgrade_restore(struct upgrade_reader *o, struct client *c)
+panel_upgrade_restore(struct upgrade_reader *o, struct client *c,
+    u_int version)
 {
 	struct panel_data *pd;
 	u_int i, count;
@@ -677,6 +682,8 @@ panel_upgrade_restore(struct upgrade_reader *o, struct client *c)
 		pd->menu->items[i].name = upr_str(o);
 		pd->menu->items[i].key = upr_u32(o) ? upr_key(o) : KEYC_UNKNOWN;
 		pd->menu->items[i].command = upr_str(o);
+		if (version >= 4)
+			pd->menu->items[i].command_name = upr_str(o);
 	}
 }
 #endif

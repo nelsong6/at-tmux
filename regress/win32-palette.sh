@@ -277,20 +277,22 @@ until srow_is "$here later"; do
 	sleep 0.5
 done
 
-# display-palette -P (ATC-72): the side panel's actions are the rows, each named
-# once by its key, with the panel's own actions; / in the panel key table opens
-# it. A pick runs as the panel would run it, and a pick the panel has moved on
-# from runs nothing.
+# display-palette -P (ATC-72): the side panel's actions are the rows, each by
+# the command name display-panel -N gave it, described by its text and key once
+# (TMUX-206), or by its text when it has none, with the panel's own actions; /
+# in the panel key table opens it. A pick runs as the panel would run it, and a
+# pick the panel has moved on from runs nothing.
 out=$($TMUX display-palette -P -c "$CLIENT" cmd 2>&1) &&
     { echo "-P opened with no panel"; exit 1; }
 echo "$out" | grep -q 'no side panel' ||
     { echo "-P with no panel said: $out"; exit 1; }
 PANE=$($TMUX display -p -c "$CLIENT" '#{pane_id}' | tr -d '\r')
 open_panel() {
-	$TMUX display-panel -c "$CLIENT" -t "$PANE" -T Links -b2 -g "$1" -- \
-	    All a 'set -g @tab all' PRs p 'set -g @tab prs' -INFO-ROW '' '' \
-	    ' Copy URL  #[dim][c]' c 'set -g @copied yes' \
-	    Next n 'set -gF @gen "#{panel_action_generation}"' || exit 1
+	$TMUX display-panel -c "$CLIENT" -t "$PANE" -T Links -b2 -g "$1" -N -- \
+	    All a 'set -g @tab all' show-all PRs p 'set -g @tab prs' show-prs \
+	    -INFO-ROW '' '' '' \
+	    ' Copy URL  #[dim][c]' c 'set -g @copied yes' copy-url \
+	    Next n 'set -gF @gen "#{panel_action_generation}"' '' || exit 1
 }
 # panel_palette LINE ...: press / in the focused panel with the picker told
 # LINE ..., and wait for the picker to exit.
@@ -315,17 +317,20 @@ generation_set() {
 }
 open_panel one
 wait_until focused_is 1 || { echo "the panel never took the keyboard"; exit 1; }
-panel_palette 'pick=Copy URL'
-wait_until option_is @copied yes || { echo "Copy URL did not run"; exit 1; }
-row '^0	Show the All tab	\[a\]		[0-9]*	$' || fail_row "no All tab row" All
-row '^0	Copy URL	\[c\]		' ||
-    fail_row "Copy URL is not named once by its key" Copy
-row '^0	Close the panel	\[Escape\]		' || fail_row "no Close row" Close
-row '^0	Give the keyboard back to the pane	\[Tab\]		' ||
+panel_palette pick=copy-url
+wait_until option_is @copied yes || { echo "copy-url did not run"; exit 1; }
+row '^0	show-all	All  \[a\]		[0-9]*	$' || fail_row "no All tab row" All
+row '^0	copy-url	Copy URL  \[c\]		' ||
+    fail_row "copy-url is not described once by its key" Copy
+row '^0	Next	\[n\]		' || fail_row "an unnamed row is not named by its text" Next
+row '^0	close-panel	Close the panel  \[Escape\]		' || fail_row "no Close row" Close
+row '^0	unfocus-panel	Give the keyboard back to the pane  \[Tab\]		' ||
     fail_row "no Tab row" keyboard
+row '^0	page-up	' || fail_row "no page-up row" page
+row '^0	page-down	' || fail_row "no page-down row" page
 row 'INFO-ROW' && fail_row "an informational row was offered" INFO-ROW
 row 'kill-pane' && fail_row "-P listed tmux's commands" kill-pane
-panel_palette 'pick=Show the PRs tab'
+panel_palette pick=show-prs
 wait_until option_is @tab prs || { echo "the PRs tab did not run"; exit 1; }
 panel_palette pick=Next
 wait_until generation_set ||
@@ -335,7 +340,7 @@ wait_until generation_set ||
 # have.
 $TMUX set -g @copied no
 rm -f "$OUT/rows" "$OUT/done" "$OUT/release"
-printf '%s\n' 'pick=Copy URL' hold=1 >"$OUT/pick"
+printf '%s\n' pick=copy-url hold=1 >"$OUT/pick"
 MSYS2_ARG_CONV_EXCL="*" $TMUX send-keys -K -c "$CLIENT" /
 rows_saved() { [ -e "$OUT/rows" ]; }
 wait_until rows_saved || { echo "the held picker never got its rows"; exit 1; }
@@ -350,11 +355,11 @@ option_is @copied no ||
 # The panel's own actions: back to the pane, then close.
 open_panel three
 wait_until focused_is 1 || exit 1
-panel_palette 'pick=Give the keyboard back to the pane'
+panel_palette pick=unfocus-panel
 wait_until focused_is 0 || { echo "the Tab row kept the keyboard"; exit 1; }
 open_panel four
 wait_until focused_is 1 || exit 1
-panel_palette 'pick=Close the panel'
+panel_palette pick=close-panel
 wait_until panel_width_is 0 || { echo "the Escape row left the panel open"; exit 1; }
 
 $TMUX kill-server 2>/dev/null

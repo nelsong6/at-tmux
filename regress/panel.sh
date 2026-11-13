@@ -158,15 +158,15 @@ wait_until width_is 120 || exit 1
 # A long list is scrollable with PageDown; it need not fit in the terminal.
 set --
 i=1
-while [ "$i" -le 70 ]; do set -- "$@" "-SCROLL-ROW-$i" '' ''; i=$((i+1)); done
-$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Scroll -g scroll -- Action x "set -g @hidden activated" "$@"
+while [ "$i" -le 70 ]; do set -- "$@" "-SCROLL-ROW-$i" '' '' ''; i=$((i+1)); done
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Scroll -g scroll -N -- Action x "set -g @hidden activated" scroll-action "$@"
 $TMUX send-keys -K -c "$CLIENT" x
 wait_until option_is @hidden activated || exit 1
 $TMUX set -g @hidden untouched
 $TMUX send-keys -K -c "$CLIENT" NPage Enter
 wait_until option_is @hidden untouched || { echo 'scrolled-away action ran'; exit 1; }
 wait_until contains SCROLL-ROW-27 || { echo 'scroll failed'; $OUTER capture-pane -p; exit 1; }
-$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Refreshed -g scroll -u -- Action x "set -g @hidden activated" "$@"
+$TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Refreshed -g scroll -u -N -- Action x "set -g @hidden activated" scroll-action "$@"
 wait_until contains SCROLL-ROW-27 || { echo 'refresh reset scroll'; exit 1; }
 # Upgrade preserves panel content, scroll and focus along with pane processes.
 PID=$($TMUX display -p '#{pid}' | tr -d '\r')
@@ -178,6 +178,16 @@ wait_until upgraded || { $TMUX display -p '#{server_upgrade}'; exit 1; }
 [ "$($TMUX list-panes -F '#{pane_id}|#{pane_pid}')" = "$PANES" ] || exit 1
 wait_until contains SCROLL-ROW-27 || { echo 'upgrade lost panel scroll'; exit 1; }
 [ "$($TMUX show -gv panel-width | tr -d '\r')" = 45 ] || { echo 'upgrade lost the panel width'; exit 1; }
+# The upgrade kept each row's command name, which display-palette -P lists it by.
+here=$(cd "$(dirname "$0")" && pwd)
+echo pick=none >"$OUT/pick"
+case "$(uname -s)" in
+ MINGW*|MSYS*) $TMUX display-palette -P -c "$CLIENT" -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -m "$here/win32-palette-pick.ps1")" -Dir "$(cygpath -m "$OUT")" ;;
+ *) $TMUX display-palette -P -c "$CLIENT" -w 100% -h 100% /bin/sh "$here/palette-pick.sh" "$OUT" ;;
+esac
+picked() { [ -e "$OUT/done" ]; }
+wait_until picked || { echo 'the panel palette never ran after the upgrade'; exit 1; }
+grep -q "^0	scroll-action	Action  \[x\]	" "$OUT/rows" || { echo 'upgrade lost the command name'; cat "$OUT/rows"; exit 1; }
 $TMUX set -gu panel-width
 wait_until width_is 80 || exit 1
 $TMUX display-panel -c "$CLIENT" -C

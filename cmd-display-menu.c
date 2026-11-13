@@ -52,10 +52,10 @@ const struct cmd_entry cmd_display_menu_entry = {
 
 const struct cmd_entry cmd_display_panel_entry = {
 	.name = "display-panel",
-	.args = { "b:c:Cg:G:t:T:u", 0, -1, cmd_display_menu_args_parse },
-	.usage = "[-C] [-b tab-count] [-c target-client] " CMD_TARGET_PANE_USAGE
-	    " [-g generation] [-G expected-generation] [-T title] [-u] "
-	    "[name key command ...]",
+	.args = { "b:c:Cg:G:Nt:T:u", 0, -1, cmd_display_menu_args_parse },
+	.usage = "[-CNu] [-b tab-count] [-c target-client] " CMD_TARGET_PANE_USAGE
+	    " [-g generation] [-G expected-generation] [-T title] "
+	    "[name key command [command-name] ...]",
 	.target = { 't', CMD_FIND_PANE, 0 },
 	.flags = CMD_CLIENT_CFLAG,
 	.exec = cmd_display_menu_exec
@@ -98,6 +98,13 @@ cmd_display_menu_args_parse(struct args *args, u_int idx, __unused char **cause)
 		type = ARGS_PARSE_COMMANDS_OR_STRING;
 		if (i++ == idx)
 			break;
+
+		/* display-panel -N: each item also has a command name. */
+		if (args_has(args, 'N')) {
+			type = ARGS_PARSE_STRING;
+			if (i++ == idx)
+				break;
+		}
 	}
 	return (type);
 }
@@ -348,7 +355,7 @@ cmd_display_menu_exec(struct cmd *self, struct cmdq_item *item)
 			continue;
 		}
 
-		if (count - i < 2) {
+		if (count - i < (panel && args_has(args, 'N') ? 3 : 2)) {
 			cmdq_error(item, "not enough arguments");
 			menu_free(menu);
 			return (CMD_RETURN_ERROR);
@@ -363,7 +370,10 @@ cmd_display_menu_exec(struct cmd *self, struct cmdq_item *item)
 			menu->items = xreallocarray(menu->items, menu->count + 1, sizeof *menu->items);
 			menu->items[menu->count].name = format_single_from_state(item, name, tc, target);
 			menu->items[menu->count].key = menu_item.key;
-			menu->items[menu->count++].command = xstrdup(menu_item.command);
+			menu->items[menu->count].command = xstrdup(menu_item.command);
+			value = args_has(args, 'N') ? args_string(args, i++) : "";
+			menu->items[menu->count++].command_name =
+			    *value == '\0' ? NULL : xstrdup(value);
 		} else
 			menu_add_item(menu, &menu_item, item, tc, target);
 	}

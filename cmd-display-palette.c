@@ -371,17 +371,19 @@ palette_strip_styles(char *s)
 }
 
 /*
- * A row for one of the side panel's actions (panel_actions): its text as the
- * panel draws it, without styles or the "[key]" it may already end in, and the
- * key as its description; a tab is named as one.
+ * A row for one of the side panel's actions (panel_actions): its command name,
+ * described by its text as the panel draws it and its key. The text loses its
+ * styles and the "[key]" it may already end in. A row with no command name is
+ * named by its text instead, a tab as one, and described by its key alone.
  */
 static void
-palette_panel_row(void *arg, int action, const char *name, const char *key,
-    const char *command, int tab)
+palette_panel_row(void *arg, int action, const char *command_name,
+    const char *name, const char *key, const char *command, int tab)
 {
 	struct palette		*p = arg;
 	struct palette_entry	*pe;
 	char			*text, *start, *end, *label, *desc = NULL;
+	char			*keydesc;
 	size_t			 n, len;
 
 	text = xstrdup(name);
@@ -402,7 +404,15 @@ palette_panel_row(void *arg, int action, const char *name, const char *key,
 				*--end = '\0';
 		}
 	}
-	if (tab)
+	if (command_name != NULL) {
+		label = xstrdup(command_name);
+		keydesc = desc;
+		if (keydesc != NULL)
+			xasprintf(&desc, "%s  %s", start, keydesc);
+		else
+			desc = xstrdup(start);
+		free(keydesc);
+	} else if (tab)
 		xasprintf(&label, "Show the %s tab", start);
 	else
 		label = xstrdup(start);
