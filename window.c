@@ -1473,6 +1473,21 @@ window_pane_visible(struct window_pane *wp)
 	return (wp == wp->window->active);
 }
 
+/* Whether every pane of a window has been asked to close. */
+int
+window_closing(struct window *w)
+{
+	struct window_pane	*wp;
+
+	if (TAILQ_EMPTY(&w->panes))
+		return (0);
+	TAILQ_FOREACH(wp, &w->panes, entry) {
+		if (~wp->flags & PANE_CLOSING)
+			return (0);
+	}
+	return (1);
+}
+
 int
 window_pane_exited(struct window_pane *wp)
 {

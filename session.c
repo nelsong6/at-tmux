@@ -379,7 +379,7 @@ session_keep_alive(struct session *s, struct window *gone)
 	char			*cause;
 
 	name = options_get_string(s->options, "keep-alive-window");
-	if (*name == '\0')
+	if (*name == '\0' || (s->flags & SESSION_CLOSING))
 		return (0);
 	if ((gone->flags & WINDOW_KEEPALIVE) && TAILQ_EMPTY(&gone->panes)) {
 		gettimeofday(&now, NULL);

@@ -575,9 +575,16 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 	const char		*id;
 	u_int			 i, active = 0;
 	int			 place = 0, flags = 0, only_menu = 1;
+	int			 closing = window_closing(w);
 
-	free(w->session_set_line);
-	w->session_set_line = NULL;
+	/*
+	 * A closing window keeps the line it had when asked to close, so
+	 * reopen-window brings back the panes that have already gone.
+	 */
+	if (!closing) {
+		free(w->session_set_line);
+		w->session_set_line = NULL;
+	}
 	if (strncmp(s->name, "restoring-", 10) == 0)
 		return;
 
@@ -637,7 +644,7 @@ ss_window(struct evbuffer *evb, struct session *s, struct winlink *wl,
 	evbuffer_add(evb, EVBUFFER_DATA(line), EVBUFFER_LENGTH(line));
 	evbuffer_add(evb, "\n", 1);
 
-	if (!only_menu) {
+	if (!only_menu && !closing) {
 		w->session_set_line = xmalloc(EVBUFFER_LENGTH(line) + 1);
 		memcpy(w->session_set_line, EVBUFFER_DATA(line),
 		    EVBUFFER_LENGTH(line));

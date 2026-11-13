@@ -38,6 +38,7 @@
 	" '#{?#{>:#{session_windows},1},,-}Swap Right' 'r' {swap-window -t:+1}" \
 	" '#{?pane_marked_set,,-}Swap Marked' 's' {swap-window}" \
 	" ''" \
+	" 'Close' 'x' {close-window}" \
 	" 'Kill' 'X' {kill-window}" \
 	" 'Respawn' 'R' {respawn-window -k}" \
 	" '#{?pane_marked,Unmark,Mark}' 'm' {select-pane -m}" \
@@ -66,6 +67,7 @@
 	" '#{?#{>:#{window_panes},1},,-}Swap Down' 'd' {swap-pane -D}" \
 	" '#{?pane_marked_set,,-}Swap Marked' 's' {swap-pane}" \
 	" ''" \
+	" 'Close' 'x' {close-pane}" \
 	" 'Kill' 'X' {kill-pane}" \
 	" 'Respawn' 'R' {respawn-pane -k}" \
 	" '#{?pane_marked,Unmark,Mark}' 'm' {select-pane -m}" \
@@ -366,7 +368,7 @@ key_bindings_init(void)
 		"bind -N 'List all paste buffers' '#' { list-buffers }",
 		"bind -N 'Rename current session' '$' { command-prompt -I'#S' { rename-session -- '%%' } }",
 		"bind -N 'Split window horizontally' % { split-window -h }",
-		"bind -N 'Kill current window' & { confirm-before -p\"kill-window #W? (y/n)\" kill-window }",
+		"bind -N 'Close current window' & { confirm-before -p\"close-window #W? (y/n)\" close-window }",
 		"bind -N 'Prompt for window index to select' \"'\" { command-prompt -T window-target -pindex { select-window -t ':%%' } }",
 		"bind -N 'Switch to previous client' ( { switch-client -p }",
 		"bind -N 'Switch to next client' ) { switch-client -n }",
@@ -409,7 +411,7 @@ key_bindings_init(void)
 		"bind -N 'Choose a session from a list' s { choose-tree -Zs }",
 		"bind -N 'Show a clock' t { clock-mode }",
 		"bind -N 'Choose a window from a list' w { choose-tree -Zw }",
-		"bind -N 'Kill the active pane' x { confirm-before -p\"kill-pane #P? (y/n)\" kill-pane }",
+		"bind -N 'Close the active pane' x { confirm-before -p\"close-pane #P? (y/n)\" close-pane }",
 		"bind -N 'Zoom the active pane' z { resize-pane -Z }",
 		"bind -N 'Swap the active pane with the pane above' '{' { swap-pane -U }",
 		"bind -N 'Swap the active pane with the pane below' '}' { swap-pane -D }",

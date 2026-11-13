@@ -223,6 +223,69 @@ server_kill_window(struct window *w, int renumber)
 	recalculate_sizes();
 }
 
+/*
+ * Ask a pane's programs to close; the pane goes when they have exited, whatever
+ * remain-on-exit says. On Windows its console sends them the close event and
+ * Windows ends any still running a few seconds later. Elsewhere kill-pane
+ * already asks: closing the pty sends SIGHUP.
+ */
+void
+server_close_pane(struct window_pane *wp)
+{
+	if (wp->flags & PANE_CLOSING)
+		return;
+#ifdef _WIN32
+	if (wp->fd != -1 && (~wp->flags & PANE_EXITED) &&
+	    win32_pty_close_request((struct win32_pty *)wp->win32_pty) == 0) {
+		wp->flags |= PANE_CLOSING;
+		return;
+	}
+#endif
+	server_kill_pane(wp);
+}
+
+/* Close every pane of a window. */
+void
+server_close_window(struct window *w)
+{
+	struct window_pane	*wp, *wp1;
+
+	window_add_ref(w, __func__);
+	TAILQ_FOREACH_SAFE(wp, &w->panes, entry, wp1)
+		server_close_pane(wp);
+	window_remove_ref(w, __func__);
+}
+
+/*
+ * Close a session's windows; it ends with its last one, with no keep-alive
+ * window. A window linked to another session is only unlinked, and in a
+ * session group, where every window stays in the rest of the group, the
+ * session ends as kill-session ends it.
+ */
+void
+server_close_session(struct session *s)
+{
+	struct session_group	*sg;
+	struct winlink		*wl, *wl1;
+
+	sg = session_group_contains(s);
+	if (sg != NULL && session_group_count(sg) > 1) {
+		server_destroy_session(s);
+		session_destroy(s, 1, __func__);
+		return;
+	}
+
+	session_add_ref(s, __func__);
+	s->flags |= SESSION_CLOSING;
+	RB_FOREACH_SAFE(wl, winlinks, &s->windows, wl1) {
+		if (session_is_linked(s, wl->window))
+			server_unlink_window(s, wl);
+		else
+			server_close_window(wl->window);
+	}
+	session_remove_ref(s, __func__);
+}
+
 void
 server_renumber_session(struct session *s)
 {
@@ -344,11 +407,16 @@ server_destroy_pane(struct window_pane *wp, int notify)
 	/* What it wrote before exiting may not have been parsed yet. */
 	if (wp->draw_wait != NULL && wp->event != NULL)
 		input_parse_pane(wp);
+	/* A pane asked to close goes whatever remain-on-exit says. */
+	if (wp->flags & PANE_CLOSING)
+		remain_on_exit = 0;
+	else
+		remain_on_exit = options_get_number(wp->options,
+		    "remain-on-exit");
 	/*
 	 * A pane that stays (remain-on-exit) keeps a new-window -W waiting until
 	 * its dead message is drawn, which then switches to it.
 	 */
-	remain_on_exit = options_get_number(wp->options, "remain-on-exit");
 	if (remain_on_exit == 0)
 		new_window_draw_end(wp, "exited before drawing");
 

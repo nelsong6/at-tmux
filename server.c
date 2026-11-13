@@ -743,7 +743,10 @@ server_child_exited(pid_t pid, int status)
 				wp->status = status;
 				wp->flags |= PANE_STATUSREADY;
 				message = NULL;
-				if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+				/* A pane asked to close is expected to end. */
+				if (wp->flags & PANE_CLOSING)
+					;
+				else if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
 					xasprintf(&message, "pane %%%u (%s in %s) exited with status %d",
 					    wp->id, wp->argc > 1 ? wp->argv[0] : wp->shell,
 					    wp->cwd, WEXITSTATUS(status));

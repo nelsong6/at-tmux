@@ -1420,6 +1420,8 @@ upgrade_busy(void)
 		else if (wp->draw_wait != NULL)
 			xasprintf(&reason, "pane %%%u is waiting to draw",
 			    wp->id);
+		else if (wp->flags & PANE_CLOSING)
+			xasprintf(&reason, "pane %%%u is closing", wp->id);
 #ifdef _WIN32
 		else if (wp->fd != -1 && wp->win32_pty == NULL)
 			xasprintf(&reason, "pane %%%u has no console", wp->id);

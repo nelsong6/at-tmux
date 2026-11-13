@@ -291,7 +291,7 @@ Rename the current session.
 .It %
 Split the current pane into two, left and right.
 .It &
-Kill the current window.
+Close the current window.
 .It \[aq]
 Prompt for a window index to select.
 .It \&(
@@ -357,7 +357,7 @@ Show the time.
 .It w
 Choose the current window interactively.
 .It x
-Kill the current pane.
+Close the current pane.
 .It z
 Toggle zoom state of the current pane.
 .It {
@@ -1185,6 +1185,22 @@ If it does exist, exit with 0.
 Kill the
 .Nm
 server and clients and destroy all sessions.
+.It Xo Ic close-session
+.Op Fl a
+.Op Fl t Ar target-session
+.Xc
+Ask the given session to close: as
+.Ic close-window ,
+for each of its windows not linked to another session, and the session ends
+with the last of them, opening no
+.Ic keep-alive-window .
+A window also linked to another session is unlinked at once.
+A session in a session group ends at once, as with
+.Ic kill-session ,
+since its windows stay in the rest of the group.
+If
+.Fl a
+is given, all sessions but the specified one are closed.
 .It Xo Ic kill-session
 .Op Fl aC
 .Op Fl t Ar target-session
@@ -3134,6 +3150,45 @@ is omitted and a marked pane is present (see
 .Ic select-pane
 .Fl m ) ,
 the marked pane is used rather than the current pane.
+.Tg closep
+.It Xo Ic close-pane
+.Op Fl a
+.Op Fl t Ar target-pane
+.Xc
+.D1 Pq alias: Ic closep
+Ask the program in the given pane to close, and destroy the pane once it has
+exited, whatever
+.Ic remain-on-exit
+is set to.
+On Windows the pane's console sends its programs the console close event, as
+closing a Windows Terminal tab does, and Windows ends any still running after
+about five seconds; until then
+.Ic pane_closing
+is 1.
+On other platforms this is the same as
+.Ic kill-pane ,
+whose closing of the pane's terminal already sends SIGHUP.
+The
+.Fl a
+option closes all but the pane given with
+.Fl t .
+.Tg closew
+.It Xo Ic close-window
+.Op Fl a
+.Op Fl t Ar target-window
+.Xc
+.D1 Pq alias: Ic closew
+Close every pane of the current window or the window at
+.Ar target-window ,
+as
+.Ic close-pane
+does; the window goes when its last pane has, and
+.Ic reopen-window
+brings it back as it was when asked to close.
+The
+.Fl a
+option closes all but the window given with
+.Fl t .
 .Tg killp
 .It Xo Ic kill-pane
 .Op Fl a
@@ -6824,6 +6879,7 @@ The following variables are available, where appropriate:
 .It Li "pane_at_top" Ta "" Ta "1 if pane is at the top of window"
 .It Li "pane_bg" Ta "" Ta "Pane background colour"
 .It Li "pane_bottom" Ta "" Ta "Bottom of pane"
+.It Li "pane_closing" Ta "" Ta "1 if pane was asked to close and has not yet"
 .It Li "pane_current_command" Ta "" Ta "Current command if available"
 .It Li "pane_current_path" Ta "" Ta "Current path if available"
 .It Li "pane_dead" Ta "" Ta "1 if pane is dead"
@@ -6919,6 +6975,7 @@ The following variables are available, where appropriate:
 .It Li "window_bigger" Ta "" Ta "1 if window is larger than client"
 .It Li "window_cell_height" Ta "" Ta "Height of each cell in pixels"
 .It Li "window_cell_width" Ta "" Ta "Width of each cell in pixels"
+.It Li "window_closing" Ta "" Ta "1 if every pane of window was asked to close"
 .It Li "window_end_flag" Ta "" Ta "1 if window has the highest index"
 .It Li "window_flags" Ta "#F" Ta "Window flags with # escaped as ##"
 .It Li "window_format" Ta "" Ta "1 if format is for a window"

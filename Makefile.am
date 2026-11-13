@@ -91,6 +91,7 @@ dist_tmux_SOURCES = \
 	cmd-break-pane.c \
 	cmd-capture-pane.c \
 	cmd-choose-tree.c \
+	cmd-close.c \
 	cmd-command-prompt.c \
 	cmd-confirm-before.c \
 	cmd-copy-mode.c \

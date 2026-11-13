@@ -2141,6 +2141,30 @@ format_cb_pane_bottom(struct format_tree *ft)
 	return (NULL);
 }
 
+/* Callback for pane_closing. */
+static void *
+format_cb_pane_closing(struct format_tree *ft)
+{
+	if (ft->wp != NULL) {
+		if (ft->wp->flags & PANE_CLOSING)
+			return (xstrdup("1"));
+		return (xstrdup("0"));
+	}
+	return (NULL);
+}
+
+/* Callback for window_closing. */
+static void *
+format_cb_window_closing(struct format_tree *ft)
+{
+	if (ft->w != NULL) {
+		if (window_closing(ft->w))
+			return (xstrdup("1"));
+		return (xstrdup("0"));
+	}
+	return (NULL);
+}
+
 /* Callback for pane_dead. */
 static void *
 format_cb_pane_dead(struct format_tree *ft)
@@ -3411,6 +3435,9 @@ static const struct format_table_entry format_table[] = {
 	{ "pane_bottom", FORMAT_TABLE_STRING,
 	  format_cb_pane_bottom
 	},
+	{ "pane_closing", FORMAT_TABLE_STRING,
+	  format_cb_pane_closing
+	},
 	{ "pane_current_command", FORMAT_TABLE_STRING,
 	  format_cb_current_command
 	},
@@ -3664,6 +3691,9 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "window_cell_width", FORMAT_TABLE_STRING,
 	  format_cb_window_cell_width
+	},
+	{ "window_closing", FORMAT_TABLE_STRING,
+	  format_cb_window_closing
 	},
 	{ "window_end_flag", FORMAT_TABLE_STRING,
 	  format_cb_window_end_flag

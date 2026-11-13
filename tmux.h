@@ -1232,7 +1232,7 @@ struct window_pane {
 #define PANE_DROP 0x2
 #define PANE_FOCUSED 0x4
 #define PANE_VISITED 0x8
-/* 0x10 unused */
+#define PANE_CLOSING 0x10
 /* 0x20 unused */
 #define PANE_INPUTOFF 0x40
 #define PANE_CHANGED 0x80
@@ -1508,6 +1508,7 @@ struct session {
 	struct options	*options;
 
 #define SESSION_ALERTED 0x1
+#define SESSION_CLOSING 0x2
 	int		 flags;
 
 	u_int		 attached;
@@ -3118,6 +3119,9 @@ void	 server_lock_session(struct session *);
 void	 server_lock_client(struct client *);
 void	 server_kill_pane(struct window_pane *);
 void	 server_kill_window(struct window *, int);
+void	 server_close_pane(struct window_pane *);
+void	 server_close_window(struct window *);
+void	 server_close_session(struct session *);
 void	 server_renumber_session(struct session *);
 void	 server_renumber_all(void);
 int	 server_link_window(struct session *,
@@ -3491,6 +3495,7 @@ int		 window_pane_key(struct window_pane *, struct client *,
 void		 window_pane_paste(struct window_pane *, key_code, char *,
 		     size_t);
 int		 window_pane_visible(struct window_pane *);
+int		 window_closing(struct window *);
 int		 window_pane_exited(struct window_pane *);
 int		 window_pane_relaunches(struct window_pane *);
 u_int		 window_pane_search(struct window_pane *, const char *, int,

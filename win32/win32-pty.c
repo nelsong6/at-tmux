@@ -344,6 +344,37 @@ win32_pty_hangup(struct win32_pty *pty)
 	pty->hPC = NULL;
 }
 
+static DWORD WINAPI
+pty_close_request_thread(LPVOID arg)
+{
+	pty_api()->destroy((HPCON)arg);
+	return 0;
+}
+
+/*
+ * Ask the console's programs to close, as closing a Windows Terminal tab does:
+ * closing the pseudo console sends each program attached to it the console's
+ * close event, and Windows ends any still running a few seconds later. Closing
+ * waits for the console host to exit, so it runs on a thread of its own that
+ * owns the handle; the output pipe stays open and read until then.
+ */
+int
+win32_pty_close_request(struct win32_pty *pty)
+{
+	HPCON	hPC;
+	HANDLE	thread;
+
+	if (pty == NULL || pty->hPC == NULL)
+		return (-1);
+	hPC = pty->hPC;
+	thread = CreateThread(NULL, 0, pty_close_request_thread, hPC, 0, NULL);
+	if (thread == NULL)
+		return (-1);
+	pty->hPC = NULL;
+	CloseHandle(thread);
+	return (0);
+}
+
 /* Cancel pipe I/O and join before closing handles or freeing the PTY. */
 static void
 pty_join_thread(HANDLE thread)
