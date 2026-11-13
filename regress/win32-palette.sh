@@ -26,6 +26,7 @@ set -g default-shell "$PS"
 set -g status off
 bind -n F5 display-palette -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
 bind -N 'Rename the window' n command-prompt -I'#W' { rename-window -- '%%' }
+bind -N 'Go to a window' W command-prompt -T window-target { select-window -t ':%%' }
 bind -n F7 display-palette -b none -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
 bind -T panel / display-palette -P -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
 bind -n M-w display-menu Split s { split-window } '' "#{?#{==:1,0},Never,}" x { kill-server } Last l { last-window }
@@ -128,6 +129,30 @@ row "^0	go-nowhere	alias for run-shell.*		[0-9]*	run shell miscellaneous\$" ||
 [ "$(tr -d '\r' <"$OUT/rows" | grep -c '^0	clock-mode	')" = 1 ] &&
     row '^0	clock-mode	alias for display-message clock	' ||
     fail_row "clock-mode is not one alias row" clock-mode
+
+# A folder of windows, for a window prompt and a chooser's windows alike, has
+# each window's name in the colour the window bar gives it (its Claude state:
+# blue working, amber waiting), as SGR codes, and the current window's name in
+# brackets, as the bar does; a window with no state is plain (TMUX-205).
+ESC=$(printf '\033')
+BLUE="$ESC\[38;2;57;186;230m"
+AMBER="$ESC\[38;2;255;180;84m"
+OFF="$ESC\[39m"
+$TMUX set -w -t :=first @claude working || exit 1
+$TMUX set -w -t :=second @claude waiting || exit 1
+palette pick=nothing
+row '^0	Go to a window	' || fail_row "no window prompt row" 'Go to a window'
+row "^1	0	$BLUE\\[first\\]$OFF	" ||
+    fail_row "the current window is not blue and in brackets" '^1	0'
+row "^1	1	${AMBER}second$OFF	" || fail_row "a waiting window is not amber" '^1	1'
+row "^2	0: $BLUE\\[first\\]$OFF	1 panes	" ||
+    fail_row "the chooser's current window is not blue and in brackets" first
+row "^2	1: ${AMBER}second$OFF	1 panes	" ||
+    fail_row "the chooser's waiting window is not amber" second
+$TMUX set -wu -t :=first @claude || exit 1
+$TMUX set -wu -t :=second @claude || exit 1
+palette pick=nothing
+row '^1	1	second	' || fail_row "a window with no state is not plain" '^1	1'
 
 # Fixed alternatives are picked without typing an argument. Session picks
 # affect both windows here, window picks only the current one, and neither

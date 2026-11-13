@@ -2605,6 +2605,7 @@ int		 options_remove_or_default(struct options_entry *, int,
 
 /* options-table.c */
 extern const struct options_table_entry	options_table[];
+extern const char				*options_table_claude_style;
 extern const struct options_name_map	options_other_names[];
 
 /* job.c */
@@ -3900,9 +3901,6 @@ int		 popup_display(int, enum box_lines, struct cmdq_item *, u_int,
 int		 popup_editor(struct client *, const char *, size_t,
 		    popup_finish_edit_cb, void *);
 int		 popup_present(struct client *);
-#ifdef HAVE_DESKTOP_KEYBOARD
-void		 popup_hold(struct client *, key_code);
-#endif
 int		 popup_modify(struct client *, const char *, const char *,
 		    const char *, enum box_lines, int);
 

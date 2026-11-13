@@ -236,6 +236,7 @@ static const char *options_table_allow_passthrough_list[] = {
 	"#{?#{==:#{@claude},working},#[fg=#39bae6]," \
 	"#{?#{||:#{==:#{@claude},waiting},#{==:#{@claude},attention}}," \
 	"#[fg=#ffb454],}}}"
+const char *options_table_claude_style = OPTIONS_TABLE_CLAUDE_STYLE;
 
 #define OPTIONS_TABLE_STATUS_SESSIONS_FORMAT \
 	"#[align=centre list=on]" \

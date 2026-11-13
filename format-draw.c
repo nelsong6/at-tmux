@@ -119,25 +119,118 @@ format_draw_put(struct screen_write_ctx *octx, u_int ocx, u_int ocy,
 	format_update_ranges(frs, s, offset, start, width);
 }
 
-/* Copy the focus of a list to a screen of its own, with its ranges. */
+/*
+ * The part of a list a collapsed list keeps: its focus, and with neighbours
+ * the window either side of it too (the window ranges next to the focus),
+ * with how many windows lie before and after that part. A list drawn without
+ * ranges has no windows to count.
+ */
 static void
-format_draw_focus(struct screen *focus, struct screen *list, u_int start,
-    u_int end, struct format_ranges *frs)
+format_draw_keep(struct format_ranges *frs, struct screen *list,
+    int neighbours, u_int *start, u_int *end, u_int *before, u_int *after)
+{
+	struct format_range	*fr, *prev = NULL, *next = NULL;
+	u_int			 focus_start = *start, focus_end = *end;
+
+	*before = *after = 0;
+	TAILQ_FOREACH(fr, frs, entry) {
+		if (fr->s != list || fr->type != STYLE_RANGE_WINDOW)
+			continue;
+		if (fr->end <= focus_start) {
+			(*before)++;
+			if (prev == NULL || fr->start > prev->start)
+				prev = fr;
+		} else if (fr->start >= focus_end) {
+			(*after)++;
+			if (next == NULL || fr->start < next->start)
+				next = fr;
+		}
+	}
+	if (!neighbours)
+		return;
+	if (prev != NULL) {
+		*start = prev->start;
+		(*before)--;
+	}
+	if (next != NULL) {
+		*end = next->end;
+		(*after)--;
+	}
+}
+
+/*
+ * How wide a kept part of a list is with its markers: the left marker if the
+ * list has entries before it, the right marker if it has entries after, each
+ * with the number of windows on its side.
+ */
+static u_int
+format_draw_focus_width(struct screen *list, struct screen *list_left,
+    struct screen *list_right, u_int start, u_int end, u_int before,
+    u_int after)
+{
+	u_int	width = end - start;
+
+	if (start != 0 && list_left->cx != 0) {
+		width += list_left->cx;
+		if (before != 0)
+			width += snprintf(NULL, 0, "%u ", before);
+	}
+	if (end < list->cx && list_right->cx != 0) {
+		width += list_right->cx;
+		if (after != 0)
+			width += snprintf(NULL, 0, " %u", after);
+	}
+	return (width);
+}
+
+/*
+ * Copy the kept part of a list to a screen of its own, with its ranges, laid
+ * out as format_draw_focus_width measures it: the left marker followed by the
+ * number of windows before, and the number after followed by the right
+ * marker, the numbers in their marker's style. The markers are then part of
+ * this screen, so they are emptied and nothing draws them a second time.
+ * Returns where the kept part starts.
+ */
+static u_int
+format_draw_focus(struct screen *focus, struct screen *list,
+    struct screen *list_left, struct screen *list_right, u_int start,
+    u_int end, u_int before, u_int after, struct format_ranges *frs)
 {
 	struct screen_write_ctx	 ctx;
 	struct format_range	*fr;
-	u_int			 width = end - start;
+	struct grid_cell	 gc;
+	u_int			 width = end - start, offset = 0;
 
 	screen_write_start(&ctx, focus);
+	if (start != 0 && list_left->cx != 0) {
+		screen_write_fast_copy(&ctx, list_left, 0, 0, list_left->cx, 1);
+		screen_write_cursormove(&ctx, list_left->cx, 0, 0);
+		if (before != 0) {
+			grid_get_cell(list_left->grid, 0, 0, &gc);
+			screen_write_nputs(&ctx, -1, &gc, "%u ", before);
+		}
+		offset = focus->cx;
+	}
 	screen_write_fast_copy(&ctx, list, start, 0, width, 1);
-	screen_write_cursormove(&ctx, width, 0, 0);
+	screen_write_cursormove(&ctx, offset + width, 0, 0);
+	if (end < list->cx && list_right->cx != 0) {
+		if (after != 0) {
+			grid_get_cell(list_right->grid, 0, 0, &gc);
+			screen_write_nputs(&ctx, -1, &gc, " %u", after);
+		}
+		screen_write_fast_copy(&ctx, list_right, 0, 0, list_right->cx,
+		    1);
+		screen_write_cursormove(&ctx, focus->cx + list_right->cx, 0, 0);
+	}
 	screen_write_stop(&ctx);
+	list_left->cx = list_right->cx = 0;
 
-	format_update_ranges(frs, list, 0, start, width);
+	format_update_ranges(frs, list, offset, start, width);
 	TAILQ_FOREACH(fr, frs, entry) {
 		if (fr->s == list)
 			fr->s = focus;
 	}
+	return (offset);
 }
 
 /* Draw list part of format. */
@@ -740,6 +833,7 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 					   RIGHT,
 					   ABSOLUTE_CENTRE };
 	int			 focus_start = -1, focus_end = -1;
+	u_int			 others, keep_start, keep_end, before, after;
 	int			 list_state = -1, fill = -1, even;
 	enum style_list		 list_kind = STYLE_LIST_ON;
 	struct screen		*list;
@@ -1018,22 +1112,39 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 	}
 
 	/*
-	 * A list that keeps only its focus draws that part alone: always for
-	 * list=focus-only, and for list=collapse when everything will not fit.
+	 * A list that keeps only part of itself draws that part alone, between
+	 * markers counting the windows it leaves out: list=focus-only keeps its
+	 * focus, always; list=collapse, when everything will not fit, keeps its
+	 * focus with the window either side, or the focus alone if those will
+	 * not fit either.
 	 */
 	list = &s[LIST];
+	others = s[LEFT].cx + s[CENTRE].cx + s[RIGHT].cx +
+	    s[ABSOLUTE_CENTRE].cx + s[AFTER].cx;
 	if (list_align != STYLE_ALIGN_DEFAULT &&
 	    focus_start != -1 &&
 	    focus_end > focus_start &&
 	    (list_kind == STYLE_LIST_FOCUS_ONLY ||
 	    (list_kind == STYLE_LIST_COLLAPSE &&
-	    s[LEFT].cx + s[CENTRE].cx + s[RIGHT].cx + s[ABSOLUTE_CENTRE].cx +
-	    s[LIST].cx + s[AFTER].cx > available))) {
-		format_draw_focus(&s[FOCUS], &s[LIST], focus_start,
-		    focus_end, &frs);
+	    others + s[LIST].cx > available))) {
+		keep_start = focus_start;
+		keep_end = focus_end;
+		format_draw_keep(&frs, &s[LIST],
+		    list_kind == STYLE_LIST_COLLAPSE, &keep_start, &keep_end,
+		    &before, &after);
+		if (others + format_draw_focus_width(&s[LIST], &s[LIST_LEFT],
+		    &s[LIST_RIGHT], keep_start, keep_end, before, after) >
+		    available) {
+			keep_start = focus_start;
+			keep_end = focus_end;
+			format_draw_keep(&frs, &s[LIST], 0, &keep_start,
+			    &keep_end, &before, &after);
+		}
+		n = format_draw_focus(&s[FOCUS], &s[LIST], &s[LIST_LEFT],
+		    &s[LIST_RIGHT], keep_start, keep_end, before, after, &frs);
 		list = &s[FOCUS];
-		focus_end -= focus_start;
-		focus_start = 0;
+		focus_start = n + focus_start - keep_start;
+		focus_end = n + focus_end - keep_start;
 	}
 
 	/*

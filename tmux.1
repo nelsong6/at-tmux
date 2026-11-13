@@ -5353,6 +5353,12 @@ through
 .Xc
 Show only the current window in the window bar, even when every window would
 fit.
+When this is off and the windows don't fit, the bar shows the current window
+with the window either side of it, or the current window alone if those don't
+fit either.
+Whenever the bar leaves windows out, it has the number left out before what it
+shows on its left and the number left out after on its right, and nothing on a
+side with none.
 The
 .Ic toggle-single-window
 command turns this on and off.
@@ -7035,10 +7041,14 @@ option:
 .Ic list=on
 marks the start of the list;
 .Ic list=collapse
-marks the start of a list that draws only its focus when the whole format won't
-fit in the available space, and
+marks the start of a list that, when the whole format won't fit in the
+available space, draws only its focus and the window either side of it, or its
+focus alone if those won't fit either, and
 .Ic list=focus-only
-one that always draws only its focus;
+one that always draws only its focus; either has the left marker before what
+it draws if the list has entries before that, followed by the number of
+windows left out there, and the right marker after it if the list has entries
+after, preceded by the number left out there;
 .Ic list=focus
 is the part of the list that should be kept in focus if the entire list won't
 fit in the available space (typically the current window);
@@ -7557,7 +7567,7 @@ Start
 from the server with no shell and no pane, without waiting for it.
 It keeps running if the server ends.
 .It Xo Ic display-palette
-.Op Fl PR
+.Op Fl P
 .Op Fl b Ar border-lines
 .Op Fl c Ar target-client
 .Op Fl h Ar height
@@ -7579,6 +7589,13 @@ A command whose name an alias also takes is left out: the alias is what the
 name runs.
 A binding that opens a menu or a session, window or buffer chooser is a
 folder of what it offers, at the next depth.
+In a folder of windows, each window's name is in the colour the window bar
+gives it for its Claude state
+.Ql ( @claude ,
+set by
+.Ic set-window-status ) ,
+as SGR escape sequences, and a session's current window has its name in
+brackets.
 A command taking a single required argument with fixed alternatives, such as
 .Ic set-session-status ,
 offers those alternatives as choices at the next depth.
@@ -7630,20 +7647,6 @@ scrolling a page up or down).
 A pick runs as choosing it in the panel would, if the panel still offers it
 when the popup closes; otherwise nothing runs.
 It is an error if no panel is showing.
-.Pp
-With
-.Fl R
-(Windows, macOS and Linux), the palette is held while the modifiers of the key
-that opened it (Ctrl, Alt or Shift) are down: releasing them with no other key
-pressed sends Enter to
-.Ar program ,
-choosing what it has selected, and any key pressed first ends the hold, so the
-palette stays open.
-While the modifiers are down, Tab or the key that opened it reaches
-.Ar program
-as Down and Shift+Tab as Up.
-For example, Ctrl+Tab steps through a palette opened on a list, as Alt+Tab
-does, and a second Ctrl+Tab keeps it open to search.
 .Tg menu
 .It Xo Ic display-panel
 .Op Fl C

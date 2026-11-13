@@ -50,8 +50,8 @@ const struct cmd_entry cmd_display_palette_entry = {
 	.name = "display-palette",
 	.alias = NULL,
 
-	.args = { "b:c:h:PRt:w:", 1, -1, NULL },
-	.usage = "[-PR] [-b border-lines] [-c target-client] [-h height] "
+	.args = { "b:c:h:Pt:w:", 1, -1, NULL },
+	.usage = "[-P] [-b border-lines] [-c target-client] [-h height] "
 		 CMD_TARGET_PANE_USAGE
 		 " [-w width] program [argument ...]",
 
@@ -415,24 +415,79 @@ palette_panel_row(void *arg, int action, const char *name, const char *key,
 	free(text);
 }
 
-/* A folder of a session's windows, each running the template with its id. */
+/*
+ * A window's name in the colour the window bar gives it (its Claude state, from
+ * the same format), as SGR codes around the name; the name alone when it has
+ * none.
+ */
+static char *
+palette_window_colour(struct session *s, struct winlink *wl, const char *name)
+{
+	struct format_tree	*ft;
+	struct style		 sy;
+	char			*expanded, *cp, *end, *out;
+	u_char			 r, g, b;
+	int			 fg;
+
+	ft = format_create(NULL, NULL, FORMAT_NONE, 0);
+	format_defaults(ft, NULL, s, wl, NULL);
+	expanded = format_expand(ft, options_table_claude_style);
+	format_free(ft);
+
+	style_set(&sy, &grid_default_cell);
+	for (cp = expanded; (cp = strstr(cp, "#[")) != NULL; cp = end + 1) {
+		if ((end = strchr(cp, ']')) == NULL)
+			break;
+		*end = '\0';
+		style_parse(&sy, &grid_default_cell, cp + 2);
+	}
+	free(expanded);
+
+	fg = sy.gc.fg;
+	if (fg & COLOUR_FLAG_RGB) {
+		colour_split_rgb(fg, &r, &g, &b);
+		xasprintf(&out, "\033[38;2;%u;%u;%um%s\033[39m", r, g, b, name);
+	} else if (fg & COLOUR_FLAG_256)
+		xasprintf(&out, "\033[38;5;%dm%s\033[39m", fg & 0xff, name);
+	else if (fg >= 0 && fg <= 7)
+		xasprintf(&out, "\033[%dm%s\033[39m", 30 + fg, name);
+	else if (fg >= 90 && fg <= 97)
+		xasprintf(&out, "\033[%dm%s\033[39m", fg, name);
+	else
+		out = xstrdup(name);
+	return (out);
+}
+
+/*
+ * A folder of a session's windows, each running the template with its id. A
+ * window's name is in the colour the window bar gives it, and the session's
+ * current window has it in brackets, as on the window bar.
+ */
 static void
 palette_add_windows(struct palette *p, u_int depth, const char *template,
     int byindex, struct session *s)
 {
 	struct winlink	*wl;
-	char		*id, *name, *desc;
+	struct window	*w;
+	char		*id, *wname, *coloured, *name, *desc;
 
 	RB_FOREACH(wl, winlinks, &s->windows) {
+		w = wl->window;
+		if (wl == s->curw)
+			xasprintf(&wname, "[%s]", w->name);
+		else
+			wname = xstrdup(w->name);
+		coloured = palette_window_colour(s, wl, wname);
+		free(wname);
 		if (byindex) {
 			xasprintf(&id, "%d", wl->idx);
 			name = xstrdup(id);
-			desc = xstrdup(wl->window->name);
+			desc = coloured;
 		} else {
-			xasprintf(&id, "@%u", wl->window->id);
-			xasprintf(&name, "%d: %s", wl->idx, wl->window->name);
-			xasprintf(&desc, "%u panes",
-			    window_count_panes(wl->window));
+			xasprintf(&id, "@%u", w->id);
+			xasprintf(&name, "%d: %s", wl->idx, coloured);
+			free(coloured);
+			xasprintf(&desc, "%u panes", window_count_panes(w));
 		}
 		palette_add(p, depth, name, desc, NULL)->command =
 		    palette_template(template, id);
@@ -1047,22 +1102,9 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	char			*cause = NULL, **argv = NULL;
 	int			 argc = 0, in[2], out[2];
 	u_int			 w, h;
-	key_code		 key = cmdq_get_event(item)->key;
 
 	if (tc->overlay_draw != NULL)
 		return (CMD_RETURN_NORMAL);
-	if (args_has(args, 'R')) {
-#ifdef HAVE_DESKTOP_KEYBOARD
-		if ((key & (KEYC_CTRL|KEYC_META|KEYC_SHIFT)) == 0) {
-			cmdq_error(item, "-R needs a key with a modifier");
-			return (CMD_RETURN_ERROR);
-		}
-#else
-		cmdq_error(item, "-R is only supported on Windows, macOS and "
-		    "Linux");
-		return (CMD_RETURN_ERROR);
-#endif
-	}
 	if (args_has(args, 'P') && panel_width(tc) == 0) {
 		cmdq_error(item, "no side panel is showing on %s", tc->name);
 		return (CMD_RETURN_ERROR);
@@ -1150,10 +1192,6 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	cmd_free_argv(argc, argv);
 	close(in[0]);
 	close(out[1]);
-#ifdef HAVE_DESKTOP_KEYBOARD
-	if (args_has(args, 'R'))
-		popup_hold(tc, key);
-#endif
 
 	palette_send_rows(in[1], p->rows);
 	return (CMD_RETURN_WAIT);
