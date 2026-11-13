@@ -555,6 +555,24 @@ const struct options_table_entry options_table[] = {
 		  "columns. Dragging the panel's divider sets it."
 	},
 
+	{ .name = "record-output",
+	  .type = OPTIONS_TABLE_FLAG,
+	  .scope = OPTIONS_TABLE_SERVER,
+	  .default_num = 0,
+	  .text = "Whether to record every byte sent to each client's terminal. "
+		  "Turning it off deletes the recording."
+	},
+
+	{ .name = "record-output-limit",
+	  .type = OPTIONS_TABLE_NUMBER,
+	  .scope = OPTIONS_TABLE_SERVER,
+	  .minimum = 64,
+	  .maximum = 1048576,
+	  .default_num = 32768,
+	  .unit = "kilobytes",
+	  .text = "Size of each of the two files record-output keeps."
+	},
+
 	{ .name = "prompt-history-limit",
 	  .type = OPTIONS_TABLE_NUMBER,
 	  .scope = OPTIONS_TABLE_SERVER,

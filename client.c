@@ -713,16 +713,32 @@ client_exec(const char *shell, const char *shellcmd)
 static void
 client_tty_read_cb(int fd, __unused short events, __unused void *arg)
 {
-	char	buf[8192];
-	int	n;
-	DWORD	written;
+	static int	 reported;
+	char		 buf[8192], *msg;
+	int		 n, done = 0;
+	DWORD		 written;
 
 	n = recv((SOCKET)fd, buf, sizeof buf, 0);
 	if (n <= 0) {
 		event_del(&client_tty_event);
 		return;
 	}
-	WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf, n, &written, NULL);
+	/* The console may take less than it is given; what is left is lost. */
+	while (done < n) {
+		if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf + done,
+		    n - done, &written, NULL) || written == 0) {
+			if (!reported) {
+				xasprintf(&msg, "the console refused %d of %d "
+				    "bytes of output (error %lu)", n - done, n,
+				    GetLastError());
+				log_message(msg);
+				free(msg);
+				reported = 1;
+			}
+			return;
+		}
+		done += written;
+	}
 }
 
 /*

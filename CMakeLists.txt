@@ -188,6 +188,7 @@ set(TMUX_SOURCES
     tty-draw.c
     tty-features.c
     tty-keys.c
+    tty-record.c
     tty-term.c
     utf8.c
     utf8-combined.c

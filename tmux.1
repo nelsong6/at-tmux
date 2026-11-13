@@ -4875,6 +4875,35 @@ Zero, the default, is one third of the terminal up to 56 columns.
 Dragging the panel's divider sets this option, and every panel takes the new
 width.
 The panel keeps at least 24 columns and leaves the window at least 30.
+.It Xo Ic record-output
+.Op Ic on | off
+.Xc
+Record every byte the server sends each client's terminal, so a screen that
+was drawn wrong can be replayed.
+The recording is
+.Pa <socket name>.out
+in
+.Pa ~/.tmux/output
+(or the directory named by
+.Ev TMUX_OUTPUT_DIR ) ,
+a series of frames, each a header line
+.Ql W <unix milliseconds> <client> <width>x<height> <length>
+followed by that many bytes and a newline, or
+.Ql D ...
+with no bytes for output thrown away because the terminal could not keep up.
+A file that would grow past
+.Ic record-output-limit
+is renamed with
+.Ql .1
+added, replacing the one before, so at most two files exist.
+Turning the option off deletes both, as does a new server of the same name
+starting;
+.Ic upgrade-server
+carries the option and the new server goes on recording.
+.It Ic record-output-limit Ar kilobytes
+The size of each of the two files
+.Ic record-output
+keeps; the default is 32768.
 .It Ic prompt-history-limit Ar number
 Set the number of history items to save in the history file for each type of
 command prompt.

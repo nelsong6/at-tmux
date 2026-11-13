@@ -1297,6 +1297,8 @@ options_push_changes(const char *name)
 	}
 	if (strcmp(name, "panel-width") == 0)
 		panel_resized();
+	if (strcmp(name, "record-output") == 0)
+		tty_record_changed();
 	if (strcmp(name, "fill-character") == 0) {
 		RB_FOREACH(w, windows, &windows)
 			window_set_fill_character(w);

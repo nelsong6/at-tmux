@@ -358,6 +358,10 @@ server_start(struct tmuxproc *client, uint64_t flags, struct event_base *base,
 	TAILQ_INIT(&message_log);
 	gettimeofday(&start_time, NULL);
 
+	/* A recording belongs to one server and those it upgrades into. */
+	if (getenv("TMUX_UPGRADE") == NULL)
+		tty_record_remove();
+
 #ifdef HAVE_SERVER_UPGRADE
 	if (getenv("TMUX_UPGRADE") != NULL) {
 		server_fd = server_upgrade_restore();

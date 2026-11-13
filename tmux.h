@@ -2798,6 +2798,13 @@ int		tty_keys_next(struct tty *);
 int		tty_keys_colours(struct tty *, const char *, size_t, size_t *,
 		     int *, int *);
 
+/* tty-record.c */
+int		tty_record_wanted(void);
+void		tty_record_sent(struct client *, const char *, size_t);
+void		tty_record_discarded(struct client *, size_t);
+void		tty_record_remove(void);
+void		tty_record_changed(void);
+
 /* arguments.c */
 void		 args_set(struct args *, u_char, struct args_value *, int);
 struct args 	*args_create(void);

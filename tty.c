@@ -331,6 +331,7 @@ tty_timer_callback(__unused int fd, __unused short events, void *data)
 	struct timeval	 tv = { .tv_usec = TTY_BLOCK_INTERVAL };
 
 	log_debug("%s: %zu discarded", c->name, tty->discarded);
+	tty_record_discarded(c, tty->discarded);
 
 	c->flags |= CLIENT_ALLREDRAWFLAGS;
 	c->discarded += tty->discarded;
@@ -364,6 +365,7 @@ tty_block_maybe(struct tty *tty)
 	tty->flags |= TTY_BLOCK;
 
 	log_debug("%s: can't keep up, %zu discarded", c->name, size);
+	tty_record_discarded(c, size);
 
 	evbuffer_drain(tty->out, size);
 	c->discarded += size;
@@ -380,8 +382,17 @@ tty_write_callback(__unused int fd, __unused short events, void *data)
 	struct client	*c = tty->client;
 	size_t		 size = EVBUFFER_LENGTH(tty->out);
 	int		 nwrite;
+	char		*copy = NULL;
 
+	/* Writing drains the buffer, so what record-output keeps is copied. */
+	if (size != 0 && tty_record_wanted()) {
+		copy = xmalloc(size);
+		evbuffer_copyout(tty->out, copy, size);
+	}
 	nwrite = evbuffer_write(tty->out, c->fd);
+	if (nwrite > 0 && copy != NULL)
+		tty_record_sent(c, copy, nwrite);
+	free(copy);
 	if (nwrite == -1)
 		return;
 	log_debug("%s: wrote %d bytes (of %zu)", c->name, nwrite, size);
