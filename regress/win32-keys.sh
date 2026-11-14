@@ -172,7 +172,8 @@ $TMUX send-keys -tkeys "set TMUX=" Enter \
     "\"$(cygpath -w "$TEST_TMUX")\" -f \"$(cygpath -w "$CFG")\" -L$TEST_SOCKET-inner attach -tinner" Enter
 wait_until has_clients $INNER ||
 	fail "inner client never attached"
-$TMUX send-keys -tkeys C-b :
+# Ctrl+B is the at menu, so the prompt is opened on the client by command.
+$INNER command-prompt -b -t "$($INNER list-clients -F '#{client_name}' | tr -d '\r')"
 wait_for keys "^: *$" || fail "prompt never opened"
 $TMUX send-keys -tkeys "abcX" BSpace "deY" Left DC
 wait_for keys "^:abcde *$" ||

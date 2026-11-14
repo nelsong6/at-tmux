@@ -22,16 +22,16 @@ function Build-Fixture([string]$name, [string]$commit, [bool]$shift, [bool]$defa
         if (-not $text.Contains($needle)) { throw 'Mouse enum fixture anchor missing' }
         [IO.File]::WriteAllText($header, $text.Replace($needle, "KEYC_UPGRADE_TEST_SHIFT,`n`t$needle"))
     }
-    # Defaults unlike this build's: prefix t changed, F9 added, z removed.
+    # Defaults unlike this build's: prefix i changed, F9 added, z removed.
     if ($defaults) {
         $bindings = Join-Path $source 'key-bindings.c'
         $text = [IO.File]::ReadAllText($bindings)
-        $clock = '"bind -N ''Show a clock'' t { clock-mode }",'
+        $info = '"bind -N ''Display window information'' i { display-message }",'
         $zoom = '"bind -N ''Zoom the active pane'' z { resize-pane -Z }",'
-        if (-not $text.Contains($clock) -or -not $text.Contains($zoom)) {
+        if (-not $text.Contains($info) -or -not $text.Contains($zoom)) {
             throw 'Default binding fixture anchors missing'
         }
-        $text = $text.Replace($clock, '"bind -N ''Show a clock'' t { display-message OLD_T }", "bind -N ''Old default'' F9 { display-message OLD_F9 }",')
+        $text = $text.Replace($info, '"bind -N ''Display window information'' i { display-message OLD_I }", "bind -N ''Old default'' F9 { display-message OLD_F9 }",')
         [IO.File]::WriteAllText($bindings, $text.Replace($zoom, ''))
     }
     $cmakeArgs = @('-S', $source, '-B', $output, '-G', 'Visual Studio 17 2022', '-A', 'x64',

@@ -70,6 +70,11 @@ usage(int status)
 	exit(status);
 }
 
+#ifdef _WIN32
+/* The at system's shell, used when whoever started the server names none. */
+#define AT_DEFAULT_SHELL "C:/Program Files/PowerShell/7/pwsh.exe"
+#endif
+
 static const char *
 getshell(void)
 {
@@ -79,6 +84,8 @@ getshell(void)
 	shell = getenv("SHELL");
 	if (shell != NULL && *shell != '\0')
 		return (shell);
+	if (access(AT_DEFAULT_SHELL, X_OK) == 0)
+		return (AT_DEFAULT_SHELL);
 	shell = getenv("COMSPEC");
 	if (shell != NULL && *shell != '\0')
 		return (shell);
@@ -497,7 +504,9 @@ main(int argc, char **argv)
 		environ_put(global_environ, *var, 0);
 	if ((cwd = find_cwd()) != NULL)
 		environ_set(global_environ, "PWD", 0, "%s", cwd);
+#ifndef _WIN32
 	expand_paths(TMUX_CONF, &cfg_files, &cfg_nfiles, 1);
+#endif
 
 	while ((opt = getopt(argc, argv, "2c:CDdf:hlL:NqS:T:uUvV")) != -1) {
 		switch (opt) {
@@ -655,10 +664,6 @@ main(int argc, char **argv)
 		options_set_number(global_s_options, "status-keys", keys);
 		options_set_number(global_w_options, "mode-keys", keys);
 	}
-#ifdef HAVE_SERVER_UPGRADE
-	options_upgrade_baseline();
-#endif
-
 	/*
 	 * If socket is specified on the command-line with -S or -L, it is
 	 * used. Otherwise, $TMUX is checked and if that fails "default" is

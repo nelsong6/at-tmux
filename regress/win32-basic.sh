@@ -48,9 +48,9 @@ wait_gone
 # 4. Pane exit cleanup (tests server_destroy_pane ConPTY path)
 $TMUX $FNULL new -d -sexit < /dev/null || exit 1
 $TMUX split-window -texit || exit 1
-wait_ready exit:0.1 || exit 1
+wait_ready exit:^.1 || exit 1
 # Kill the second pane by sending exit
-$TMUX send-keys -texit:0.1 "exit" Enter
+$TMUX send-keys -texit:^.1 "exit" Enter
 wait_panes exit 1
 COUNT=$($TMUX list-panes -texit | wc -l)
 [ "$COUNT" -eq 1 ] || exit 1
@@ -109,18 +109,17 @@ wait_gone
 # 10. A command whose name an alias takes prints by its short name, so a
 # binding's command (run again as text by command-prompt and menus) is still
 # the command, not the alias.
-$TMUX $FNULL new -d -sa -nmoved < /dev/null || exit 1
-$TMUX new-window -d -ta -nstays || exit 1
-$TMUX new -d -sb < /dev/null || exit 1
-$TMUX bind -T test x move-window -s a:moved -t b: || exit 1
-$TMUX set -s command-alias[100] 'move-window=display-message alias' || exit 1
+# rename-window, since move-window is already an at menu command (TMUX-210).
+$TMUX $FNULL new -d -sa -nold < /dev/null || exit 1
+$TMUX bind -T test x rename-window -t a:old renamed || exit 1
+$TMUX set -s command-alias[199] 'rename-window=display-message alias' || exit 1
 LINE=$($TMUX list-keys -T test x | tr -d '\r')
 case "$LINE" in
-*" x "*"movew -s a:moved -t b:") ;;
+*" x "*"renamew -t a:old renamed") ;;
 *) echo "binding printed as: $LINE"; exit 1 ;;
 esac
-$TMUX movew -s a:moved -t b: || exit 1
-$TMUX list-windows -tb -F '#{window_name}' | tr -d '\r' | grep -qx moved || exit 1
+$TMUX renamew -t a:old renamed || exit 1
+$TMUX list-windows -ta -F '#{window_name}' | tr -d '\r' | grep -qx renamed || exit 1
 $TMUX kill-server 2>/dev/null
 
 exit 0

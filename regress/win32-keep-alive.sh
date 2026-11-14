@@ -56,7 +56,8 @@ $TMUX display -p -t p '#{window_id}' >/dev/null || fail "shell exit: p gone"
 # The last window moved to another session, straight after it opened: only a
 # program ending is held to the one-second guard.
 $TMUX rename-window -t p moved
-$TMUX move-window -s p:moved -t other: || fail "move-window"
+# movew is tmux's own move-window: move-window is an at menu command.
+$TMUX movew -s p:moved -t other: || fail "move-window"
 windows_are p autolaunched || fail "move-window: p not refilled"
 windows_are other "o moved" || fail "move-window: other lacks the moved window"
 

@@ -33,6 +33,8 @@ cd "$OUT" || exit 1
 # below is the client's alone.
 cat >test.conf <<EOF
 set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+# The outer server stands in for Windows Terminal, whose TERM is xterm-256color.
+set -g default-terminal xterm-256color
 set -g status off
 set -g window-size manual
 set -as terminal-features ',xterm-256color:sixel'

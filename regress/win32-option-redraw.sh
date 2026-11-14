@@ -35,6 +35,8 @@ cd "$OUT" || exit 1
 # too, and gives a blue background only for "blue".
 cat >outer.conf <<EOF
 set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+# The outer server stands in for Windows Terminal, whose TERM is xterm-256color.
+set -g default-terminal xterm-256color
 set -g status off
 set -g window-size manual
 EOF

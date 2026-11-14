@@ -68,6 +68,11 @@ jobs:
           [ -n "$MSYSTEM" ] || { echo "::error::bash is not Git Bash: $(command -v bash)"; exit 1; }
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
+      - name: Run built-in settings tests
+        shell: bash
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-at-defaults.sh
+
       - name: Run Claude swarm simulation tests
         shell: bash
         run: |

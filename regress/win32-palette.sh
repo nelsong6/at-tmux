@@ -109,7 +109,7 @@ row '^1	Split		' || fail_row "no menu item row" Split
 row '^1	Split			[0-9]*	$' || fail_row "a menu item has tags" Split
 row '^1	Never	' && fail_row "a hidden menu item was offered" Never
 row '^0	choose-tree	' || fail_row "no choose-tree row" choose-tree
-row '^2	1: second	1 panes	' || fail_row "no window under a session" second
+row '^2	2: second	1 panes	' || fail_row "no window under a session" second
 # An alias that runs a menu through run-shell -C, as send-to-session does: its format
 # is expanded and its menu is a folder (building it once crashed the server).
 # Its note (command-alias-note) is its description, taken whole after the
@@ -142,17 +142,17 @@ $TMUX set -w -t :=first @claude working || exit 1
 $TMUX set -w -t :=second @claude waiting || exit 1
 palette pick=nothing
 row '^0	Go to a window	' || fail_row "no window prompt row" 'Go to a window'
-row "^1	0	$BLUE\\[first\\]$OFF	" ||
-    fail_row "the current window is not blue and in brackets" '^1	0'
-row "^1	1	${AMBER}second$OFF	" || fail_row "a waiting window is not amber" '^1	1'
-row "^2	0: $BLUE\\[first\\]$OFF	1 panes	" ||
+row "^1	1	$BLUE\\[first\\]$OFF	" ||
+    fail_row "the current window is not blue and in brackets" '^1	1'
+row "^1	2	${AMBER}second$OFF	" || fail_row "a waiting window is not amber" '^1	2'
+row "^2	1: $BLUE\\[first\\]$OFF	1 panes	" ||
     fail_row "the chooser's current window is not blue and in brackets" first
-row "^2	1: ${AMBER}second$OFF	1 panes	" ||
+row "^2	2: ${AMBER}second$OFF	1 panes	" ||
     fail_row "the chooser's waiting window is not amber" second
 $TMUX set -wu -t :=first @claude || exit 1
 $TMUX set -wu -t :=second @claude || exit 1
 palette pick=nothing
-row '^1	1	second	' || fail_row "a window with no state is not plain" '^1	1'
+row '^1	2	second	' || fail_row "a window with no state is not plain" '^1	2'
 
 # Fixed alternatives are picked without typing an argument. Session picks
 # affect both windows here, window picks only the current one, and neither
@@ -200,7 +200,7 @@ wait_until window_name_is 'two words' ||
     { echo "rename-window got: $(window_name)"; exit 1; }
 
 # A choice in a chooser's folder runs on the pressing client.
-palette 'pick=1: second' under=choose-tree
+palette 'pick=2: second' under=choose-tree
 wait_until window_name_is second ||
     { echo "choose-tree pick went to: $(window_name)"; exit 1; }
 

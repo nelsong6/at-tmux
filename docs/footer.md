@@ -21,9 +21,9 @@ their own names (`MouseDown1Footer`, `WheelUpFooter`, and so on), with the click
 as the mouse target, so `select-pane -t =` focuses it. `#{mouse_status_range}` reports
 the clicked region.
 
-The home configuration uses `tmux-strip` from at-home-tools to read each pane's
-Claude/Codex conversation identity and local PR/work-package records. The existing
+On Windows the built-in settings (`docs/built-in-settings.md`) draw the conversation
+strip in it: strip-owner from at-home-tools puts each pane's Claude/Codex conversation and
+its PR and work-package records on the pane as `@strip-*` options. The existing
 first-message hooks mark the active conversation; the condition shows the strip only for
 that conversation, until it exits. Empty agent sessions, shells and app panes do not
-reserve a row. It binds a footer click to that conversation's links menu. tmux itself
-stays independent of any particular agent, issue tracker or PR host.
+reserve a row. A footer click opens that conversation's links menu (`tmux-strip menu`).

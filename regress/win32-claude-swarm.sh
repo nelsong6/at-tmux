@@ -64,9 +64,9 @@ while [ $CYCLE -lt $CYCLES ]; do
 	# Claude Code splits once per teammate. Typical team = 3-5 teammates.
 	$TMUX split-window -h -t swarm || { fail "cycle $CYCLE: split-window -h failed"; exit 1; }
 	$TMUX split-window -v -t swarm || { fail "cycle $CYCLE: split-window -v (1) failed"; exit 1; }
-	$TMUX split-window -v -t swarm:0.0 || { fail "cycle $CYCLE: split-window -v (2) failed"; exit 1; }
+	$TMUX split-window -v -t swarm:^.0 || { fail "cycle $CYCLE: split-window -v (2) failed"; exit 1; }
 	for PANE in 0 1 2 3; do
-		wait_ready "swarm:0.$PANE" || { fail "cycle $CYCLE: pane $PANE never drew a prompt"; exit 1; }
+		wait_ready "swarm:^.$PANE" || { fail "cycle $CYCLE: pane $PANE never drew a prompt"; exit 1; }
 	done
 
 	# Verify 4 panes exist.
@@ -78,7 +78,7 @@ while [ $CYCLE -lt $CYCLES ]; do
 	# Claude Code addresses each teammate pane individually.
 	PANE=0
 	while [ $PANE -lt 4 ]; do
-		$TMUX send-keys -t "swarm:0.$PANE" "echo SWARM_PANE_${PANE}_OK" Enter || {
+		$TMUX send-keys -t "swarm:^.$PANE" "echo SWARM_PANE_${PANE}_OK" Enter || {
 			fail "cycle $CYCLE: send-keys to pane $PANE failed"; exit 1
 		}
 		PANE=$((PANE + 1))
@@ -89,10 +89,10 @@ while [ $CYCLE -lt $CYCLES ]; do
 	while [ $PANE -lt 4 ]; do
 		# Unanchored: a pane the later splits resized can lose the first
 		# typed character (issue 4), so this also matches the typed line.
-		wait_for "swarm:0.$PANE" "SWARM_PANE_${PANE}_OK" || {
+		wait_for "swarm:^.$PANE" "SWARM_PANE_${PANE}_OK" || {
 			fail "cycle $CYCLE: capture-pane $PANE missing expected output"
 			echo "  pane $PANE content:"
-			$TMUX capture-pane -t "swarm:0.$PANE" -p | tr -d '\r' | head -5
+			$TMUX capture-pane -t "swarm:^.$PANE" -p | tr -d '\r' | head -5
 			exit 1
 		}
 		PANE=$((PANE + 1))
@@ -137,12 +137,12 @@ CB=$($TMUX list-panes -t team-b | wc -l)
 [ "$CA" -eq 2 ] && [ "$CB" -eq 2 ] || { fail "multi-session: team-a=$CA team-b=$CB panes"; exit 1; }
 
 # Cross-session send-keys + capture.
-wait_ready team-a:0.0 && wait_ready team-b:0.0 || { fail "team shells never drew a prompt"; exit 1; }
-$TMUX send-keys -t team-a:0.0 "echo TEAM_A" Enter
-$TMUX send-keys -t team-b:0.0 "echo TEAM_B" Enter
+wait_ready team-a:^.0 && wait_ready team-b:^.0 || { fail "team shells never drew a prompt"; exit 1; }
+$TMUX send-keys -t team-a:^.0 "echo TEAM_A" Enter
+$TMUX send-keys -t team-b:^.0 "echo TEAM_B" Enter
 # Unanchored, as in test 6: the split resized these panes (issue 4).
-wait_for team-a:0.0 "TEAM_A" || { fail "capture team-a"; exit 1; }
-wait_for team-b:0.0 "TEAM_B" || { fail "capture team-b"; exit 1; }
+wait_for team-a:^.0 "TEAM_A" || { fail "capture team-a"; exit 1; }
+wait_for team-b:^.0 "TEAM_B" || { fail "capture team-b"; exit 1; }
 
 $TMUX kill-session -t team-a
 $TMUX kill-session -t team-b

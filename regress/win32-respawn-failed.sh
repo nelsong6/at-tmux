@@ -75,47 +75,47 @@ $TMUX set -g remain-on-exit on
 $TMUX set-hook -g pane-died 'set -g @died yes'
 
 # The status is the failure's, not the exit of the shell the respawn killed.
-respawn_missing w:0 "a failed respawn of a running pane"
-shows_dead w:0 "a failed respawn of a running pane"
+respawn_missing w:^ "a failed respawn of a running pane"
+shows_dead w:^ "a failed respawn of a running pane"
 wait_until died_ran || fail "pane-died didn't run after a failed respawn"
 
 # The pane was already dead, so no exit is still to come.
 $TMUX set -gu @died
-respawn_missing w:0 "a second failed respawn"
-shows_dead w:0 "a second failed respawn"
+respawn_missing w:^ "a second failed respawn"
+shows_dead w:^ "a second failed respawn"
 wait_until died_ran || fail "pane-died didn't run after a second failed respawn"
 
-$TMUX capture-pane -P -p -t w:0 >/dev/null 2>&1
+$TMUX capture-pane -P -p -t w:^ >/dev/null 2>&1
 alive "capture-pane -P on the dead pane"
-$TMUX send-keys -R -t w:0 2>/dev/null
+$TMUX send-keys -R -t w:^ 2>/dev/null
 alive "send-keys -R on the dead pane"
 
-$TMUX respawn-pane -k -t w:0 "$CMDEXE" //k echo tmux61-back ||
+$TMUX respawn-pane -k -t w:^ "$CMDEXE" //k echo tmux61-back ||
     fail "respawn of cmd.exe"
 alive "respawning a working program"
-wait_for w:0 '^tmux61-back' || fail "cmd.exe's output never showed"
-[ "$(dead w:0)" = "0 " ] || fail "pane reads '$(dead w:0)' after a working respawn"
+wait_for w:^ '^tmux61-back' || fail "cmd.exe's output never showed"
+[ "$(dead w:^)" = "0 " ] || fail "pane reads '$(dead w:^)' after a working respawn"
 
 # remain-on-exit failed keeps it, as for a program that exits 1.
 $TMUX set -g remain-on-exit failed
-respawn_missing w:0 "a failed respawn with remain-on-exit failed"
-shows_dead w:0 "a failed respawn with remain-on-exit failed"
+respawn_missing w:^ "a failed respawn with remain-on-exit failed"
+shows_dead w:^ "a failed respawn with remain-on-exit failed"
 
 # respawn-window takes the same path.
-$TMUX new-window -d -t w:1 || fail "new-window"
-out=$($TMUX respawn-window -k -t w:1 $MISSING --version 2>&1 | tr -d '\r')
+$TMUX new-window -d -t w:2 || fail "new-window"
+out=$($TMUX respawn-window -k -t w:2 $MISSING --version 2>&1 | tr -d '\r')
 echo "$out" | grep -q "can't start $MISSING: " ||
     fail "respawn-window of a missing program printed '$out'"
 alive "a failed respawn-window"
-shows_dead w:1 "a failed respawn-window"
-$TMUX kill-window -t w:1
+shows_dead w:2 "a failed respawn-window"
+$TMUX kill-window -t w:2
 
 # Without remain-on-exit the pane closes, as when its program exits.
 $TMUX set -g remain-on-exit off
-$TMUX split-window -t w:0 || fail "split-window"
-wait_panes w:0 2 || fail "split-window made no second pane"
-respawn_missing w:0.1 "a failed respawn with remain-on-exit off"
-wait_panes w:0 1 ||
+$TMUX split-window -t w:^ || fail "split-window"
+wait_panes w:^ 2 || fail "split-window made no second pane"
+respawn_missing w:^.1 "a failed respawn with remain-on-exit off"
+wait_panes w:^ 1 ||
     fail "a failed respawn with remain-on-exit off left the pane open"
 
 echo "ALL RESPAWN-FAILED TESTS PASSED"

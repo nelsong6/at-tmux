@@ -4,9 +4,12 @@
 # nobody changed: a default changed in the new build replaces the old one, a
 # default the new build dropped goes, and one it added appears; a key rebound
 # or unbound on the old server stays as it was. TEST_DEFAULTS_TMUX is this
-# build with prefix t changed, F9 added and z removed
+# build with prefix i changed, F9 added and z removed
 # (build-upgrade-key-fixtures.ps1). TEST_LEGACY_TMUX predates the defaults
-# being sent: its never-rebound kill defaults come as close defaults.
+# being sent: its never-rebound kill defaults come as close defaults, and
+# its global options, from before the at settings were built in, give way to
+# them (TMUX-210). A key bound by hand to exactly this build's default
+# becomes that default, so the next build's own reaches it.
 PATH=/bin:/usr/bin
 TERM=screen
 . "$(dirname "$0")/win32-test.sh"
@@ -20,7 +23,7 @@ trap "$TMUX kill-server 2>/dev/null; rm -f $CFG" 0 1 15
 
 fail() {
 	echo "FAIL: $1"
-	$TMUX list-keys -T prefix 2>&1 | grep -E ' (t|z|F9|w|n|F10|&|x) '
+	$TMUX list-keys -T prefix 2>&1 | grep -E ' (i|z|F9|w|n|F10|&|x) '
 	exit 1
 }
 
@@ -56,19 +59,19 @@ kept_user_changes() {
 }
 
 upgrade "$TEST_DEFAULTS_TMUX" "$TEST_TMUX"
-[ "$(binding t)" = clock-mode ] || fail "changed default t not this build's"
+[ "$(binding i)" = display-message ] || fail "changed default i not this build's"
 [ -z "$(binding F9)" ] || fail "default this build dropped is still bound"
 [ "$(binding z)" = "resize-pane -Z" ] || fail "default this build added missing"
-$TMUX list-keys -N -T prefix t | grep -q 'Show a clock' ||
-    fail "t lost its note"
+$TMUX list-keys -N -T prefix i | grep -q 'Display window information' ||
+    fail "i lost its note"
 kept_user_changes "to this build"
 $TMUX kill-server
 wait_gone || fail "server did not exit"
 echo 'PASS: defaults changed, dropped and added reach an upgraded server'
 
 upgrade "$TEST_TMUX" "$TEST_DEFAULTS_TMUX"
-[ "$(binding t)" = "display-message OLD_T" ] ||
-    fail "the other way, t not the fixture's"
+[ "$(binding i)" = "display-message OLD_I" ] ||
+    fail "the other way, i not the fixture's"
 [ "$(binding F9)" = "display-message OLD_F9" ] ||
     fail "the other way, F9 missing"
 [ -z "$(binding z)" ] || fail "the other way, z still bound"
@@ -77,12 +80,33 @@ $TMUX kill-server
 wait_gone || fail "server did not exit"
 echo 'PASS: and the other way'
 
+# On the fixture, i bound by hand to exactly this build's default: after an
+# upgrade to this build it is that default, so the fixture's comes back.
+SOURCE="$TEST_DEFAULTS_TMUX -L$TEST_SOCKET"
+$SOURCE -f"$(cygpath -m $CFG)" new -d -s same </dev/null || fail "start same"
+$SOURCE bind -N 'Display window information' i display-message ||
+    fail "bind i"
+before=$(server_pid)
+$SOURCE upgrade-server "$(cygpath -w "$TEST_TMUX")" || fail "upgrade same"
+wait_until changed || fail "no upgrade to this build"
+before=$(server_pid)
+$TMUX upgrade-server "$(cygpath -w "$TEST_DEFAULTS_TMUX")" ||
+    fail "upgrade back"
+wait_until changed || fail "no upgrade back"
+[ "$(binding i)" = "display-message OLD_I" ] ||
+    fail "i bound as this build's default stayed a hand binding"
+$TMUX kill-server
+wait_gone || fail "server did not exit"
+echo 'PASS: a key bound to this build'"'"'s default becomes that default'
+
 # A build before the defaults were sent: a binding still exactly one of its
 # changed defaults is taken as never rebound.
 SOURCE="$TEST_LEGACY_TMUX -L$TEST_SOCKET"
 $SOURCE -f"$(cygpath -m $CFG)" new -d -s legacy </dev/null ||
     fail "start legacy"
 $SOURCE bind '<' display-message USER_LT || fail "rebind <"
+$SOURCE set -g history-limit 1234 || fail "set history-limit"
+$SOURCE set -g @kept yes || fail "set @kept"
 before=$(server_pid)
 $SOURCE upgrade-server "$(cygpath -w "$TEST_TMUX")" || fail "upgrade legacy"
 wait_until changed || fail "no legacy upgrade"
@@ -97,5 +121,10 @@ $TMUX list-keys -T root MouseDown3Pane | grep -q 'close-pane' ||
 $TMUX list-keys -N -T prefix '&' | grep -q 'Close current window' ||
     fail "legacy & kept its old note"
 echo 'PASS: an older build'"'"'s never-rebound kill defaults become close'
+[ "$($TMUX show -gv history-limit | tr -d '\r')" = 50000 ] ||
+    fail "an older build's global option outlasted it"
+[ "$($TMUX show -gv @kept | tr -d '\r')" = yes ] ||
+    fail "an older build's user option was lost"
+echo 'PASS: an older build'"'"'s global options give way to the built-in ones'
 
 echo 'ALL UPGRADE DEFAULTS TESTS PASSED'

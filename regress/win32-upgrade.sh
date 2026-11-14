@@ -72,16 +72,16 @@ $TMUX -f "$CFG" new -d -sup -x 100 -y 30 < /dev/null || exit 1
 wait_ready up || { fail "shell never drew a prompt"; exit 1; }
 $TMUX splitw -tup < /dev/null
 $TMUX neww -tup -n second < /dev/null
-$TMUX selectw -tup:0
-wait_panes up:0 2
-wait_ready up:0.1
-$TMUX send-keys -tup:0.0 "echo BEFORE_MARK" Enter
-wait_for up:0.0 "^BEFORE_MARK"
+$TMUX selectw -tup:1
+wait_panes up:1 2
+wait_ready up:1.1
+$TMUX send-keys -tup:1.0 "echo BEFORE_MARK" Enter
+wait_for up:1.0 "^BEFORE_MARK"
 $TMUX set -g @upgrade-test kept
 $TMUX bind -T root F12 display -p f12-bound
 # A binding made before an alias took its command's name (clock-mode has no
 # short name to print it by) is carried as the command, not the alias.
-$TMUX bind -T root F11 clock-mode -t up:0.0
+$TMUX bind -T root F11 clock-mode -t up:1.0
 $TMUX set -s command-alias[100] 'clock-mode=run-shell -C "display -p alias"'
 $TMUX set-buffer -b upbuf "buffer kept"
 # Sessions in an order other than the one they were made in.
@@ -108,8 +108,8 @@ CLIENT_PID=$($TMUX list-clients -F '#{client_pid}' | tr -d '\r')
 # do, and the client's terminal has lost focus: taking the client over must
 # not report a change before the pane's pipe is back, and keeps the client
 # unfocused.
-$TMUX send-keys -tup:0.1 'prompt FOCUS$E[?1004h$G' Enter
-wait_for up:0.1 "^FOCUS" || fail "focus prompt never drawn"
+$TMUX send-keys -tup:1.1 'prompt FOCUS$E[?1004h$G' Enter
+wait_for up:1.1 "^FOCUS" || fail "focus prompt never drawn"
 $OUTER send-keys -tout -H 1b 5b 4f
 wait_until client_unfocused || fail "client never lost focus"
 
@@ -129,16 +129,16 @@ $TMUX upgrade-server "$EXE" || fail "upgrade-server refused"
 wait_until pid_changed_from "$PID0" || fail "server did not change: $(upgrade_status)"
 PID1=$(server_pid)
 [ "$(pane_pids)" = "$PANES0" ] || fail "pane processes changed: $(pane_pids)"
-pane_has up:0.0 "^BEFORE_MARK" || fail "pane screen lost"
+pane_has up:1.0 "^BEFORE_MARK" || fail "pane screen lost"
 $TMUX capture-pane -tup:second -peN >$BG_AFTER
 cmp -s $BG_BEFORE $BG_AFTER || fail "coloured erased cells lost during upgrade"
 [ "$($TMUX show -gv @upgrade-test | tr -d '\r')" = kept ] || fail "option lost"
 [ "$($TMUX show-buffer -b upbuf | tr -d '\r')" = "buffer kept" ] || fail "buffer lost"
 $TMUX list-keys -T root F12 | grep -q f12-bound || fail "key binding lost"
-$TMUX list-keys -T root F11 | grep -q "clock-mode -t up:0.0" ||
+$TMUX list-keys -T root F11 | grep -q "clock-mode -t up:1.0" ||
     fail "a binding an alias shadows was lost"
 [ "$($TMUX list-windows -tup | wc -l)" -eq 2 ] || fail "window lost"
-[ "$($TMUX display -tup:1 -p '#{window_name}' | tr -d '\r')" = second ] ||
+[ "$($TMUX display -tup:2 -p '#{window_name}' | tr -d '\r')" = second ] ||
 	fail "window name lost"
 client_count_is 1 || fail "client lost"
 [ "$($TMUX display -c "client-$CLIENT_PID" -p '#{client_pid}' | tr -d '\r')" = "$CLIENT_PID" ] ||
@@ -173,38 +173,38 @@ $TMUX kill-window -tup:envcheck
 echo "PASS 1b: the global environment and a new pane's are as before the upgrade"
 
 # --- Test 2: the panes and the client work after the upgrade ---
-$TMUX send-keys -tup:0.0 "echo AFTER_MARK" Enter
-wait_for up:0.0 "^AFTER_MARK" || fail "pane input or output broken"
+$TMUX send-keys -tup:1.0 "echo AFTER_MARK" Enter
+wait_for up:1.0 "^AFTER_MARK" || fail "pane input or output broken"
 wait_until outer_has AFTER_MARK || fail "client not drawn after upgrade"
 # The client types into the active pane, the split.
 $OUTER send-keys -tout "echo TYPED_MARK" Enter
-wait_for up:0.1 "^TYPED_MARK" || fail "client keys not reaching pane"
+wait_for up:1.1 "^TYPED_MARK" || fail "client keys not reaching pane"
 echo "PASS 2: panes and client work after upgrade"
 
 # --- Test 3: a pane scrolled back in copy mode doesn't hold it, and stays there ---
-$TMUX send-keys -tup:0.0 "for /L %i in (1,1,100) do @echo LINE%i" Enter
-wait_for up:0.0 "^LINE100" || fail "no history to scroll"
-$TMUX copy-mode -u -tup:0.0
-$TMUX send-keys -tup:0.0 -X begin-selection
-$TMUX send-keys -tup:0.0 -X cursor-up
-SCROLLED=$($TMUX display -p -tup:0.0 '#{scroll_position} #{copy_cursor_x} #{copy_cursor_y} #{selection_present}' | tr -d '\r')
+$TMUX send-keys -tup:1.0 "for /L %i in (1,1,100) do @echo LINE%i" Enter
+wait_for up:1.0 "^LINE100" || fail "no history to scroll"
+$TMUX copy-mode -u -tup:1.0
+$TMUX send-keys -tup:1.0 -X begin-selection
+$TMUX send-keys -tup:1.0 -X cursor-up
+SCROLLED=$($TMUX display -p -tup:1.0 '#{scroll_position} #{copy_cursor_x} #{copy_cursor_y} #{selection_present}' | tr -d '\r')
 [ "${SCROLLED%% *}" -gt 0 ] || fail "copy mode didn't scroll: $SCROLLED"
 $TMUX upgrade-server "$EXE"
 wait_until pid_changed_from "$PID1" || fail "copy mode held the upgrade: $(upgrade_status)"
 PID2=$(server_pid)
 [ "$(pane_pids)" = "$PANES0" ] || fail "pane processes changed on second upgrade"
-[ "$($TMUX display -p -tup:0.0 '#{pane_mode}' | tr -d '\r')" = copy-mode ] || fail "copy mode wasn't carried"
-[ "$($TMUX display -p -tup:0.0 '#{scroll_position} #{copy_cursor_x} #{copy_cursor_y} #{selection_present}' | tr -d '\r')" = "$SCROLLED" ] ||
+[ "$($TMUX display -p -tup:1.0 '#{pane_mode}' | tr -d '\r')" = copy-mode ] || fail "copy mode wasn't carried"
+[ "$($TMUX display -p -tup:1.0 '#{scroll_position} #{copy_cursor_x} #{copy_cursor_y} #{selection_present}' | tr -d '\r')" = "$SCROLLED" ] ||
     fail "the place in copy mode changed"
-$TMUX send-keys -tup:0.0 -X cancel
+$TMUX send-keys -tup:1.0 -X cancel
 echo "PASS 3: copy mode doesn't hold an upgrade and keeps its place"
 
 # --- Test 3b: a mode that can't be carried waits, and goes once it closes ---
-$TMUX choose-tree -tup:0.0
+$TMUX choose-tree -tup:1.0
 $TMUX upgrade-server "$EXE"
 wait_until status_starts "waiting: pane" || fail "did not wait: $(upgrade_status)"
 [ "$(server_pid)" = "$PID2" ] || fail "upgraded during tree mode"
-$TMUX send-keys -tup:0.0 q
+$TMUX send-keys -tup:1.0 q
 wait_until pid_changed_from "$PID2" || fail "did not upgrade after tree mode"
 PID2=$(server_pid)
 echo "PASS 3b: waits for a mode it can't carry"
@@ -213,8 +213,8 @@ echo "PASS 3b: waits for a mode it can't carry"
 $TMUX upgrade-server "$(cygpath -w /c/Windows/System32/whoami.exe)"
 wait_until status_starts "failed" || fail "no failure reported: $(upgrade_status)"
 [ "$(server_pid)" = "$PID2" ] || fail "server changed after a failed upgrade"
-$TMUX send-keys -tup:0.0 "echo ROLLBACK_MARK" Enter
-wait_for up:0.0 "^ROLLBACK_MARK" || fail "pane broken after a failed upgrade"
+$TMUX send-keys -tup:1.0 "echo ROLLBACK_MARK" Enter
+wait_for up:1.0 "^ROLLBACK_MARK" || fail "pane broken after a failed upgrade"
 wait_until outer_has ROLLBACK_MARK || fail "client broken after a failed upgrade"
 echo "PASS 4: failed upgrade carries on"
 

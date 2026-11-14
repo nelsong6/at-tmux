@@ -268,13 +268,14 @@ options_default(struct options *oo, const struct options_table_entry *oe)
 	ov = &o->value;
 
 	if (oe->flags & OPTIONS_TABLE_IS_ARRAY) {
-		if (oe->default_arr == NULL) {
+		if (oe->default_arr == NULL)
 			options_array_assign(o, oe->default_str, NULL);
-			return (o);
+		else {
+			for (i = 0; oe->default_arr[i] != NULL; i++)
+				options_array_set(o, i, oe->default_arr[i], 0,
+				    NULL);
 		}
-		for (i = 0; oe->default_arr[i] != NULL; i++)
-			options_array_set(o, i, oe->default_arr[i], 0, NULL);
-		return (o);
+		goto out;
 	}
 
 	switch (oe->type) {
@@ -296,6 +297,10 @@ options_default(struct options *oo, const struct options_table_entry *oe)
 		ov->number = oe->default_num;
 		break;
 	}
+out:
+#ifdef _WIN32
+	at_defaults_option(oo, o);
+#endif
 	return (o);
 }
 
@@ -1397,11 +1402,18 @@ options_remove_or_default(struct options_entry *o, int idx, char **cause)
 
 #ifdef HAVE_SERVER_UPGRADE
 /*
- * The global options as this build started, before any configuration. The
- * global trees hold every option, so one still at its starting value is left
- * out of an upgrade and takes the new build's own.
+ * The global options as this build started, its built-in settings applied and
+ * before any configuration. The global trees hold every option, so one still at
+ * its starting value is left out of an upgrade and takes the new build's own.
+ * User options the build sets are kept by name; one removed by hand comes back
+ * with the next build.
  */
 static char	**options_upgrade_start[3];
+static struct options_upgrade_user {
+	char	*name;
+	char	*value;
+}		*options_upgrade_users[3];
+static u_int	 options_upgrade_nusers[3];
 
 static int
 options_upgrade_tree(struct options *oo)
@@ -1421,17 +1433,26 @@ options_upgrade_baseline(void)
 	struct options		*trees[] = {
 		global_options, global_s_options, global_w_options
 	};
-	struct options_entry	*oe;
-	u_int			 i, n = 0;
+	struct options_entry		*oe;
+	struct options_upgrade_user	*u;
+	u_int				 i, n = 0;
 
 	while (options_table[n].name != NULL)
 		n++;
 	for (i = 0; i < nitems(trees); i++) {
 		options_upgrade_start[i] = xcalloc(n, sizeof (char *));
 		RB_FOREACH(oe, options_tree, &trees[i]->tree) {
-			if (oe->tableentry != NULL)
+			if (oe->tableentry != NULL) {
 				options_upgrade_start[i][oe->tableentry -
 				    options_table] = options_to_string(oe, -1, 0);
+				continue;
+			}
+			u = xreallocarray(options_upgrade_users[i],
+			    options_upgrade_nusers[i] + 1, sizeof *u);
+			options_upgrade_users[i] = u;
+			u += options_upgrade_nusers[i]++;
+			u->name = xstrdup(oe->name);
+			u->value = options_to_string(oe, -1, 0);
 		}
 	}
 }
@@ -1439,14 +1460,23 @@ options_upgrade_baseline(void)
 static int
 options_upgrade_unchanged(struct options *oo, struct options_entry *oe)
 {
-	char	*start, *value;
+	char	*start = NULL, *value;
 	int	 tree, same;
+	u_int	 i;
 
 	tree = options_upgrade_tree(oo);
-	if (tree == -1 || options_upgrade_start[tree] == NULL ||
-	    oe->tableentry == NULL)
+	if (tree == -1 || options_upgrade_start[tree] == NULL)
 		return (0);
-	start = options_upgrade_start[tree][oe->tableentry - options_table];
+	if (oe->tableentry != NULL)
+		start = options_upgrade_start[tree][oe->tableentry -
+		    options_table];
+	else {
+		for (i = 0; i < options_upgrade_nusers[tree]; i++) {
+			if (strcmp(options_upgrade_users[tree][i].name,
+			    oe->name) == 0)
+				start = options_upgrade_users[tree][i].value;
+		}
+	}
 	if (start == NULL)
 		return (0);
 	value = options_to_string(oe, -1, 0);

@@ -73,8 +73,8 @@ wait_gone
 # --- Test 4: Four-pane tiled layout ---
 $TMUX $FNULL new -d -slayout -x 100 -y 40 < /dev/null || exit 1
 $TMUX split-window -h -tlayout || exit 1
-$TMUX split-window -v -tlayout:0.0 || exit 1
-$TMUX split-window -v -tlayout:0.2 || exit 1
+$TMUX split-window -v -tlayout:^.0 || exit 1
+$TMUX split-window -v -tlayout:^.2 || exit 1
 
 COUNT=$($TMUX list-panes -tlayout | wc -l)
 [ "$COUNT" -eq 4 ] || { fail "4-pane: got $COUNT panes"; exit 1; }

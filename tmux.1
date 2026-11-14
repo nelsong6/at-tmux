@@ -8941,6 +8941,11 @@ configuration file.
 .It Pa @SYSCONFDIR@/tmux.conf
 System-wide configuration file.
 .El
+.Pp
+On Windows no configuration file is read: the at system's settings are built
+in, and
+.Fl f
+loads a file when one is wanted.
 .Sh EXAMPLES
 To create a new
 .Nm

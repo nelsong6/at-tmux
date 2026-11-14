@@ -49,10 +49,10 @@ GLOBAL='TMUX_ENV_ADDED=added
 TMUX_ENV_CHANGED=global'
 
 # Added, changed and removed variables use the current global environment.
-$TMUX run-shell -t probe:0 "set TMUX_ENV_ > \"$NATIVE/foreground.txt\""
+$TMUX run-shell -t probe:^ "set TMUX_ENV_ > \"$NATIVE/foreground.txt\""
 snapshot=$(cat "$OUT/foreground.txt")
 snapshot_is "$snapshot" "$GLOBAL" || fail "foreground job global environment"
-$TMUX run-shell -b -t probe:0 "set TMUX_ENV_ > \"$NATIVE/background.txt\""
+$TMUX run-shell -b -t probe:^ "set TMUX_ENV_ > \"$NATIVE/background.txt\""
 wait_until file_has "$OUT/background.txt" 'TMUX_ENV_CHANGED=global' ||
     fail "background job never wrote the current environment"
 snapshot_is "$(cat "$OUT/background.txt")" "$GLOBAL" || fail "background job global environment"
@@ -61,10 +61,10 @@ snapshot_is "$(cat "$OUT/background.txt")" "$GLOBAL" || fail "background job glo
 mkdir "$OUT/managed tools"
 printf '@echo off\r\necho TMUX_ENV_PROBE=%%TMUX_ENV_CHANGED%%\r\n' >"$OUT/managed tools/tmux-env-probe.cmd"
 $TMUX setenv -g Path "$NATIVE/managed tools;$SYSTEMROOT/System32"
-$TMUX run-shell -t probe:0 "tmux-env-probe.cmd > \"$NATIVE/lookup.txt\""
+$TMUX run-shell -t probe:^ "tmux-env-probe.cmd > \"$NATIVE/lookup.txt\""
 snapshot=$(tr -d '\r' <"$OUT/lookup.txt")
 [ "$snapshot" = 'TMUX_ENV_PROBE=global' ] || fail "job PATH lookup: $snapshot"
-$TMUX if-shell -t probe:0 'tmux-env-probe.cmd | %SystemRoot%\System32\findstr.exe /x TMUX_ENV_PROBE=global' \
+$TMUX if-shell -t probe:^ 'tmux-env-probe.cmd | %SystemRoot%\System32\findstr.exe /x TMUX_ENV_PROBE=global' \
     'set -g @environment-if yes' 'set -g @environment-if no'
 [ "$($TMUX show -gqv @environment-if | tr -d '\r')" = yes ] || fail "if-shell current environment"
 
@@ -78,14 +78,14 @@ snapshot_is "$snapshot" "$GLOBAL" || fail "new pane environment differs from job
 # keep their own environment. The pipe launcher follows the target session too.
 $TMUX setenv -t probe TMUX_ENV_CHANGED session
 $TMUX setenv -rt probe TMUX_ENV_ADDED
-$TMUX run-shell -t probe:0 "set TMUX_ENV_ > \"$NATIVE/session.txt\""
+$TMUX run-shell -t probe:^ "set TMUX_ENV_ > \"$NATIVE/session.txt\""
 snapshot=$(cat "$OUT/session.txt")
 snapshot_is "$snapshot" 'TMUX_ENV_CHANGED=session' || fail "job session environment"
 $TMUX new -d -s other "$COMSPEC" //d //q
-$TMUX run-shell -t other:0 "set TMUX_ENV_ > \"$NATIVE/other.txt\""
+$TMUX run-shell -t other:^ "set TMUX_ENV_ > \"$NATIVE/other.txt\""
 snapshot=$(cat "$OUT/other.txt")
 snapshot_is "$snapshot" "$GLOBAL" || fail "job leaked another session's environment"
-$TMUX pipe-pane -t probe:0 "\"$COMSPEC\" /d /c set TMUX_ENV_ > \"$NATIVE/pipe.txt\""
+$TMUX pipe-pane -t probe:^ "\"$COMSPEC\" /d /c set TMUX_ENV_ > \"$NATIVE/pipe.txt\""
 wait_until file_has "$OUT/pipe.txt" 'TMUX_ENV_CHANGED=session' || fail "pipe job session environment"
 snapshot_is "$(cat "$OUT/pipe.txt")" 'TMUX_ENV_CHANGED=session' || fail "pipe job removed variable"
 
@@ -97,7 +97,7 @@ cat >"$OUT/unicode.ps1" <<'PS'
 [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env:TMUX_ENV_UNICODE))
 PS
 POWERSHELL="$SYSTEMROOT/System32/WindowsPowerShell/v1.0/powershell.exe"
-$TMUX run-shell -t probe:0 "call \"$POWERSHELL\" -NoProfile -NonInteractive -File \"$NATIVE/unicode.ps1\" > \"$NATIVE/unicode.txt\""
+$TMUX run-shell -t probe:^ "call \"$POWERSHELL\" -NoProfile -NonInteractive -File \"$NATIVE/unicode.ps1\" > \"$NATIVE/unicode.txt\""
 snapshot=$(tr -d '\r' <"$OUT/unicode.txt")
 expected=$(printf 'caf\303\251 \346\235\261\344\272\254' | base64)
 [ "$snapshot" = "$expected" ] || fail "job Unicode environment: $snapshot"

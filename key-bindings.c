@@ -462,6 +462,9 @@ key_bindings_init_done(__unused struct cmdq_item *item, __unused void *data)
 			    new_bd);
 		}
 	}
+#ifdef HAVE_SERVER_UPGRADE
+	options_upgrade_baseline();
+#endif
 	return (CMD_RETURN_NORMAL);
 }
 
@@ -786,6 +789,9 @@ key_bindings_init(void)
 		cmdq_append(NULL, cmdq_get_command(pr->cmdlist, NULL));
 		cmd_list_free(pr->cmdlist);
 	}
+#ifdef _WIN32
+	at_defaults_init();
+#endif
 	cmdq_append(NULL, cmdq_get_callback(key_bindings_init_done, NULL));
 }
 

@@ -72,12 +72,12 @@ $TMUX split-window -d -t main:w3 "$SYS\System32\PING.EXE -n 300 127.0.0.1" ||
     fail "split w3"
 $TMUX set -p -t main:w3.1 @codex-session cid
 $TMUX set -p -t main:w3.1 @codex-cwd "$WDIR"
-renamed() { [ "$($TMUX display -p -t main:1 '#{window_name}' | tr -d '\r')" != w1 ]; }
+renamed() { [ "$($TMUX display -p -t main:2 '#{window_name}' | tr -d '\r')" != w1 ]; }
 wait_until renamed || fail "the window wasn't named automatically"
 wait_until snap_has "id3" || fail "the snapshot has no IDs"
 wait_until snap_has "cid" || fail "the snapshot has no Codex ID"
 cp "$SNAP" "$DIR/saved"
-WIN1=$($TMUX display -p -t main:1 '#{window_name}' | tr -d '\r')
+WIN1=$($TMUX display -p -t main:2 '#{window_name}' | tr -d '\r')
 
 # 1. With no restore running or run, it says so.
 [ "$($TMUX restore-set | tr -d '\r')" = "no restore running" ] ||
@@ -160,8 +160,11 @@ wait_until sh -c "[ \$($TMUX lsw -t =main-2 | wc -l) -ge 2 ]" ||
     fail "no second window"
 $TMUX select-window -t "=main-2:^" || fail "select the first window"
 wait "$RESTORE" || fail "restore-set failed"
-[ "$($TMUX lsw -t =main -F '#{window_name}' | tr -d '\r' | tail -3 | tr '\n' ' ')" = \
-  "$($TMUX lsw -t =main-2 -F '#{window_name}' | tr -d '\r' | tail -3 | tr '\n' ' ')" ] ||
+# A name the program gives (automatic-rename) can come from a title it has
+# not set again yet, so those windows are compared by place alone.
+IDS='#{?automatic-rename,-,#{window_name}}'
+[ "$($TMUX lsw -t =main -F "$IDS" | tr -d '\r' | tail -3 | tr '\n' ' ')" = \
+  "$($TMUX lsw -t =main-2 -F "$IDS" | tr -d '\r' | tail -3 | tr '\n' ' ')" ] ||
     fail "the windows came back out of order"
 $TMUX kill-session -t =main-2 || fail "clean up"
 quick_restore

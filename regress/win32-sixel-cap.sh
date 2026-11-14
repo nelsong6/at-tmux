@@ -32,6 +32,8 @@ cd "$OUT" || exit 1
 
 cat >test.conf <<EOF
 set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+# The outer server stands in for Windows Terminal, whose TERM is xterm-256color.
+set -g default-terminal xterm-256color
 set -g status off
 set -g window-size manual
 set -as terminal-features ',xterm-256color:sixel'
@@ -54,7 +56,7 @@ MAIN="[Console]::Write(\$e + '[?1049l')"
 $TMUX -vv -f test.conf new -d -x60 -y30 "$PROGRAM"\
 "Await a; foreach (\$n in 1..20) { Draw \$n \$n 0 0 }; "\
 "Await a-more; Draw 21 21 0 0; Start-Sleep 120" </dev/null || exit 1
-$TMUX splitw -h -t:0.0 "$PROGRAM"\
+$TMUX splitw -h -t:^.0 "$PROGRAM"\
 "Await b; foreach (\$n in 1..20) { Draw \$n 0 \$n 0 }; "\
 "Await b-alternate; $ALTERNATE; foreach (\$n in 1..21) { Draw \$n 0 0 \$n }; "\
 "Await b-main; $MAIN; Start-Sleep 120" </dev/null || exit 1

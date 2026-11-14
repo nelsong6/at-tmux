@@ -27,13 +27,13 @@ $TMUX setenv -g PATH "$NATIVE/managed tools;$SYSTEMROOT/System32"
 PATH="$OUT/managed tools:/bin:/usr/bin" $TMUX new-window -d -t probe: -n found -o remain-on-exit=on tmux-child-probe.exe tmux-child-probe.exe || fail "pane executable from child PATH"
 finished() { [ "$($TMUX display-message -p -t probe:found '#{pane_dead}:#{pane_dead_status}')" = '1:0' ]; }
 wait_until finished || { $TMUX capture-pane -t probe:found -p; fail "selected pane program didn't run successfully"; }
-$TMUX pipe-pane -t probe:0 'tmux-child-probe.exe cmd.exe' || fail "pipe executable from global PATH"
+$TMUX pipe-pane -t probe:^ 'tmux-child-probe.exe cmd.exe' || fail "pipe executable from global PATH"
 # The original OS PATH must not resurrect a program removed from the child PATH.
-if $TMUX pipe-pane -t probe:0 'tmux-old-probe.exe cmd.exe' 2>/dev/null;then fail "pipe inherited the old executable search path";fi
+if $TMUX pipe-pane -t probe:^ 'tmux-old-probe.exe cmd.exe' 2>/dev/null;then fail "pipe inherited the old executable search path";fi
 if PATH=/bin:/usr/bin $TMUX new-window -d -t probe: tmux-old-probe.exe cmd.exe 2>/dev/null;then fail "pane inherited the old executable search path";fi
 $TMUX setenv -t probe PATH "$NATIVE/session;$SYSTEMROOT/System32"
-$TMUX pipe-pane -t probe:0 'tmux-session-probe.exe cmd.exe' || fail "pipe executable from session PATH"
-if $TMUX pipe-pane -t probe:0 'tmux-child-probe.exe cmd.exe' 2>/dev/null;then fail "global PATH overrode the session PATH";fi
+$TMUX pipe-pane -t probe:^ 'tmux-session-probe.exe cmd.exe' || fail "pipe executable from session PATH"
+if $TMUX pipe-pane -t probe:^ 'tmux-child-probe.exe cmd.exe' 2>/dev/null;then fail "global PATH overrode the session PATH";fi
 # An explicitly addressed program remains independent of PATH lookup.
-$TMUX pipe-pane -t probe:0 "\"$NATIVE/old/tmux-old-probe.exe\" cmd.exe" || fail "explicit executable path"
+$TMUX pipe-pane -t probe:^ "\"$NATIVE/old/tmux-old-probe.exe\" cmd.exe" || fail "explicit executable path"
 echo 'ALL CHILD PATH TESTS PASSED'

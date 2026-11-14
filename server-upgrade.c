@@ -28,7 +28,7 @@
  */
 
 #define UPGRADE_MAGIC "tmux-upgrade"
-#define UPGRADE_VERSION 4
+#define UPGRADE_VERSION 5
 #define UPGRADE_ACK_TIMEOUT 30000
 #define UPGRADE_FLUSH_TIMEOUT 5000
 
@@ -563,10 +563,62 @@ upgrade_same_string(const char *a, const char *b)
 }
 
 /*
+ * On Windows, before version 5 a server's global options were tmux's stock
+ * defaults and a configuration file, which this build has built in (TMUX-210):
+ * only its user options carry over, so nothing the file set outlasts it.
+ */
+static void
+upgrade_restore_global_options(struct upgrade_reader *r, struct options *oo)
+{
+#ifdef _WIN32
+	struct options		*old;
+	struct options_entry	*o;
+	char			*value;
+
+	if (upgrade_version < 5) {
+		old = options_create(oo);
+		options_upgrade_restore(r, old);
+		for (o = options_first(old); o != NULL; o = options_next(o)) {
+			if (*options_name(o) != '@')
+				continue;
+			value = options_to_string(o, -1, 0);
+			options_set_string(oo, options_name(o), 0, "%s", value);
+			free(value);
+		}
+		options_free(old);
+		return;
+	}
+#endif
+	options_upgrade_restore(r, oo);
+}
+
+/* Is a saved binding the same as this build's default for its key? */
+static int
+upgrade_is_default(struct upgrade_key *k)
+{
+	struct key_table	*table;
+	struct key_binding	*bd;
+	char			*s;
+	int			 same;
+
+	if ((table = key_bindings_get_table(k->table, 0)) == NULL ||
+	    (bd = key_bindings_get_default(table, k->key)) == NULL)
+		return (0);
+	s = cmd_list_print(bd->cmdlist, 0);
+	same = (upgrade_same_string(s, k->cmd) &&
+	    upgrade_same_string(bd->note, k->note) &&
+	    (bd->flags & KEY_BINDING_REPEAT) ==
+	    (k->flags & KEY_BINDING_REPEAT));
+	free(s);
+	return (same);
+}
+
+/*
  * Take out every binding of this build's own, then put the old server's in.
  * One still as the old build's default becomes this build's default, or goes
- * if this build has none; a default new in this build is added unless the old
- * server had it and it was unbound.
+ * if this build has none; so does one the same as this build's default, as a
+ * setting built in after a configuration file had set it (TMUX-210). A default
+ * new in this build is added unless the old server had it and it was unbound.
  */
 static void
 upgrade_restore_keys(struct upgrade_reader *r)
@@ -631,6 +683,8 @@ upgrade_restore_keys(struct upgrade_reader *r)
 			untouched = key_bindings_legacy_default(k->table,
 			    k->key, k->cmd);
 		}
+		if (!untouched)
+			untouched = upgrade_is_default(k);
 		if (untouched)
 			key_bindings_reset(k->table, k->key);
 	}
@@ -2403,11 +2457,11 @@ server_upgrade_restore(void)
 	next_window = upr_u32(&o);
 	next_pane = upr_u32(&o);
 
-	options_upgrade_restore(&r, global_options);
+	upgrade_restore_global_options(&r, global_options);
 	upgrade_old_keys = upgrade_version == 1 &&
 	    !upgrade_legacy_has_footer(&r);
-	options_upgrade_restore(&r, global_s_options);
-	options_upgrade_restore(&r, global_w_options);
+	upgrade_restore_global_options(&r, global_s_options);
+	upgrade_restore_global_options(&r, global_w_options);
 	/*
 	 * The old server's global environment replaces the one built from this
 	 * process's environment at startup, which holds what was removed since.

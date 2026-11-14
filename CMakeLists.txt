@@ -149,6 +149,7 @@ set(TMUX_SOURCES
     input-keys.c
     job.c
     key-bindings.c
+    at-defaults.c
     key-string.c
     layout.c
     layout-custom.c

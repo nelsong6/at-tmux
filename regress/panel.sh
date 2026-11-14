@@ -122,7 +122,7 @@ if contains STALE-VIEW; then echo 'stale update won'; exit 1; fi
 # Switching windows hides its panel; returning reserves space again.
 $TMUX new-window -n other || exit 1
 wait_until width_is 120 || { echo 'panel leaked into another window'; $TMUX list-windows -F '#{window_id}|#{window_name}|#{window_width}|#{window_active}'; exit 1; }
-$TMUX select-window -t panel:0
+$TMUX select-window -t panel:^
 wait_until width_is 80 || exit 1
 # A queued navigation cannot replace a newer view or steal conversation focus.
 $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Wrong -g third -G first -- -STALE-VIEW '' ''

@@ -90,7 +90,7 @@ wait_until outer_has || fail "terminal clipboard got '$(top "$OUTER")', not '$EX
 # A window with no name copies nothing and says so.
 $TMUX rename-window -t 'work session:other window' '' || exit 1
 COUNT=$($TMUX list-buffers | wc -l)
-ERR=$($TMUX copy-window-name-to-clipboard -t 'work session:1' 2>&1) && \
+ERR=$($TMUX copy-window-name-to-clipboard -t 'work session:2' 2>&1) && \
     fail "copied an empty name"
 echo "$ERR" | grep -q "no name to copy" || fail "empty name error was '$ERR'"
 [ "$($TMUX list-buffers | wc -l)" = "$COUNT" ] || \

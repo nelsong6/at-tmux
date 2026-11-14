@@ -122,7 +122,8 @@ $TMUX set -g @session-set-dir "$WDIR"
 
 # 6. A moved window is not closed.
 $TMUX new -d -s other -n o1 "$LONG" || fail "new session other"
-$TMUX move-window -s main:three -t other: || fail "move-window"
+# movew is tmux's own move-window: move-window is an at menu command.
+$TMUX movew -s main:three -t other: || fail "move-window"
 sleep 0.5
 [ "$(closed_lines)" -eq 0 ] || fail "moved window recorded as closed"
 

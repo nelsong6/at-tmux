@@ -33,7 +33,10 @@ cat >"$CFG" <<EOF
 set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
 set -g status off
 set -s extended-keys on
-set -gu terminal-features
+# The outer server stands in for Windows Terminal, whose TERM is xterm-256color.
+set -g default-terminal xterm-256color
+set -su terminal-features[90]
+set -su terminal-overrides[90]
 set -s exit-empty off
 EOF
 

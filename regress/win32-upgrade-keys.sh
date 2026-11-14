@@ -36,6 +36,9 @@ check_upgrade() {
     $SOURCE upgrade-server "$(cygpath -w "$target_exe")" || exit 1
     wait_until changed || { $TMUX display -p '#{server_upgrade}'; exit 1; }
     $TMUX list-keys | tr -d '\r' >"$OUT/after"
+    # move-window is an at menu command on this build, so tmux's own prints
+    # by its short name (TMUX-210).
+    sed -i 's/move-window /movew /g' "$OUT/before" "$OUT/after"
     if [ "$source_exe" = "$TEST_LEGACY_TMUX" ]; then
         # The pre-footer build's kill defaults, never rebound, come as this
         # build's close defaults (TMUX-207); win32-upgrade-defaults.sh
@@ -47,7 +50,11 @@ check_upgrade() {
     else
         diff -u "$OUT/before" "$OUT/after" || exit 1
     fi
-    [ "$($TMUX show -gv prefix | tr -d '\r')" = F2 ] || exit 1
+    # A build before the at settings were built in gives way to them
+    # (TMUX-210): its prefix is this build's.
+    prefix=F2
+    [ "$source_exe" = "$TEST_LEGACY_TMUX" ] && prefix=None
+    [ "$($TMUX show -gv prefix | tr -d '\r')" = $prefix ] || exit 1
     $TMUX list-keys -N -T custom | grep -q 'unicode binding' || exit 1
     [ "$($TMUX display -p '#{pane_pid}' | tr -d '\r')" = "$pane_pid" ] || exit 1
     $TMUX list-keys -T root MouseDrag1Pane | grep -q 'copy-mode -M' || exit 1
