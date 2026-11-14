@@ -1,9 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: [master]
   pull_request:
+  push:
     branches: [master]
   # Starts a run again from the API, as a run the runner dropped: the same as
   # a push when its ref is master.
@@ -20,14 +19,31 @@ jobs:
   # that package; a job's token can't download it yet (TMUX-134), so it builds.
   # Tests don't hold a change back:
   # they run on their own in tests.yml and report to Alerts.
-  tested:
+  changes:
     runs-on: ubuntu-latest
     outputs:
+      code: ${{ steps.diff.outputs.code }}
       found: ${{ steps.find.outputs.found }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: romaine-life/pipeline-templates/actions/check-fetches@main
+
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo code=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE...HEAD")
+          if grep -qvE '\.md$|^docs/|^LICENSE$' <<< "$files"; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Find the package already built from this tree
         id: find
@@ -65,8 +81,8 @@ jobs:
   # upstairspc, host mode: the job uses the machine's Visual Studio Build Tools
   # and Git for Windows and installs nothing system-wide.
   build:
-    needs: tested
-    if: needs.tested.outputs.found != 'true'
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.found != 'true'
     runs-on: windows-latest
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows-static
@@ -148,9 +164,10 @@ jobs:
   # The package arrives signed, so nothing here needs Windows or waits for
   # upstairspc's slots.
   release:
-    needs: [tested, build]
-    # build is skipped when tested found the package.
-    if: ${{ !failure() && !cancelled() }}
+    needs: [changes, build]
+    # build is skipped when changes found the package; both skip on a
+    # documentation-only PR, which has no package to download.
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' }}
     outputs:
       release-tag: ${{ steps.release.outputs.tag || 'validation-only' }}
     runs-on: ubuntu-latest
