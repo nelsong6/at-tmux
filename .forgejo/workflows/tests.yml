@@ -31,7 +31,10 @@ jobs:
       # On the runner's PATH, bash is WSL's launcher and cmake is MinGW's: put
       # Git Bash and Visual Studio's CMake first. Visual Studio's vcpkg has no
       # classic mode, so libevent comes from vcpkg.json (manifest mode), with a
-      # binary cache that persists in the runner's folder.
+      # binary cache that persists in the runner's folder. vcpkg downloads only
+      # through Artifact Keeper (vcpkg-fetch.ps1), and reads its registry,
+      # microsoft/vcpkg, from Forgejo's copy, which holds only the commits forgejo's
+      # k8s/copies.txt lists (FORGEJO-29).
       - name: Toolchain
         run: |
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
@@ -42,9 +45,21 @@ jobs:
           New-Item -ItemType Directory -Force $cache | Out-Null
           "VCPKG_ROOT=$vs\VC\vcpkg" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           "VCPKG_DEFAULT_BINARY_CACHE=$cache" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "X_VCPKG_ASSET_SOURCES=clear;x-script,pwsh -NoLogo -NoProfile -File $env:GITHUB_WORKSPACE\.forgejo\vcpkg-fetch.ps1 {url} {dst};x-block-origin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "VCPKG_DISABLE_METRICS=1" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Configure CMake
+        env:
+          TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
         run: |
+          $baseline = (Get-Content -Raw vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+          $code = (Invoke-WebRequest "$env:GITHUB_SERVER_URL/api/v1/repos/microsoft/vcpkg/git/commits/$($baseline)?stat=false&verification=false&files=false" -Headers @{Authorization = "token $env:TOKEN"} -SkipHttpErrorCheck).StatusCode
+          if ($code -eq 404) { throw "Forgejo's microsoft/vcpkg lacks vcpkg.json's builtin-baseline $($baseline): add it to microsoft/vcpkg's lines in forgejo's k8s/copies.txt" }
+          if ($code -ne 200) { throw "Looking up $baseline in Forgejo's microsoft/vcpkg returned $code" }
+          $env:GIT_CONFIG_COUNT = '2'
+          $env:GIT_CONFIG_KEY_0 = "url.$env:GITHUB_SERVER_URL/microsoft/vcpkg.insteadOf"; $env:GIT_CONFIG_VALUE_0 = 'https://github.com/microsoft/vcpkg'
+          $env:GIT_CONFIG_KEY_1 = "http.$env:GITHUB_SERVER_URL/microsoft/vcpkg.extraHeader"
+          $env:GIT_CONFIG_VALUE_1 = 'AUTHORIZATION: basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x-access-token:$env:TOKEN"))
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static
