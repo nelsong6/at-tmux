@@ -189,38 +189,28 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      # Releases are numbered on the tmux version the fork is built on (v3.6a.1,
-      # v3.6a.2, ...), so a new tmux base starts a new series. A commit that
-      # already has a number keeps it.
-      - name: Version
-        env:
-          PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
-        run: |
-          base=$(sed -n 's/.*PACKAGE_VERSION="\([^"-]*\).*/\1/p' CMakeLists.txt)
-          [ -n "$base" ] || { echo "::error::CMakeLists.txt has no PACKAGE_VERSION"; exit 1; }
-          prefix="v$base"
-          pattern="^${prefix//./\\.}\.[0-9]+$"
-          if [ "$PUBLISH" != true ]; then
-            version="validation-$(git rev-parse --short=7 HEAD)"
-          else
-            version=$(git tag --points-at HEAD | grep -E "$pattern" | sort -V | tail -1 || true)
-            if [ -z "$version" ]; then
-              last=$(git tag -l | grep -E "$pattern" | sort -V | tail -1 || true)
-              version="$prefix.$(( ${last##*.} + 1 ))"
-            fi
-          fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "Version $version"
+      # The one numbering step (PIPT-7), on the tmux version the fork is built on
+      # (CMakeLists' PACKAGE_VERSION, so a new tmux base starts a new series): a master
+      # run (a push or a dispatch) reserves v3.6a.N on the commit, or keeps the number
+      # the commit has; a PR run names its package after the number it would take,
+      # v3.6a.N-prK.run.
+      - id: version
+        uses: romaine-life/pipeline-templates/actions/release-version@main
+        with:
+          prefix-from: CMakeLists.txt
+          publish: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
 
       - uses: forgejo/download-artifact@v4
         with:
           name: tmux-windows
           path: package
 
+      # Only the zip's name carries the version: tmux.exe reports CMakeLists'
+      # PACKAGE_VERSION, so a package a PR run built is released under this run's name.
       - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           for f in tmux.exe tmux.pdb tmux-wer.dll conpty.dll OpenConsole.exe; do
             [ -f "package/$f" ] || { echo "::error::package/$f is missing"; exit 1; }
@@ -233,22 +223,16 @@ jobs:
 
       - name: Release
         id: release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        if: steps.version.outputs.tag != ''
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.tag }}
         run: |
           api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
           auth="Authorization: token $TOKEN"
           zip="tmux-windows-$VERSION.zip"
           code=$(curl -sS -o release.json -w '%{http_code}' -H "$auth" "$api/releases/tags/$VERSION")
           if [ "$code" = 404 ]; then
-            # A draft release creates no tag: take the number first, so a later
-            # run sees it taken even if this release fails. A number another run
-            # took makes this fail rather than share it.
-            if ! git show-ref --verify --quiet "refs/tags/$VERSION"; then
-              jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" '{tag_name: $tag, target: $sha}' |
-                curl -fsS -H "$auth" -H 'Content-Type: application/json' -d @- -o /dev/null "$api/tags"
-            fi
             hash=$(sha256sum "$zip" | cut -d' ' -f1)
             body=$(printf 'Commit %s\n\nSHA256 of %s: %s' "$GITHUB_SHA" "$zip" "$hash")
             jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" --arg body "$body" \
@@ -275,6 +259,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
           auth="Authorization: token $TOKEN"
@@ -282,7 +267,7 @@ jobs:
           code=$(curl -sS -o tested.json -w '%{http_code}' -H "$auth" "$api/releases/tags/tested")
           if [ "$code" = 404 ]; then
             curl -fsS -H "$auth" -H 'Content-Type: application/json' -o tested.json "$api/releases" \
-              -d '{"tag_name": "tested", "target_commitish": "master", "name": "Packages built by PR runs", "draft": true}'
+              -d '{"tag_name": "tested", "target_commitish": "master", "name": "Packages built by PR runs", "draft": true}' # version-check: "tested" holds PR runs' packages by tree, never a version
           elif [ "$code" != 200 ]; then
             echo "::error::reading the tested packages returned $code"
             exit 1
