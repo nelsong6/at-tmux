@@ -1119,6 +1119,9 @@ window_pane_destroy(struct window_pane *wp)
 	}
 	if (wp->ictx != NULL)
 		input_free(wp->ictx);
+#ifdef ENABLE_SIXEL
+	image_kitty_free(wp);
+#endif
 
 	screen_free(&wp->status_screen);
 	screen_free(&wp->footer_screen);

@@ -7226,6 +7226,58 @@ Examples are:
 fg=yellow bold underscore blink
 bg=black,fg=default,noreverse
 .Ed
+.Sh IMAGES
+When built with SIXEL support,
+.Nm
+shows images a program in a pane writes, and sends them to each client's
+terminal as SIXEL.
+A SIXEL image goes when anything clears or writes over its rows.
+.Pp
+A program may instead place an image with a subset of the kitty graphics
+protocol (APC G), which
+.Nm
+keeps until the program deletes it: text written or cleared over it, or the
+screen cleared, leaves it, and
+.Nm
+draws it again over what was written; it moves with its rows when they scroll,
+and
+.Ic upgrade-server
+carries it.
+Supported are
+.Ql a=T ,
+placing an image of
+.Ql f=24
+(RGB) or
+.Ql f=32
+(RGBA) pixels, sent directly and uncompressed, in chunks with
+.Ql m=1 ,
+with
+.Ql s
+and
+.Ql v
+its size in pixels,
+.Ql c
+and
+.Ql r
+the cells it fills,
+.Ql i
+its ID,
+.Ql p
+a placement ID and
+.Ql C=1
+to leave the cursor; one with the same ID replaces it.
+.Ql a=d
+deletes the images with an ID
+.Pq Ql d=i
+or all of them
+.Pq Ql d=a ,
+and
+.Ql a=q
+asks whether an image would be taken.
+.Ql q=1
+answers only failures and
+.Ql q=2
+nothing; nothing is answered without an ID.
 .Sh NAMES AND TITLES
 .Nm
 distinguishes between names and titles.

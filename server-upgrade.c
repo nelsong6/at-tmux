@@ -738,6 +738,9 @@ upgrade_save_screen(struct evbuffer *evb, struct screen *s)
 	upw_cell(o, s->hyperlinks, &s->saved_cell);
 	upw_u32(o, s->saved_flags);
 	upw_data(o, s->tabs, bitstr_size(s->grid->sx));
+#ifdef ENABLE_SIXEL
+	image_upgrade_save(o, s);
+#endif
 	upw_obj(evb, o);
 	evbuffer_free(o);
 }
@@ -799,6 +802,11 @@ upgrade_restore_screen(struct upgrade_reader *r, struct screen *s)
 	if (size > (size_t)bitstr_size(s->grid->sx))
 		size = bitstr_size(s->grid->sx);
 	memcpy(s->tabs, tabs, size);
+#ifdef ENABLE_SIXEL
+	/* A build before images were carried sent none. */
+	if (o.left != 0)
+		image_upgrade_restore(&o, s);
+#endif
 
 	if (o.error || s->cx > s->grid->sx || s->cy >= s->grid->sy ||
 	    s->rlower >= s->grid->sy || s->rupper > s->rlower)

@@ -961,6 +961,15 @@ struct image {
 	u_int			 sx;
 	u_int			 sy;
 
+	/*
+	 * A placed image (kitty graphics) is the program's until it deletes
+	 * it: text written or cleared over it doesn't free it, the pane is
+	 * drawn again with it instead. A sixel image goes when its rows do.
+	 */
+	int			 placed;
+	u_int			 id;
+	u_int			 placement;
+
 	TAILQ_ENTRY (image)	 entry;
 };
 TAILQ_HEAD(images, image);
@@ -1268,6 +1277,10 @@ struct window_pane {
 	struct window_pane_resizes resize_queue;
 	struct event	 resize_timer;
 	struct event	 sync_timer;
+
+	/* A kitty graphics transmission still arriving in chunks. */
+	struct evbuffer	*kitty_data;
+	char		*kitty_keys;
 
 	struct input_ctx *ictx;
 
@@ -3387,6 +3400,9 @@ void	 screen_write_rawstring(struct screen_write_ctx *, u_char *, u_int,
 #ifdef ENABLE_SIXEL
 void	 screen_write_sixelimage(struct screen_write_ctx *,
 	     struct sixel_image *, u_int);
+void	 screen_write_placeimage(struct screen_write_ctx *,
+	     struct sixel_image *, u_int, u_int, int);
+void	 screen_write_deleteimages(struct screen_write_ctx *, int, u_int);
 #endif
 void	 screen_write_alternateon(struct screen_write_ctx *,
 	     struct grid_cell *, int);
@@ -3957,9 +3973,22 @@ void		 image_save(struct screen *);
 void		 image_restore(struct screen *);
 void		 image_free_screen(struct screen *);
 struct image	*image_store(struct screen *, struct sixel_image *);
+struct image	*image_place(struct screen *, struct sixel_image *, u_int, u_int,
+		     int *);
+int		 image_delete(struct screen *, int, u_int);
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);
+int		 image_check_cells(struct screen *, u_int, u_int, u_int, u_int);
+int		 image_clear(struct screen *);
 int		 image_scroll_up(struct screen *, u_int);
+int		 image_move_rows(struct screen *, u_int, u_int, int);
+void		 image_upgrade_save(struct evbuffer *, struct screen *);
+void		 image_upgrade_restore(struct upgrade_reader *, struct screen *);
+
+/* image-kitty.c */
+char		*image_kitty(struct window_pane *, struct screen_write_ctx *,
+		     const char *, size_t);
+void		 image_kitty_free(struct window_pane *);
 
 /* image-sixel.c */
 #define SIXEL_COLOUR_REGISTERS 1024
@@ -3971,6 +4000,9 @@ struct sixel_image *sixel_scale(struct sixel_image *, u_int, u_int, u_int,
 		     u_int, u_int, u_int, int);
 char		*sixel_print(struct sixel_image *, struct sixel_image *,
 		     size_t *);
+struct sixel_image *sixel_from_pixels(const u_char *, u_int, u_int, u_int,
+		     u_int, u_int);
+void		 sixel_cell_size(struct sixel_image *, u_int *, u_int *);
 struct screen	*sixel_to_screen(struct sixel_image *);
 #endif
 

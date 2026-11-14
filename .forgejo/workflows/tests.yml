@@ -361,6 +361,7 @@ jobs:
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-popup-output.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-sixel.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-sixel-cap.sh || exit 1
+          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-placed-images.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-option-redraw.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-record-output.sh || exit 1
           TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade.sh

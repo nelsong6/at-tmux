@@ -1077,7 +1077,7 @@ screen_write_alignmenttest(struct screen_write_ctx *ctx)
 	utf8_set(&gc.data, 'E');
 
 #ifdef ENABLE_SIXEL
-	if (image_free_all(s) && ctx->wp != NULL)
+	if (image_clear(s) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1145,7 +1145,8 @@ screen_write_insertcharacter(struct screen_write_ctx *ctx, u_int nx, u_int bg)
 		return;
 
 #ifdef ENABLE_SIXEL
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_cells(s, s->cx, s->cy,
+	    screen_size_x(s) - s->cx, 1) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1178,7 +1179,8 @@ screen_write_deletecharacter(struct screen_write_ctx *ctx, u_int nx, u_int bg)
 		return;
 
 #ifdef ENABLE_SIXEL
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_cells(s, s->cx, s->cy,
+	    screen_size_x(s) - s->cx, 1) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1211,7 +1213,7 @@ screen_write_clearcharacter(struct screen_write_ctx *ctx, u_int nx, u_int bg)
 		return;
 
 #ifdef ENABLE_SIXEL
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_cells(s, s->cx, s->cy, nx, 1) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1241,7 +1243,8 @@ screen_write_insertline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		ny = 1;
 
 #ifdef ENABLE_SIXEL
-	if (image_check_line(s, s->cy, sy - s->cy) && ctx->wp != NULL)
+	if (image_move_rows(s, s->cy, (s->cy < s->rupper || s->cy > s->rlower) ?
+	    sy - 1 : s->rlower, (int)ny) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1294,7 +1297,8 @@ screen_write_deleteline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		ny = 1;
 
 #ifdef ENABLE_SIXEL
-	if (image_check_line(s, s->cy, sy - s->cy) && ctx->wp != NULL)
+	if (image_move_rows(s, s->cy, (s->cy < s->rupper || s->cy > s->rlower) ?
+	    sy - 1 : s->rlower, -(int)ny) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1384,7 +1388,8 @@ screen_write_clearendofline(struct screen_write_ctx *ctx, u_int bg)
 		return;
 
 #ifdef ENABLE_SIXEL
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_cells(s, s->cx, s->cy,
+	    screen_size_x(s) - s->cx, 1) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1411,7 +1416,7 @@ screen_write_clearstartofline(struct screen_write_ctx *ctx, u_int bg)
 	}
 
 #ifdef ENABLE_SIXEL
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_cells(s, 0, s->cy, s->cx + 1, 1) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1461,7 +1466,8 @@ screen_write_reverseindex(struct screen_write_ctx *ctx, u_int bg)
 
 	if (s->cy == s->rupper) {
 #ifdef ENABLE_SIXEL
-		if (image_free_all(s) && ctx->wp != NULL)
+		if (image_move_rows(s, s->rupper, s->rlower, 1) &&
+		    ctx->wp != NULL)
 			ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1526,10 +1532,10 @@ screen_write_linefeed(struct screen_write_ctx *ctx, int wrapped, u_int bg)
 
 	if (s->cy == s->rlower) {
 #ifdef ENABLE_SIXEL
-		if (rlower == screen_size_y(s) - 1)
+		if (rupper == 0 && rlower == screen_size_y(s) - 1)
 			redraw = image_scroll_up(s, 1);
 		else
-			redraw = image_check_line(s, rupper, rlower - rupper);
+			redraw = image_move_rows(s, rupper, rlower, -1);
 		if (redraw && ctx->wp != NULL)
 			ctx->wp->flags |= PANE_REDRAW;
 #endif
@@ -1559,7 +1565,11 @@ screen_write_scrollup(struct screen_write_ctx *ctx, u_int lines, u_int bg)
 	}
 
 #ifdef ENABLE_SIXEL
-	if (image_scroll_up(s, lines) && ctx->wp != NULL)
+	if (s->rupper == 0 && s->rlower == screen_size_y(s) - 1) {
+		if (image_scroll_up(s, lines) && ctx->wp != NULL)
+			ctx->wp->flags |= PANE_REDRAW;
+	} else if (image_move_rows(s, s->rupper, s->rlower, -(int)lines) &&
+	    ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1588,7 +1598,8 @@ screen_write_scrolldown(struct screen_write_ctx *ctx, u_int lines, u_int bg)
 		lines = s->rlower - s->rupper + 1;
 
 #ifdef ENABLE_SIXEL
-	if (image_free_all(s) && ctx->wp != NULL)
+	if (image_move_rows(s, s->rupper, s->rlower, (int)lines) &&
+	    ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1679,7 +1690,7 @@ screen_write_clearscreen(struct screen_write_ctx *ctx, u_int bg)
 	u_int		 sx = screen_size_x(s), sy = screen_size_y(s);
 
 #ifdef ENABLE_SIXEL
-	if (image_free_all(s) && ctx->wp != NULL)
+	if (image_clear(s) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -2439,6 +2450,55 @@ screen_write_rawstring(struct screen_write_ctx *ctx, u_char *str, u_int len,
 }
 
 #ifdef ENABLE_SIXEL
+/*
+ * Place an image at the cursor for the program to keep (kitty graphics):
+ * cut to the screen, never scrolling it, and drawn now. One it replaces
+ * leaves its pixels behind, so the pane is drawn again. The cursor moves to
+ * just right of the image on its last row, as kitty moves it, unless told to
+ * stay.
+ */
+void
+screen_write_placeimage(struct screen_write_ctx *ctx, struct sixel_image *si,
+    u_int id, u_int placement, int stay)
+{
+	struct screen		*s = ctx->s;
+	struct tty_ctx		 ttyctx;
+	struct sixel_image	*new;
+	u_int			 x, y, sx, sy, cx = s->cx, cy = s->cy;
+	int			 replaced;
+
+	sixel_size_in_cells(si, &x, &y);
+	sx = screen_size_x(s) - cx;
+	sy = screen_size_y(s) - cy;
+	if (x > sx || y > sy) {
+		new = sixel_scale(si, 0, 0, 0, 0, x > sx ? sx : x,
+		    y > sy ? sy : y, 1);
+		sixel_free(si);
+		if (new == NULL)
+			return;
+		si = new;
+		sixel_size_in_cells(si, &x, &y);
+	}
+
+	screen_write_collect_flush(ctx, 0, __func__);
+	screen_write_initctx(ctx, &ttyctx, 0);
+	ttyctx.ptr = image_place(s, si, id, placement, &replaced);
+	if (replaced && ctx->wp != NULL)
+		ctx->wp->flags |= PANE_REDRAW;
+	tty_write(tty_cmd_sixelimage, &ttyctx);
+
+	if (!stay)
+		screen_write_cursormove(ctx, cx + x, cy + y - 1, 0);
+}
+
+/* Delete placed images, those with an ID or all. */
+void
+screen_write_deleteimages(struct screen_write_ctx *ctx, int all, u_int id)
+{
+	if (image_delete(ctx->s, all, id) && ctx->wp != NULL)
+		ctx->wp->flags |= PANE_REDRAW;
+}
+
 /* Write a SIXEL image. */
 void
 screen_write_sixelimage(struct screen_write_ctx *ctx, struct sixel_image *si,

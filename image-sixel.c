@@ -688,3 +688,158 @@ sixel_to_screen(struct sixel_image *si)
 	screen_write_stop(&ctx);
 	return (s);
 }
+
+/* The cell size in pixels an image was made for. */
+void
+sixel_cell_size(struct sixel_image *si, u_int *xpixel, u_int *ypixel)
+{
+	*xpixel = si->xpixel;
+	*ypixel = si->ypixel;
+}
+
+/* A colour as a sixel register holds it: RGB, each 0 to 100. */
+static u_int
+sixel_rgb(u_int r, u_int g, u_int b)
+{
+	return ((2 << 25) | (((r * 100 + 127) / 255) << 16) |
+	    (((g * 100 + 127) / 255) << 8) | ((b * 100 + 127) / 255));
+}
+
+#define SIXEL_BIN_BITS 5
+#define SIXEL_BINS (1 << (3 * SIXEL_BIN_BITS))
+#define SIXEL_PALETTE 256
+
+static u_int
+sixel_bin(const u_char *p)
+{
+	u_int	shift = 8 - SIXEL_BIN_BITS;
+
+	return (((p[0] >> shift) << (2 * SIXEL_BIN_BITS)) |
+	    ((p[1] >> shift) << SIXEL_BIN_BITS) | (p[2] >> shift));
+}
+
+/* Bins that hold pixels, fullest first. */
+struct sixel_bin_count {
+	u_int		bin;
+	uint64_t	count;
+};
+
+static int
+sixel_bin_cmp(const void *a0, const void *b0)
+{
+	const struct sixel_bin_count	*a = a0, *b = b0;
+
+	if (a->count != b->count)
+		return (a->count > b->count ? -1 : 1);
+	return (a->bin < b->bin ? -1 : (a->bin > b->bin));
+}
+
+/*
+ * Make an image from pixels, RGB (bpp 3) or RGBA (bpp 4) a row at a time, for
+ * cells xpixel by ypixel. A pixel less than half opaque is left out. Sixel
+ * holds 256 colours: colours are put in bins of 5 bits a channel, the 256
+ * fullest bins become the palette, each the average of its pixels, and every
+ * other bin takes the nearest of them.
+ */
+struct sixel_image *
+sixel_from_pixels(const u_char *pixels, u_int w, u_int h, u_int bpp,
+    u_int xpixel, u_int ypixel)
+{
+	struct sixel_image	*si;
+	const u_char		*p;
+	struct sixel_bin_count	*order;
+	uint64_t		*count, *sum, d, bestd;
+	u_int			*map, x, y, i, j, n, bin, best;
+	int			 dr, dg, db;
+	u_int			 pal[SIXEL_PALETTE][3], mean[3];
+
+	if (w == 0 || h == 0 || w > SIXEL_WIDTH_LIMIT ||
+	    h > SIXEL_HEIGHT_LIMIT || (bpp != 3 && bpp != 4) ||
+	    xpixel == 0 || ypixel == 0)
+		return (NULL);
+
+	count = xcalloc(SIXEL_BINS, sizeof *count);
+	sum = xcalloc(SIXEL_BINS * 3, sizeof *sum);
+	for (y = 0; y < h; y++) {
+		for (x = 0; x < w; x++) {
+			p = pixels + ((size_t)y * w + x) * bpp;
+			if (bpp == 4 && p[3] < 128)
+				continue;
+			bin = sixel_bin(p);
+			count[bin]++;
+			sum[bin * 3] += p[0];
+			sum[bin * 3 + 1] += p[1];
+			sum[bin * 3 + 2] += p[2];
+		}
+	}
+
+	/* The fullest bins, most pixels first. */
+	order = xcalloc(SIXEL_BINS, sizeof *order);
+	for (n = 0, i = 0; i < SIXEL_BINS; i++) {
+		if (count[i] != 0) {
+			order[n].bin = i;
+			order[n++].count = count[i];
+		}
+	}
+	qsort(order, n, sizeof *order, sixel_bin_cmp);
+	if (n > SIXEL_PALETTE)
+		n = SIXEL_PALETTE;
+
+	si = xcalloc(1, sizeof *si);
+	si->xpixel = xpixel;
+	si->ypixel = ypixel;
+	si->p2 = 1;
+	si->set_ra = 1;
+	si->ra_x = w;
+	si->ra_y = h;
+	si->ncolours = si->used_colours = (n == 0 ? 1 : n);
+	si->colours = xcalloc(si->ncolours, sizeof *si->colours);
+
+	map = xcalloc(SIXEL_BINS, sizeof *map);
+	for (i = 0; i < n; i++) {
+		bin = order[i].bin;
+		for (j = 0; j < 3; j++)
+			pal[i][j] = (u_int)(sum[bin * 3 + j] / count[bin]);
+		si->colours[i] = sixel_rgb(pal[i][0], pal[i][1], pal[i][2]);
+		map[bin] = i + 1;
+	}
+	for (bin = 0; bin < SIXEL_BINS; bin++) {
+		if (count[bin] == 0 || map[bin] != 0)
+			continue;
+		for (j = 0; j < 3; j++)
+			mean[j] = (u_int)(sum[bin * 3 + j] / count[bin]);
+		best = 0;
+		bestd = UINT64_MAX;
+		for (i = 0; i < n; i++) {
+			dr = (int)mean[0] - (int)pal[i][0];
+			dg = (int)mean[1] - (int)pal[i][1];
+			db = (int)mean[2] - (int)pal[i][2];
+			d = (uint64_t)(dr * dr + dg * dg + db * db);
+			if (d < bestd) {
+				bestd = d;
+				best = i;
+			}
+		}
+		map[bin] = best + 1;
+	}
+
+	si->x = w;
+	si->y = h;
+	si->lines = xcalloc(h, sizeof *si->lines);
+	for (y = 0; y < h; y++) {
+		si->lines[y].x = w;
+		si->lines[y].data = xcalloc(w, sizeof *si->lines[y].data);
+		for (x = 0; x < w; x++) {
+			p = pixels + ((size_t)y * w + x) * bpp;
+			if (bpp == 4 && p[3] < 128)
+				continue;
+			si->lines[y].data[x] = map[sixel_bin(p)];
+		}
+	}
+
+	free(map);
+	free(order);
+	free(sum);
+	free(count);
+	return (si);
+}

@@ -144,6 +144,7 @@ set(TMUX_SOURCES
     grid-view.c
     hyperlinks.c
     image.c
+    image-kitty.c
     image-sixel.c
     input.c
     input-keys.c

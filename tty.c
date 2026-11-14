@@ -68,6 +68,9 @@ static void	tty_redraw_region(struct tty *, const struct tty_ctx *);
 static void	tty_emulate_repeat(struct tty *, enum tty_code_code,
 		    enum tty_code_code, u_int);
 static void	tty_draw_pane(struct tty *, const struct tty_ctx *, u_int);
+#ifdef ENABLE_SIXEL
+static void	tty_draw_placed(struct tty *, const struct tty_ctx *, u_int);
+#endif
 static int	tty_check_overlay(struct tty *, u_int, u_int);
 static void	tty_reset_line_sizes(struct tty *);
 
@@ -1734,7 +1737,33 @@ tty_draw_pane(struct tty *tty, const struct tty_ctx *ctx, u_int py)
 			    rr->px, ry, &ctx->defaults, ctx->palette);
 		}
 	}
+#ifdef ENABLE_SIXEL
+	tty_draw_placed(tty, ctx, py);
+#endif
 }
+
+#ifdef ENABLE_SIXEL
+/*
+ * A line drawn again took the terminal's copy of any image on it: draw the
+ * placed ones (kitty graphics) there again, as the pane would be drawn.
+ */
+static void
+tty_draw_placed(struct tty *tty, const struct tty_ctx *ctx, u_int py)
+{
+	struct image	*im;
+	struct tty_ctx	 ictx;
+
+	TAILQ_FOREACH(im, &ctx->s->images, entry) {
+		if (!im->placed || py < im->py || py >= im->py + im->sy)
+			continue;
+		memcpy(&ictx, ctx, sizeof ictx);
+		ictx.ocx = im->px;
+		ictx.ocy = im->py;
+		ictx.ptr = im;
+		tty_cmd_sixelimage(tty, &ictx);
+	}
+}
+#endif
 
 const struct grid_cell *
 tty_check_codeset(struct tty *tty, const struct grid_cell *gc)

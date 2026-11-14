@@ -2768,9 +2768,26 @@ input_exit_apc(struct input_ctx *ictx)
 	struct screen_write_ctx	*sctx = &ictx->ctx;
 	struct window_pane	*wp = ictx->wp;
 
+#ifdef ENABLE_SIXEL
+	char			*reply;
+#endif
+
 	if (ictx->flags & INPUT_DISCARD)
 		return;
-	log_debug("%s: \"%s\"", __func__, ictx->input_buf);
+	log_debug("%s: \"%.64s\"", __func__, ictx->input_buf);
+
+#ifdef ENABLE_SIXEL
+	/* APC G is kitty graphics, not a title. */
+	if (wp != NULL && ictx->input_len != 0 && ictx->input_buf[0] == 'G') {
+		reply = image_kitty(wp, sctx, ictx->input_buf + 1,
+		    ictx->input_len - 1);
+		if (reply != NULL) {
+			input_reply(ictx, 0, "%s", reply);
+			free(reply);
+		}
+		return;
+	}
+#endif
 
 	if (wp != NULL &&
 	    options_get_number(wp->options, "allow-set-title") &&
