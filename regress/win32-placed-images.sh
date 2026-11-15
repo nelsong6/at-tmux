@@ -259,6 +259,7 @@ $TMUX new-window "& '$PS' -NoProfile -ExecutionPolicy Bypass -File '$HELPER' -Co
     fail "no second window"
 printf '%s\n' "virtual 5 2x2" "holder 5 2 1 0 0" "text 20 40 second-done" >>commands2.txt
 wait_until shows second-done || fail "the second window's program never ran"
+$TMUX refresh-client
 both() { [ "$(stores | wc -l)" -eq 2 ]; }
 wait_until both || fail "the second window's image 5 wasn't sent as a picture of its own: $(stores)"
 $TMUX kill-window
