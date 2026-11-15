@@ -37,7 +37,27 @@ struct panel_data {
 	int choice;
 	int focused;
 	int resizing;
+
+	/*
+	 * Text selected with the mouse, as on a webpage: a press marks where it
+	 * starts, a drag selects to the mouse, and the release copies it. A press
+	 * and release with no drag is a click. Points are a line and a column of
+	 * its text, so the selection scrolls with the rows.
+	 */
+	int pressed;
+	int dragged;
+	int selected;
+	u_int sel_width;
+	u_int sel_line[2];
+	u_int sel_col[2];
+	uint64_t click_time;
+	u_int click_line;
+	u_int click_col;
+	u_int clicks;
 };
+
+static int panel_sel_range(struct panel_data *, u_int *, u_int *, u_int *,
+    u_int *);
 
 u_int
 panel_width(struct client *c)
@@ -249,8 +269,10 @@ panel_open(struct client *c, struct menu *menu, struct window_pane *wp,
 	pd->source = wp->id;
 	if (!update && expected == NULL)
 		pd->focused = 1;
-	if (!update)
+	if (!update) {
 		pd->top = pd->tabs;
+		pd->selected = pd->pressed = pd->dragged = 0;
+	}
 	pd->choice = -1;
 	panel_reflow(c);
 	recalculate_sizes();
@@ -264,8 +286,9 @@ panel_draw(struct client *c)
 {
 	struct panel_data *pd = c->panel;
 	struct screen_write_ctx ctx;
-	struct grid_cell gc, selected;
+	struct grid_cell gc, selected, mode, cell;
 	u_int width = panel_width(c), height, y, top, row, i, x, w;
+	u_int sl, sc, el, ec, from, to;
 	const char *text;
 	struct key_table *table;
 	int prompt;
@@ -301,9 +324,9 @@ panel_draw(struct client *c)
 			continue;
 		} else if (y == height - 1)
 			text = !pd->focused ?
-			    "#[dim] Click to use   Shift-drag select" : prompt ?
-			    "#[dim] / commands   Esc close   Tab back to pane   Shift-drag select" :
-			    "#[dim] Esc close   Tab back to pane   Shift-drag select";
+			    "#[dim] Click to use" : prompt ?
+			    "#[dim] / commands   Esc close   Tab back to pane" :
+			    "#[dim] Esc close   Tab back to pane";
 		else {
 			row = pd->top + y - 1 - (pd->tabs != 0);
 			text = row < pd->nlines ? pd->lines[row].text : NULL;
@@ -318,6 +341,27 @@ panel_draw(struct client *c)
 		}
 	}
 	screen_write_stop(&ctx);
+	/* The selected text takes copy mode's colours. */
+	if (panel_sel_range(pd, &sl, &sc, &el, &ec)) {
+		memcpy(&mode, &grid_default_cell, sizeof mode);
+		style_apply(&mode, c->session->curw->window->options, "mode-style",
+		    NULL);
+		for (y = 1 + (pd->tabs != 0); y < height - 1; y++) {
+			row = pd->top + y - 1 - (pd->tabs != 0);
+			if (row < sl || row > el)
+				continue;
+			from = row == sl ? sc : 0;
+			to = row == el ? ec : width - 3;
+			for (x = from; x <= to; x++) {
+				grid_get_cell(pd->screen.grid, 1 + x, y, &cell);
+				if (cell.flags & GRID_FLAG_PADDING)
+					continue;
+				cell.fg = mode.fg;
+				cell.bg = mode.bg;
+				grid_set_cell(pd->screen.grid, 1 + x, y, &cell);
+			}
+		}
+	}
 	for (y = 0; y < height; y++)
 		tty_draw_line(&c->tty, &pd->screen, 0, y, width,
 		    c->tty.sx - width, top + y, &gc, NULL);
@@ -349,6 +393,185 @@ static u_int
 panel_rows(struct client *c)
 {
 	return (c->tty.sy - status_line_size(c) - 2 - (c->panel->tabs != 0));
+}
+
+/* The selection's ends in order, the start first; 0 if nothing is selected. */
+static int
+panel_sel_range(struct panel_data *pd, u_int *sl, u_int *sc, u_int *el,
+    u_int *ec)
+{
+	int first;
+
+	if (!pd->selected || pd->sel_width != pd->width ||
+	    pd->sel_line[0] >= pd->nlines || pd->sel_line[1] >= pd->nlines)
+		return (0);
+	first = (pd->sel_line[0] < pd->sel_line[1] ||
+	    (pd->sel_line[0] == pd->sel_line[1] &&
+	    pd->sel_col[0] <= pd->sel_col[1])) ? 0 : 1;
+	*sl = pd->sel_line[first];
+	*sc = pd->sel_col[first];
+	*el = pd->sel_line[!first];
+	*ec = pd->sel_col[!first];
+	return (1);
+}
+
+/* A line's text as the panel draws it, in a screen one row high. */
+static void
+panel_line_screen(struct panel_data *pd, u_int line, struct screen *s)
+{
+	struct screen_write_ctx ctx;
+
+	screen_init(s, pd->width - 2, 1, 0);
+	screen_write_start(&ctx, s);
+	format_draw(&ctx, &grid_default_cell, pd->width - 2,
+	    pd->lines[line].text, NULL, 0);
+	screen_write_stop(&ctx);
+}
+
+static int
+panel_blank(struct screen *s, u_int x)
+{
+	struct grid_cell gc;
+
+	grid_get_cell(s->grid, x, 0, &gc);
+	return ((~gc.flags & GRID_FLAG_PADDING) && gc.data.size == 1 &&
+	    *gc.data.data == ' ');
+}
+
+/*
+ * Copy the selection to a paste buffer and the terminal's clipboard. A row
+ * wrapped onto the next line is joined back with a space, and the spaces the
+ * selection starts and ends with are left out.
+ */
+static void
+panel_copy(struct client *c)
+{
+	struct panel_data *pd = c->panel;
+	struct screen s;
+	struct grid_cell gc;
+	u_int sl, sc, el, ec, line, x, from, to, last = pd->width - 3;
+	char *buf = NULL;
+	size_t len = 0, keep, start = 0;
+
+	if (!panel_sel_range(pd, &sl, &sc, &el, &ec))
+		return;
+	for (line = sl; line <= el; line++) {
+		panel_line_screen(pd, line, &s);
+		from = line == sl ? sc : 0;
+		to = line == el ? ec : last;
+		if (line != sl) {
+			buf = xrealloc(buf, len + 1);
+			if (pd->lines[line].item == pd->lines[line - 1].item) {
+				while (from < to && panel_blank(&s, from))
+					from++;
+				buf[len++] = ' ';
+			} else
+				buf[len++] = '\n';
+		}
+		keep = len;
+		for (x = from; x <= to; x++) {
+			grid_get_cell(s.grid, x, 0, &gc);
+			if (gc.flags & GRID_FLAG_PADDING)
+				continue;
+			buf = xrealloc(buf, len + gc.data.size);
+			memcpy(buf + len, gc.data.data, gc.data.size);
+			len += gc.data.size;
+		}
+		while (len > keep && buf[len - 1] == ' ')
+			len--;
+		screen_free(&s);
+	}
+	while (start < len && (buf[start] == ' ' || buf[start] == '\n'))
+		start++;
+	while (len > start && (buf[len - 1] == ' ' || buf[len - 1] == '\n'))
+		len--;
+	if (len == start) {
+		free(buf);
+		return;
+	}
+	memmove(buf, buf + start, len - start);
+	len -= start;
+	tty_set_selection(&c->tty, "", buf, len);
+	paste_add(NULL, buf, len);
+}
+
+/*
+ * Select the word at a point, as a double click does, or with whole set the
+ * row it is part of, every line it wrapped onto, as a triple click does.
+ */
+static void
+panel_select_word(struct panel_data *pd, u_int line, u_int col, int whole)
+{
+	struct screen s;
+	u_int first = line, end = line, from = col, to = col;
+	u_int last = pd->width - 3;
+
+	if (whole) {
+		while (first > pd->tabs &&
+		    pd->lines[first - 1].item == pd->lines[line].item)
+			first--;
+		while (end + 1 < pd->nlines &&
+		    pd->lines[end + 1].item == pd->lines[line].item)
+			end++;
+		panel_line_screen(pd, first, &s);
+		for (from = 0; from < last && panel_blank(&s, from); from++)
+			/* nothing */;
+		screen_free(&s);
+		panel_line_screen(pd, end, &s);
+		for (to = last; to > 0 && panel_blank(&s, to); to--)
+			/* nothing */;
+		screen_free(&s);
+	} else {
+		panel_line_screen(pd, line, &s);
+		if (!panel_blank(&s, col)) {
+			while (from > 0 && !panel_blank(&s, from - 1))
+				from--;
+			while (to < last && !panel_blank(&s, to + 1))
+				to++;
+		}
+		screen_free(&s);
+	}
+	pd->selected = 1;
+	pd->sel_width = pd->width;
+	pd->sel_line[0] = first;
+	pd->sel_col[0] = from;
+	pd->sel_line[1] = end;
+	pd->sel_col[1] = to;
+}
+
+/*
+ * The line and column of the text under the mouse, kept to the rows shown. With
+ * scroll set, the mouse above or below them scrolls a line, so a drag past
+ * either end keeps selecting. 0 if the panel has no rows.
+ */
+static int
+panel_point(struct client *c, struct mouse_event *m, u_int top, u_int width,
+    int scroll, u_int *line, u_int *col)
+{
+	struct panel_data *pd = c->panel;
+	u_int first = top + 1 + (pd->tabs != 0), rows = panel_rows(c);
+	u_int x0 = c->tty.sx - width + 1, last = width - 3;
+
+	if (pd->nlines <= pd->tabs)
+		return (0);
+	*col = m->x < x0 ? 0 : panel_min(m->x - x0, last);
+	if (m->y < first) {
+		if (scroll && pd->top > pd->tabs)
+			pd->top--;
+		*line = pd->top;
+		*col = 0;
+	} else if (m->y >= first + rows) {
+		if (scroll && pd->top + rows < pd->nlines)
+			pd->top++;
+		*line = pd->top + rows - 1;
+		*col = last;
+	} else
+		*line = pd->top + (m->y - first);
+	if (*line >= pd->nlines) {
+		*line = pd->nlines - 1;
+		*col = last;
+	}
+	return (1);
 }
 
 /* Scroll a page up or down; the highlight goes, as it does for the keys. */
@@ -506,8 +729,9 @@ panel_key(struct client *c, struct key_event *event)
 {
 	struct panel_data *pd = c->panel;
 	struct mouse_event *m = &event->m;
-	u_int width = panel_width(c), height, top, i, rows, x, w;
+	u_int width = panel_width(c), height, top, i, rows, x, w, line, col;
 	int row, step, n, click, released, held;
+	uint64_t now;
 	key_code key = event->key & ~KEYC_MASK_FLAGS;
 	if (width == 0)
 		return (0);
@@ -529,6 +753,30 @@ panel_key(struct client *c, struct key_event *event)
 				pd->resizing = 0;
 			return (1);
 		}
+		/*
+		 * A press on the rows may start a selection: its drag and release
+		 * are the panel's wherever the mouse goes. A drag selects, and the
+		 * release copies; a release with no drag is a click.
+		 */
+		if (pd->pressed && held) {
+			panel_point(c, m, top, width, 1, &line, &col);
+			if (pd->dragged || line != pd->sel_line[0] ||
+			    col != pd->sel_col[0]) {
+				pd->dragged = pd->selected = 1;
+				pd->sel_line[1] = line;
+				pd->sel_col[1] = col;
+				pd->choice = -1;
+			}
+			goto redraw;
+		}
+		if (pd->pressed && released) {
+			pd->pressed = 0;
+			if (pd->dragged) {
+				pd->dragged = 0;
+				panel_copy(c);
+				goto redraw;
+			}
+		}
 		if (click && !released && m->x == c->tty.sx - width &&
 		    m->y >= top && m->y < top + height) {
 			pd->resizing = 1;
@@ -537,6 +785,8 @@ panel_key(struct client *c, struct key_event *event)
 		if (m->x < c->tty.sx - width || m->y < top || m->y >= top + height) {
 			if (click)
 				pd->focused = 0;
+			if (click && !released)
+				pd->selected = 0;
 			pd->choice = -1;
 			c->flags |= CLIENT_REDRAWOVERLAY;
 			return (0);
@@ -554,6 +804,39 @@ panel_key(struct client *c, struct key_event *event)
 			else if (pd->top + rows < pd->nlines)
 				pd->top = panel_min(pd->top + 3, pd->nlines - (rows));
 			goto redraw;
+		}
+		/*
+		 * A press clears the selection and marks where the next starts. A
+		 * second or third on the same spot of a row that runs nothing selects
+		 * its word or the whole row.
+		 */
+		if (click && !released) {
+			pd->selected = 0;
+			if (m->x > c->tty.sx - width &&
+			    m->y > top + (pd->tabs != 0) && m->y < top + height - 1 &&
+			    panel_point(c, m, top, width, 0, &line, &col)) {
+				pd->pressed = 1;
+				pd->dragged = 0;
+				pd->sel_width = pd->width;
+				pd->sel_line[0] = pd->sel_line[1] = line;
+				pd->sel_col[0] = pd->sel_col[1] = col;
+				now = get_timer();
+				if (pd->clicks != 0 && line == pd->click_line &&
+				    col == pd->click_col &&
+				    now - pd->click_time < KEYC_CLICK_TIMEOUT)
+					pd->clicks++;
+				else
+					pd->clicks = 1;
+				pd->click_time = now;
+				pd->click_line = line;
+				pd->click_col = col;
+				if (pd->clicks >= 2 && !panel_selectable(pd, line)) {
+					panel_select_word(pd, line, col,
+					    pd->clicks >= 3);
+					panel_copy(c);
+					pd->pressed = 0;
+				}
+			}
 		}
 		/* A row is highlighted only while the mouse is on it. */
 		pd->choice = -1;

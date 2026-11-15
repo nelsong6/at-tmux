@@ -7853,7 +7853,12 @@ For example:
 bind -T panel / display-palette -P -w 60% -h 60% fzt -tiered \e
     -accept-nth 4 -layout reverse
 .Ed
-Use the terminal's Shift-drag gesture to select displayed panel text.
+Dragging over the panel's rows selects their text, past the top or bottom
+scrolling a line at each move, and letting go copies it to a paste buffer and
+the terminal's clipboard; a row wrapped onto several lines is copied as one.
+A double click on a row with no action selects and copies a word, a triple
+click the whole row.
+A click with no drag still runs an action.
 Other popups and prompts may be used above it.
 .Pp
 .Fl g

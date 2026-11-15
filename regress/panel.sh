@@ -88,6 +88,26 @@ $OUTER send-keys -l "$(printf '\033[<35;85;4M')"
 wait_until highlighted || { echo 'hover did not highlight the row again'; exit 1; }
 $OUTER send-keys -l "$(printf '\033[<35;10;4M')"
 wait_until not_highlighted || { echo 'the highlight stayed after leaving the panel'; exit 1; }
+# Text is selected as on a webpage (TMUX-216): a drag over any row selects to the mouse
+# and its release copies, an action row's included, without running it; a drag across
+# rows copies each; a double click on a row with no action copies its word; and a
+# click with no drag still runs the action.
+buffer_is() { [ "$($TMUX show-buffer 2>/dev/null | tr -d '\r')" = "$1" ]; }
+$OUTER send-keys -l "$(printf '\033[<0;82;3M\033[<32;84;3M\033[<32;86;3M')"
+selected() { $OUTER capture-pane -e -p | tr -d '\r' | grep 'PANEL-CONTENT' | grep -q '43m\|43;'; }
+wait_until selected || { echo 'the drag did not show its selection'; $OUTER capture-pane -e -p | grep PANEL-CONTENT | cat -v; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;86;3m')"
+wait_until buffer_is PANEL || { echo "a drag on plain text copied '$($TMUX show-buffer 2>&1)'"; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;82;4M\033[<32;87;4M\033[<0;87;4m')"
+wait_until buffer_is Choose || { echo "a drag on an action copied '$($TMUX show-buffer 2>&1)'"; exit 1; }
+option_is @picked no || { echo 'a drag on an action ran it'; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;82;3M\033[<32;87;4M\033[<0;87;4m')"
+wait_until buffer_is "$(printf 'PANEL-CONTENT\nChoose')" || { echo "a drag across rows copied '$($TMUX show-buffer 2>&1)'"; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;84;3M\033[<0;84;3m\033[<0;84;3M\033[<0;84;3m')"
+wait_until buffer_is PANEL-CONTENT || { echo "a double click copied '$($TMUX show-buffer 2>&1)'"; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;85;4M\033[<0;85;4m')"
+wait_until option_is @picked yes || { echo 'a click after selecting did not run the action'; exit 1; }
+$TMUX set -g @picked no
 $TMUX send-keys -K -c "$CLIENT" Tab
 wait_until focused_is 0 || { echo 'Tab did not return focus'; exit 1; }
 # Dragging the divider sets the width, live, and holds it inside its bounds. Motion with
