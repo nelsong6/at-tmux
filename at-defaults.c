@@ -293,9 +293,9 @@ static const char *const at_commands[] = {
 
 	/*
 	 * Only the at server, the one at-terminal shows: its session set, Win+`,
-	 * the alerts listener and strip-owner. A test or throwaway server has none.
+	 * desktop Alt+Tab, alerts and strip-owner. A throwaway server has none.
 	 */
-	"if -F '#{m:*-at,#{socket_path}}' { set -g @session-set-dir \"$USERPROFILE/.tmux-session-set\" ; bind -T global 'W-`' if -F '#{global_key_terminal_foreground}' { run-shell -C '#{E:@at-menu}' ; run-shell -C 'system-session' } ; bind -T global-no-client 'W-`' start-program at-terminal.exe ; run-shell -b \"alerts.exe listen -socket #{socket_path}\" ; run-shell -b \"strip-owner.exe start\" }",
+	"if -F '#{m:*-at,#{socket_path}}' { set -g @session-set-dir \"$USERPROFILE/.tmux-session-set\" ; bind -T global 'W-`' if -F '#{global_key_terminal_foreground}' { run-shell -C '#{E:@at-menu}' ; run-shell -C 'system-session' } ; bind -T global-no-client 'W-`' start-program at-terminal.exe ; bind -T global M-Tab { start-program at-terminal.exe ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global M-BTab { start-program at-terminal.exe ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global-no-client M-Tab start-program -K M-Tab at-terminal.exe ; bind -T global-no-client M-BTab start-program -K M-BTab at-terminal.exe ; run-shell -b \"alerts.exe listen -socket #{socket_path}\" ; run-shell -b \"strip-owner.exe start\" }",
 };
 
 /* Give a new option the at system's default, where it has one. */

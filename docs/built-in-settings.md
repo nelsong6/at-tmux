@@ -19,8 +19,15 @@ The shell is pwsh unless whoever starts the server names one in `SHELL`.
   what was set later (TMUX-207) is taken after them, user options included, so a changed
   setting reaches a running server at its next upgrade.
 - **The at server alone**, the one at-terminal shows (its socket name ends in `-at`), gets
-  its session set, Win+`, the alerts listener and strip-owner. A test or throwaway server
+  its session set, Win+`, desktop Alt+Tab, the alerts listener and strip-owner. A test or throwaway server
   has none of them.
+
+Alt+Tab and Alt+Shift+Tab anywhere summon at-terminal and open the at menu's
+windows folder. With no client, `start-program -K M-Tab at-terminal.exe` launches
+the terminal and delivers the menu key when it attaches. The launch request
+is consumed once; Ctrl+Alt+Tab stays with Windows.
+at-terminal's own foreground interception still delivers the same root binding,
+so whichever hook sees the press first opens one menu.
 
 At an upgrade, a binding identical to this build's default becomes that default. Test:
 `regress/win32-at-defaults.sh`, and `win32-upgrade-defaults.sh` for the upgrade.

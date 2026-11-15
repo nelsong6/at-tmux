@@ -882,3 +882,25 @@ key_bindings_global(key_code key, pid_t foreground)
 	if (ft != NULL)
 		format_free(ft);
 }
+
+/* A launched terminal has attached: deliver its requested key once. */
+void
+key_bindings_client_attached(struct client *c)
+{
+	struct options_entry *o;
+	struct key_table *table;
+	struct key_binding *bd;
+	struct key_event event = { 0 };
+
+	if (c->flags & CLIENT_CONTROL)
+		return;
+	o = options_get_only(global_s_options, "@start-program-key");
+	if (o == NULL)
+		return;
+	event.key = key_string_lookup_string(options_get_string(global_s_options,
+	    "@start-program-key"));
+	options_remove_or_default(o, -1, NULL);
+	table = key_bindings_get_table("root", 0);
+	if (table != NULL && (bd = key_bindings_get(table, event.key)) != NULL)
+		key_bindings_dispatch(bd, NULL, c, &event, NULL);
+}

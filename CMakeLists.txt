@@ -370,6 +370,7 @@ target_compile_definitions(tmux-wer PRIVATE _CRT_SECURE_NO_WARNINGS)
 add_dependencies(tmux tmux-wer)
 
 # Install
+add_executable(alt-tab-test regress/alt-tab.c)
 install(TARGETS tmux RUNTIME DESTINATION bin)
 
 # Print summary

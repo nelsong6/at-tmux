@@ -4215,6 +4215,12 @@ for any other modifiers held.
 .Nm
 watches the keyboard only once the table has a key, and passes every key on,
 so other programs still receive it.
+On Windows, Alt+Tab and Alt+Shift+Tab are also available as
+.Ql M-Tab
+and
+.Ql M-BTab .
+While bound in the global table, these keys are taken from Windows;
+Ctrl+Alt+Tab is left alone.
 A key bound in the
 .Em global
 table does nothing on a server with no client unless it is also bound in the
@@ -7703,11 +7709,18 @@ nothing is played and
 a format, is recorded as why.
 Each call is recorded in the server's events log, played or not, with why and
 the window it was for; a sound that can't be played is a command error.
-.It Ic start-program Ar program Op Ar argument ...
+.It Ic start-program Op Fl K Ar key Ar program Op Ar argument ...
 Start
 .Ar program
 from the server with no shell and no pane, without waiting for it.
 It keeps running if the server ends.
+With
+.Fl K ,
+the next non-control client to attach runs
+.Ar key
+through the root key table once.
+The request is recorded only if the program starts, and repeated launches
+replace a pending request rather than opening several menus.
 .It Xo Ic display-palette
 .Op Fl P
 .Op Fl b Ar border-lines

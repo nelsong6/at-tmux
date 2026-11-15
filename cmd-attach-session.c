@@ -158,6 +158,7 @@ cmd_attach_session(struct cmdq_item *item, const char *tflag, int dflag,
 			proc_send(c->peer, MSG_READY, -1, NULL, 0);
 		notify_client("client-attached", c);
 		c->flags |= CLIENT_ATTACHED;
+		key_bindings_client_attached(c);
 	}
 
 	if (cfg_finished)

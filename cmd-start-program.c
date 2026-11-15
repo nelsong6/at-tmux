@@ -35,8 +35,8 @@ const struct cmd_entry cmd_start_program_entry = {
 	.name = "start-program",
 	.alias = NULL,
 
-	.args = { "", 1, -1, NULL },
-	.usage = "program [argument ...]",
+	.args = { "K:", 1, -1, NULL },
+	.usage = "[-K key] program [argument ...]",
 
 	.flags = CMD_AFTERHOOK,
 	.exec = cmd_start_program_exec
@@ -89,6 +89,16 @@ cmd_start_program_exec(struct cmd *self, struct cmdq_item *item)
 	struct args	*args = cmd_get_args(self);
 	char		**argv;
 	int		  argc, ok;
+	key_code	  key = KEYC_NONE;
+	const char	 *keyname = args_get(args, 'K');
+
+	if (keyname != NULL) {
+		key = key_string_lookup_string(keyname);
+		if (key == KEYC_NONE || key == KEYC_UNKNOWN) {
+			cmdq_error(item, "unknown key: %s", keyname);
+			return (CMD_RETURN_ERROR);
+		}
+	}
 
 	args_to_vector(args, &argc, &argv);
 	ok = cmd_start_program_spawn(argc, argv);
@@ -97,5 +107,8 @@ cmd_start_program_exec(struct cmd *self, struct cmdq_item *item)
 		cmdq_error(item, "can't start %s", args_string(args, 0));
 		return (CMD_RETURN_ERROR);
 	}
+	if (key != KEYC_NONE)
+		options_set_string(global_s_options, "@start-program-key", 0,
+		    "%s", keyname);
 	return (CMD_RETURN_NORMAL);
 }

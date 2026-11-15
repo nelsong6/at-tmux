@@ -3051,6 +3051,7 @@ void	 at_defaults_option(struct options *, struct options_entry *);
 void	 at_defaults_init(void);
 #endif
 void	 key_bindings_global(key_code, pid_t);
+void	 key_bindings_client_attached(struct client *);
 struct cmdq_item *key_bindings_dispatch(struct key_binding *,
 	     struct cmdq_item *, struct client *, struct key_event *,
 	     struct cmd_find_state *);

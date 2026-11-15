@@ -15,6 +15,7 @@
 
 #include <windows.h>
 #include <tlhelp32.h>
+#include "win32/alt-tab.h"
 
 /*
  * A pane's fd is a socket bridged from ConPTY and names no process; format.c
@@ -258,14 +259,17 @@ desktop_modifiers_held(key_code modifiers)
 /*
  * Keys pressed anywhere on the desktop with the Windows key held, for the
  * global key table. A low-level keyboard hook sees them before Windows hands
- * out hotkeys and passes every key on, so a key another program registered
- * (Windows Terminal's summon) still reaches it. The hook's thread writes each
+ * out hotkeys and passes Win keys on, so a key another program registered
+ * (Windows Terminal's summon) still reaches it. Bound Alt+Tab keys are taken
+ * from Windows. The hook's thread writes each
  * key to a socket that the event loop reads. Every other key goes the same way
  * with no key_code, for the key trace: only that one went down, and when.
  */
 static SOCKET		global_keys[2] = { INVALID_SOCKET, INVALID_SOCKET };
 static struct event	global_keys_event;
 static DWORD		global_keys_down; /* held key, to skip auto-repeat */
+static volatile LONG	global_alt_tab;
+static int		global_alt_tab_down;
 
 /*
  * What the hook sends for each key: the key, and the process owning the
@@ -316,7 +320,7 @@ win32_key_is_modifier(DWORD vk)
 }
 
 /* Never blocks: a hook that does holds up the keyboard of the whole desktop. */
-static void
+static int
 win32_global_keys_send(key_code key)
 {
 	struct win32_global_key	 gk;
@@ -327,7 +331,7 @@ win32_global_keys_send(key_code key)
 	gk.foreground = 0;
 	if ((fg = GetForegroundWindow()) != NULL)
 		GetWindowThreadProcessId(fg, &gk.foreground);
-	send(global_keys[1], (char *)&gk, sizeof gk, 0);
+	return (send(global_keys[1], (char *)&gk, sizeof gk, 0) == sizeof gk);
 }
 
 static LRESULT CALLBACK
@@ -338,6 +342,25 @@ win32_global_keys_hook(int code, WPARAM wp, LPARAM lp)
 
 	if (code != HC_ACTION)
 		return (CallNextHookEx(NULL, code, wp, lp));
+	if (k->vkCode == VK_TAB) {
+		int shifted = !!(GetAsyncKeyState(VK_SHIFT) & 0x8000);
+		int take = win32_alt_tab_take(&global_alt_tab_down,
+		    wp == WM_KEYDOWN || wp == WM_SYSKEYDOWN,
+		    !!(k->flags & LLKHF_ALTDOWN),
+		    !!(GetAsyncKeyState(VK_CONTROL) & 0x8000),
+		    !!((GetAsyncKeyState(VK_LWIN) |
+		    GetAsyncKeyState(VK_RWIN)) & 0x8000), shifted,
+		    InterlockedCompareExchange(&global_alt_tab, 0, 0));
+
+		if (take == 1)
+			return (1);
+		if (take == 2) {
+			key = (shifted ? KEYC_BTAB : '\t') | KEYC_META;
+			if (win32_global_keys_send(key))
+				return (1);
+			global_alt_tab_down = 0;
+		}
+	}
 	if (wp == WM_KEYUP || wp == WM_SYSKEYUP) {
 		if (k->vkCode == global_keys_down)
 			global_keys_down = 0;
@@ -387,11 +410,16 @@ win32_global_keys_read(evutil_socket_t fd, __unused short events,
  * every key, so there is nothing to do for each one.
  */
 void
-desktop_global_key_add(__unused key_code key)
+desktop_global_key_add(key_code key)
 {
 	int	sv[2];
 	HANDLE	thread;
 	u_long	nonblocking = 1;
+
+	if (key == ('\t' | KEYC_META))
+		InterlockedOr(&global_alt_tab, 1);
+	else if (key == (KEYC_BTAB | KEYC_META))
+		InterlockedOr(&global_alt_tab, 2);
 
 	if (global_keys[0] != INVALID_SOCKET)
 		return;
@@ -408,10 +436,14 @@ desktop_global_key_add(__unused key_code key)
 		CloseHandle(thread);
 }
 
-/* The hook sees every key, so a key leaving the global table changes nothing. */
+/* Stop taking Alt+Tab as soon as its global binding is removed. */
 void
-desktop_global_key_remove(__unused key_code key)
+desktop_global_key_remove(key_code key)
 {
+	if (key == ('\t' | KEYC_META))
+		InterlockedAnd(&global_alt_tab, ~1L);
+	else if (key == (KEYC_BTAB | KEYC_META))
+		InterlockedAnd(&global_alt_tab, ~2L);
 }
 
 #endif /* _WIN32 */
