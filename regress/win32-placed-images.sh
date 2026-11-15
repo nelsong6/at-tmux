@@ -244,6 +244,27 @@ speaks() { [ "$($TMUX display -p '#{client_flags}' 2>/dev/null)" != "" ] && [ "$
 wait_until speaks || fail "a hello of this version got $(at_msgs) at-protocol messages, want the picture and two placements"
 held 0 "a terminal that speaks at-protocol"
 [ "$(at_msgs)" -eq 2 ] || fail "a redraw sent $(at_msgs) at-protocol messages, want two placements and the picture not again"
+
+# Every pane's images go to the one terminal, so it knows each by an ID of the
+# server's, never the program's (TMUX-222: every at-claude window's avatars
+# are IDs 1 to 4, and every window showed the pictures of whichever was drawn
+# first). A second window's image 5 is sent as a picture of its own, and
+# closing that window drops only its picture.
+srv=$(ls -t tmux-server-*.log | head -1)
+stores() { grep -o 'sent image 5 as [0-9]*' "$srv" | sort -u; }
+FIRST=$(stores)
+[ "$(echo "$FIRST" | wc -l)" -eq 1 ] || fail "want one picture sent for image 5, got: $FIRST"
+: >commands2.txt
+$TMUX new-window "& '$PS' -NoProfile -ExecutionPolicy Bypass -File '$HELPER' -Commands '$(cygpath -w "$OUT/commands2.txt")'" ||
+    fail "no second window"
+printf '%s\n' "virtual 5 2x2" "holder 5 2 1 0 0" "text 20 40 second-done" >>commands2.txt
+wait_until shows second-done || fail "the second window's program never ran"
+both() { [ "$(stores | wc -l)" -eq 2 ]; }
+wait_until both || fail "the second window's image 5 wasn't sent as a picture of its own: $(stores)"
+$TMUX kill-window
+held 0 "back to the first window"
+[ "$(grep -c 'sent image 5 as' "$srv")" -eq 2 ] ||
+    fail "closing the second window dropped the first window's picture: $(grep 'sent image 5 as' "$srv")"
 from
 run "delete 5"
 sent

@@ -159,11 +159,11 @@ tty_at_store(struct tty *tty, struct image *im)
 {
 	at_proto_msg	msg;
 
-	if (tty_at_has(tty, im->id))
+	if (tty_at_has(tty, im->at_id))
 		return;
 	memset(&msg, 0, sizeof msg);
 	msg.kind = AT_PROTO_IMAGE_STORE;
-	msg.u.image_store.id = im->id;
+	msg.u.image_store.id = im->at_id;
 	msg.u.image_store.width = im->pwidth;
 	msg.u.image_store.height = im->pheight;
 	msg.u.image_store.cols = im->pcols;
@@ -174,9 +174,10 @@ tty_at_store(struct tty *tty, struct image *im)
 	tty_at_send(tty, &msg);
 	tty->at_images = xreallocarray(tty->at_images, tty->at_nimages + 1,
 	    sizeof *tty->at_images);
-	tty->at_images[tty->at_nimages++] = im->id;
-	log_debug("%s: sent image %u (%ux%u, %ux%u cells)", tty->client->name,
-	    im->id, im->pwidth, im->pheight, im->pcols, im->prows);
+	tty->at_images[tty->at_nimages++] = im->at_id;
+	log_debug("%s: sent image %u as %u (%ux%u, %ux%u cells)",
+	    tty->client->name, im->id, im->at_id, im->pwidth, im->pheight,
+	    im->pcols, im->prows);
 }
 
 /*
@@ -192,7 +193,7 @@ tty_at_place(struct tty *tty, struct image *im, u_int x, u_int y, u_int sc,
 	tty_at_store(tty, im);
 	memset(&msg, 0, sizeof msg);
 	msg.kind = AT_PROTO_IMAGE_PLACE;
-	msg.u.image_place.id = im->id;
+	msg.u.image_place.id = im->at_id;
 	msg.u.image_place.col = x;
 	msg.u.image_place.row = y;
 	msg.u.image_place.src_col = sc;
@@ -216,7 +217,7 @@ tty_at_drop(struct image *im)
 		if (~tty->flags & TTY_OPENED || !tty->at_speaks)
 			continue;
 		for (i = 0; i < tty->at_nimages; i++) {
-			if (tty->at_images[i] == im->id)
+			if (tty->at_images[i] == im->at_id)
 				break;
 		}
 		if (i == tty->at_nimages)
@@ -226,7 +227,7 @@ tty_at_drop(struct image *im)
 		tty->at_nimages--;
 		memset(&msg, 0, sizeof msg);
 		msg.kind = AT_PROTO_IMAGE_DROP;
-		msg.u.image_drop.id = im->id;
+		msg.u.image_drop.id = im->at_id;
 		tty_at_send(tty, &msg);
 	}
 }

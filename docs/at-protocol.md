@@ -25,8 +25,8 @@ attributes replies are read.
 ## Images
 
 A client that speaks at-protocol is sent each virtual image (kitty graphics `a=T` with
-`U=1`, image-placeholder.c) once, by ID, with its pixels as the program sent them and the
-grid of cells the whole picture fills (`image-store`); then a run of placeholders is one
+`U=1`, image-placeholder.c) once, with its pixels as the program sent them and the
+grid of cells the whole picture fills (`image-store`), under an ID of the server's (`at_id`): the program's ID is its own pane's, and every pane's pictures go to the one terminal (TMUX-222). Then a run of placeholders is one
 `image-place`, naming the picture's cells and the terminal's. The terminal keeps the
 picture and writes those cells into its text buffer, where its own scrolling and
 redrawing carry them. When the image goes, every client that has it gets `image-drop`.

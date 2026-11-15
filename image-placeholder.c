@@ -203,6 +203,15 @@ image_virtual_free(struct image *im)
 	free(im);
 }
 
+/* An at_id no other virtual image in the server has. */
+u_int
+image_virtual_next_at_id(void)
+{
+	static u_int	last;
+
+	return (++last);
+}
+
 /* The virtual image with an ID, if the screen has one. */
 struct image *
 image_virtual_find(struct screen *s, u_int id)
@@ -241,6 +250,7 @@ image_virtual_place(struct screen *s, struct sixel_image *si, u_int id,
 	im->s = s;
 	im->data = si;
 	im->id = id;
+	im->at_id = image_virtual_next_at_id();
 	sixel_size_in_cells(si, &im->sx, &im->sy);
 	if (pixels != NULL) {
 		n = (size_t)w * h * bpp;

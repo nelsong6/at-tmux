@@ -982,6 +982,13 @@ struct image {
 	u_int			 pcols;
 	u_int			 prows;
 
+	/*
+	 * The ID a client that speaks at-protocol knows a virtual image by,
+	 * unique in the server: id is the program's, one pane's alone, and
+	 * every pane's images go to the same terminal.
+	 */
+	u_int			 at_id;
+
 	TAILQ_ENTRY (image)	 entry;
 };
 TAILQ_HEAD(images, image);
@@ -4020,6 +4027,7 @@ int		 image_placeholder_cell(const struct grid_cell *, u_int *, u_int *,
 		     u_int *, int *);
 void		 image_placeholder_blank(const struct grid_cell *,
 		     struct grid_cell *);
+u_int		 image_virtual_next_at_id(void);
 struct image	*image_virtual_find(struct screen *, u_int);
 struct image	*image_virtual_place(struct screen *, struct sixel_image *, u_int,
 		     const u_char *, u_int, u_int, u_int, u_int, u_int, int *);

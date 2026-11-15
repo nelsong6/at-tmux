@@ -475,6 +475,7 @@ image_upgrade_restore(struct upgrade_reader *r, struct screen *s)
 		im->placement = placement;
 		sixel_size_in_cells(si, &im->sx, &im->sy);
 		if (saved == 2) {
+			im->at_id = image_virtual_next_at_id();
 			TAILQ_INSERT_TAIL(&s->virtual_images, im, entry);
 			s->virtual_image_count++;
 			image_log(im, __func__, "virtual, id=%u", id);
