@@ -32,8 +32,12 @@
  *	a=T	transmit and place at the cursor: f=24 (RGB) or f=32 (RGBA), s and
  *		v its size in pixels, sent directly (t=d) and uncompressed, in
  *		chunks with m=1 on all but the last; c and r the cells it fills;
- *		i the image ID, p a placement ID; C=1 leaves the cursor
- *	a=d	delete: d=i or d=I those with ID i, d=a or d=A (or none) all
+ *		i the image ID, p a placement ID; C=1 leaves the cursor.
+ *		With U=1 it is a virtual placement instead: kept with c by r
+ *		cells and shown only where the program writes its placeholder
+ *		characters (image-placeholder.c, TMUX-215)
+ *	a=d	delete: d=i or d=I those with ID i, d=a or d=A (or none) all,
+ *		virtual placements included
  *	a=q	ask whether a=T would take these keys, without placing
  *
  * q=1 answers only failures and q=2 nothing; nothing is answered without i.
@@ -58,6 +62,7 @@ struct kitty_keys {
 	u_int	C;
 	u_int	q;
 	u_int	m;
+	u_int	U;
 };
 
 /* Read "k=v,k=v": a key is one letter, a value a number or one letter. */
@@ -102,6 +107,7 @@ kitty_parse_keys(const char *s, size_t len, struct kitty_keys *k)
 		case 'C': k->C = n; break;
 		case 'q': k->q = n; break;
 		case 'm': k->m = n; break;
+		case 'U': k->U = n; break;
 		default: break; /* X, Y, z and the rest change nothing here */
 		}
 		if (cp < end) {
@@ -144,6 +150,8 @@ kitty_check(const struct kitty_keys *k)
 		return ("EINVAL:s and v are needed");
 	if ((uint64_t)k->s * k->v * (k->f / 8) > KITTY_DATA_LIMIT)
 		return ("EFBIG:image too large");
+	if (k->U == 1 && (k->i == 0 || k->c == 0 || k->r == 0))
+		return ("EINVAL:U=1 needs i, c and r");
 	return (NULL);
 }
 
@@ -195,7 +203,10 @@ kitty_place(struct window_pane *wp, struct screen_write_ctx *ctx,
 	free(pixels);
 	if (si == NULL)
 		return ("EINVAL:bad image");
-	screen_write_placeimage(ctx, si, k->i, k->p, k->C == 1);
+	if (k->U == 1)
+		screen_write_placeimage_virtual(ctx, si, k->i);
+	else
+		screen_write_placeimage(ctx, si, k->i, k->p, k->C == 1);
 	return (NULL);
 }
 

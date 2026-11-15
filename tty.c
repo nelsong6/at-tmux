@@ -70,6 +70,7 @@ static void	tty_emulate_repeat(struct tty *, enum tty_code_code,
 static void	tty_draw_pane(struct tty *, const struct tty_ctx *, u_int);
 #ifdef ENABLE_SIXEL
 static void	tty_draw_placed(struct tty *, const struct tty_ctx *, u_int);
+static void	tty_put_image(struct tty *, char *, size_t, u_int, u_int);
 #endif
 static int	tty_check_overlay(struct tty *, u_int, u_int);
 static void	tty_reset_line_sizes(struct tty *);
@@ -1735,6 +1736,10 @@ tty_draw_pane(struct tty *tty, const struct tty_ctx *ctx, u_int py)
 		if (rr->nx != 0) {
 			tty_draw_line(tty, s, i + rr->px - x, py, rr->nx,
 			    rr->px, ry, &ctx->defaults, ctx->palette);
+#ifdef ENABLE_SIXEL
+			tty_draw_placeholders(tty, s, i + rr->px - x, py,
+			    rr->nx, rr->px, ry);
+#endif
 		}
 	}
 #ifdef ENABLE_SIXEL
@@ -2388,6 +2393,10 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 	struct visible_ranges	*r;
 	struct visible_range	*rr;
 	u_int			 px, py, i, vis = 0;
+#ifdef ENABLE_SIXEL
+	u_int			 id, row, col;
+	int			 complete;
+#endif
 
 	px = ctx->xoff + ctx->ocx - ctx->wox;
 	py = ctx->yoff + ctx->ocy - ctx->woy;
@@ -2438,6 +2447,12 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 
 	tty_cell(tty, ctx->cell, &ctx->defaults, ctx->palette,
 	    ctx->s->hyperlinks);
+
+#ifdef ENABLE_SIXEL
+	/* A placeholder written is its image cell, drawn over the blank. */
+	if (image_placeholder_cell(gcp, &id, &row, &col, &complete) && complete)
+		tty_draw_placeholders(tty, s, ctx->ocx, ctx->ocy, 1, px, py);
+#endif
 
 	if (ctx->num == 1)
 		tty_invalidate(tty);
@@ -2542,9 +2557,6 @@ tty_cmd_sixelimage(struct tty *tty, const struct tty_ctx *ctx)
 {
 	struct image		*im = ctx->ptr;
 	struct sixel_image	*si = im->data;
-	struct sixel_image	*new;
-	char			*data;
-	size_t			 size;
 	u_int			 cx = ctx->ocx, cy = ctx->ocy, sx, sy;
 	u_int			 i, j, x, y, rx, ry;
 	int			 fallback = 0;
@@ -2562,29 +2574,47 @@ tty_cmd_sixelimage(struct tty *tty, const struct tty_ctx *ctx)
 	log_debug("%s: clamping to %u,%u-%u,%u", __func__, i, j, rx, ry);
 
 	if (fallback == 1) {
-		data = xstrdup(im->fallback);
-		size = strlen(data);
-	} else {
-		new = sixel_scale(si, tty->xpixel, tty->ypixel, i, j, rx, ry, 0);
-		if (new == NULL)
-			return;
-
-		data = sixel_print(new, si, &size);
+		tty_put_image(tty, xstrdup(im->fallback), strlen(im->fallback),
+		    x, y);
+		return;
 	}
-	if (data != NULL) {
-		log_debug("%s: %zu bytes: %s", __func__, size, data);
-		tty_region_off(tty);
-		tty_margin_off(tty);
-		tty_cursor(tty, x, y);
+	tty_draw_sixel_part(tty, si, i, j, rx, ry, x, y);
+}
 
-		tty->flags |= TTY_NOBLOCK;
-		tty_add(tty, data, size);
-		tty_invalidate(tty);
-		free(data);
-	}
+/* Write an image's bytes (sixel or a text stand-in) at x,y and free them. */
+static void
+tty_put_image(struct tty *tty, char *data, size_t size, u_int x, u_int y)
+{
+	log_debug("%s: %zu bytes: %s", __func__, size, data);
+	tty_region_off(tty);
+	tty_margin_off(tty);
+	tty_cursor(tty, x, y);
 
-	if (fallback == 0)
-		sixel_free(new);
+	tty->flags |= TTY_NOBLOCK;
+	tty_add(tty, data, size);
+	tty_invalidate(tty);
+	free(data);
+}
+
+/*
+ * Draw part of an image: the cells ox,oy of size sx,sy (in the image's own
+ * cells), at x,y on the terminal, as sixel.
+ */
+void
+tty_draw_sixel_part(struct tty *tty, struct sixel_image *si, u_int ox,
+    u_int oy, u_int sx, u_int sy, u_int x, u_int y)
+{
+	struct sixel_image	*new;
+	char			*data;
+	size_t			 size;
+
+	new = sixel_scale(si, tty->xpixel, tty->ypixel, ox, oy, sx, sy, 0);
+	if (new == NULL)
+		return;
+	data = sixel_print(new, si, &size);
+	if (data != NULL)
+		tty_put_image(tty, data, size, x, y);
+	sixel_free(new);
 }
 #endif
 
@@ -2613,6 +2643,11 @@ tty_cell(struct tty *tty, const struct grid_cell *gc,
     struct hyperlinks *hl)
 {
 	const struct grid_cell	*gcp;
+#ifdef ENABLE_SIXEL
+	struct grid_cell	 blank;
+	u_int			 id, row, col;
+	int			 complete;
+#endif
 
 	/* Skip last character if terminal is stupid. */
 	if ((tty->term->flags & TERM_NOAM) &&
@@ -2623,6 +2658,14 @@ tty_cell(struct tty *tty, const struct grid_cell *gc,
 	/* If this is a padding character, do nothing. */
 	if (gc->flags & GRID_FLAG_PADDING)
 		return;
+
+#ifdef ENABLE_SIXEL
+	/* A placeholder is blank to the terminal; its image cell goes over it. */
+	if (image_placeholder_cell(gc, &id, &row, &col, &complete)) {
+		image_placeholder_blank(gc, &blank);
+		gc = &blank;
+	}
+#endif
 
 	/* Check the output codeset and apply attributes. */
 	gcp = tty_check_codeset(tty, gc);

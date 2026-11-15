@@ -1021,6 +1021,9 @@ struct screen {
 	struct images			 saved_images;
 	u_int				 image_count;
 	u_int				 saved_image_count;
+	/* Virtual placements, shown where placeholders are (image-placeholder.c). */
+	struct images			 virtual_images;
+	u_int				 virtual_image_count;
 #endif
 
 	struct screen_write_cline	*write_list;
@@ -2758,6 +2761,8 @@ void	tty_cmd_rawstring(struct tty *, const struct tty_ctx *);
 
 #ifdef ENABLE_SIXEL
 void	tty_cmd_sixelimage(struct tty *, const struct tty_ctx *);
+void	tty_draw_sixel_part(struct tty *, struct sixel_image *, u_int, u_int,
+	    u_int, u_int, u_int, u_int);
 #endif
 
 void	tty_cmd_syncstart(struct tty *, const struct tty_ctx *);
@@ -3403,6 +3408,8 @@ void	 screen_write_sixelimage(struct screen_write_ctx *,
 void	 screen_write_placeimage(struct screen_write_ctx *,
 	     struct sixel_image *, u_int, u_int, int);
 void	 screen_write_deleteimages(struct screen_write_ctx *, int, u_int);
+void	 screen_write_placeimage_virtual(struct screen_write_ctx *,
+	     struct sixel_image *, u_int);
 #endif
 void	 screen_write_alternateon(struct screen_write_ctx *,
 	     struct grid_cell *, int);
@@ -3984,6 +3991,19 @@ int		 image_scroll_up(struct screen *, u_int);
 int		 image_move_rows(struct screen *, u_int, u_int, int);
 void		 image_upgrade_save(struct evbuffer *, struct screen *);
 void		 image_upgrade_restore(struct upgrade_reader *, struct screen *);
+
+/* image-placeholder.c */
+int		 image_placeholder_cell(const struct grid_cell *, u_int *, u_int *,
+		     u_int *, int *);
+void		 image_placeholder_blank(const struct grid_cell *,
+		     struct grid_cell *);
+struct image	*image_virtual_find(struct screen *, u_int);
+struct image	*image_virtual_place(struct screen *, struct sixel_image *, u_int,
+		     int *);
+int		 image_virtual_delete(struct screen *, int, u_int);
+void		 image_virtual_free_all(struct screen *);
+void		 tty_draw_placeholders(struct tty *, struct screen *, u_int, u_int,
+		     u_int, u_int, u_int);
 
 /* image-kitty.c */
 char		*image_kitty(struct window_pane *, struct screen_write_ctx *,

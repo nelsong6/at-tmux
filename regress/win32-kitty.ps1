@@ -14,10 +14,19 @@
 #   sixel ROW COL                a sixel image (DCS q), not a placed one
 #   scroll                       a newline on the last row
 #   sync ROW COL TEXT            the text inside a synchronized update
+#   virtual ID COLSxROWS         kitty a=T with U=1: a virtual placement
+#   holder ID ROW COL IR IC      a placeholder at ROW COL for image cell
+#                                row IR, column IC (0-based) of image ID
 param([Parameter(Mandatory)][string]$Commands)
+
+# The first of kitty's row/column diacritics.
+$diacritics = @(0x0305, 0x030D, 0x030E, 0x0310, 0x0312, 0x033D, 0x033E, 0x033F)
 
 $e = [char]27
 $st = "$e\"
+# The console passes bytes on as its output code page says: UTF-8, so a
+# placeholder's bytes reach tmux as written.
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $out = [Console]::OpenStandardOutput()
 function Send([string]$s) {
     $b = [Text.Encoding]::UTF8.GetBytes($s)
@@ -57,6 +66,16 @@ while ($true) {
                 'sixel' { Send ("$e[$($a[1]);$($a[2])H$($e)Pq#1;2;0;100;0#1!20~-!20~-!20~-!20~$st") }
                 'scroll' { Send ("$e[999;1H`n") }
                 'sync' { Send ("$e[?2026h$e[$($a[1]);$($a[2])H" + ($a[3..($a.Count - 1)] -join ' ') + "$e[?2026l") }
+                'virtual' {
+                    $cells = $a[2].Split('x')
+                    Send ("$($e)_Ga=T,U=1,f=32,s=20,v=20,i=$($a[1]),c=$($cells[0]),r=$($cells[1]),q=2;$data$st")
+                }
+                'holder' {
+                    $id = [int]$a[1]
+                    $fg = "$e[38;2;$(($id -shr 16) -band 255);$(($id -shr 8) -band 255);$($id -band 255)m"
+                    $cell = [char]::ConvertFromUtf32(0x10EEEE) + [char]$diacritics[[int]$a[4]] + [char]$diacritics[[int]$a[5]]
+                    Send ("$e[$($a[2]);$($a[3])H$fg$cell$e[0m")
+                }
             }
         }
     }

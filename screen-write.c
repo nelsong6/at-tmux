@@ -2491,11 +2491,31 @@ screen_write_placeimage(struct screen_write_ctx *ctx, struct sixel_image *si,
 		screen_write_cursormove(ctx, cx + x, cy + y - 1, 0);
 }
 
-/* Delete placed images, those with an ID or all. */
+/*
+ * Keep an image as a virtual placement, shown where the program writes its
+ * placeholders (image-placeholder.c). One it replaces had placeholders
+ * drawn with its pixels, so the pane is drawn again.
+ */
+void
+screen_write_placeimage_virtual(struct screen_write_ctx *ctx,
+    struct sixel_image *si, u_int id)
+{
+	int	replaced;
+
+	image_virtual_place(ctx->s, si, id, &replaced);
+	if (replaced && ctx->wp != NULL)
+		ctx->wp->flags |= PANE_REDRAW;
+}
+
+/* Delete placed images, those with an ID or all, virtual ones included. */
 void
 screen_write_deleteimages(struct screen_write_ctx *ctx, int all, u_int id)
 {
-	if (image_delete(ctx->s, all, id) && ctx->wp != NULL)
+	int	redraw;
+
+	redraw = image_delete(ctx->s, all, id);
+	redraw |= image_virtual_delete(ctx->s, all, id);
+	if (redraw && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 }
 

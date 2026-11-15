@@ -5,7 +5,9 @@
 # until the program deletes it. tmux draws it again over text written under it
 # and on every redraw, sends it to the terminal as sixel, moves it as its rows
 # scroll, answers a=q, and carries it across upgrade-server. A sixel image
-# still goes when its row is cleared, as it always has. The client runs in a
+# still goes when its row is cleared, as it always has. Unicode placeholders
+# (TMUX-215): a virtual placement (U=1) shows only where the program writes
+# placeholder characters, whose position is the text's. The client runs in a
 # pane of a second server; what it sent its terminal is read from tmux's -vv
 # output log, and a client redraw (refresh-client) shows what tmux holds.
 
@@ -33,6 +35,10 @@ CMDS=$(cygpath -w "$OUT/commands.txt")
 
 fail() {
 	echo "FAIL: $*"
+	echo "--- the server log's end:"
+	tail -40 "$(ls -t tmux-server-*.log 2>/dev/null | head -1)" | cut -c1-200
+	echo "--- the pane:"
+	$TMUX capture-pane -p | cat -v
 	exit 1
 }
 
@@ -160,7 +166,49 @@ run "sync 9 30 synced"
 sent
 [ "$(sixels)" -ge 1 ] || fail "a synchronized update's redraw left out the image"
 
-# upgrade-server carries it.
+# Unicode placeholders (TMUX-215): a virtual placement draws nothing by
+# itself. Each placeholder character draws the image cell its diacritics
+# name, and since the position is the text's, text over one takes only that
+# cell away, a resize keeps them and a scroll moves them with their rows.
+srv=$(ls -t tmux-server-*.log | head -1)
+# drawn ROW COL: the server drew placeholders of image 5 at ROW COL (1-based)
+# since mark.
+mark() { MARK=$(grep -c 'tty_draw_placeholders: id=5' "$srv"); }
+drawn() {
+	tail -n +$((MARK + 1)) "$srv" | grep 'tty_draw_placeholders: id=5' |
+	    grep -q " at $(($2 - 1)),$(($1 - 1))\$"
+}
+run "virtual 5 2x2"
+held 1 "a virtual placement alone"
+from
+mark
+run "holder 5 16 1 0 0" "holder 5 16 2 0 1" "holder 5 17 1 1 0" "holder 5 17 2 1 1"
+sent
+[ "$(sixels)" -ge 4 ] || fail "writing 4 placeholders drew $(sixels) image cells"
+drawn 16 1 || fail "the first placeholder wasn't drawn at row 16"
+drawn 17 2 || fail "the last placeholder wasn't drawn at row 17 column 2"
+held 3 "with placeholders"
+[ "$($TMUX capture-pane -p | LC_ALL=C grep -c "$(printf '\364\216\273\256')")" -eq 0 ] ||
+    fail "capture-pane shows the placeholder characters"
+mark
+run "text 16 1 X"
+held 3 "after text over a placeholder"
+drawn 16 2 || fail "the row's other placeholder wasn't drawn at column 2"
+# A resize frees the placed image (tmux frees every image of a resized pane,
+# which is ATC-84 and why placeholders exist), and the placeholders stay.
+mark
+$TMUX resize-window -y 19
+held 2 "after a resize"
+drawn 17 1 || fail "the placeholders weren't drawn after a resize"
+$TMUX resize-window -y 20
+held 2 "after resizing back"
+mark
+run "scroll"
+held 2 "scrolled with placeholders"
+drawn 15 2 || fail "the placeholders didn't move up a row with their text"
+drawn 16 1 || fail "the second row of placeholders didn't move up a row"
+
+# upgrade-server carries the virtual placement.
 PID=$($TMUX display -p '#{pid}' | tr -d '\r')
 $TMUX upgrade-server "$EXE" || fail "upgrade-server refused"
 upgraded() {
@@ -168,10 +216,10 @@ upgraded() {
 	[ -n "$_p" ] && [ "$_p" != "$PID" ] && [ "$(log)" != "$LOG" ]
 }
 wait_until upgraded || fail "the server was never upgraded: $($TMUX display -p '#{server_upgrade}')"
-held 1 "after upgrade-server"
-at 9 5 || fail "the image moved in the upgrade"
-run "delete 9"
-held 0 "deleted after upgrade-server"
+held 2 "after upgrade-server"
+drawn 15 2 || fail "the placeholders weren't drawn after upgrade-server"
+run "delete 5"
+held 0 "virtual placement deleted after upgrade-server"
 
 echo "PASS: placed images"
 exit 0

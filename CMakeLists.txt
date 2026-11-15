@@ -145,6 +145,7 @@ set(TMUX_SOURCES
     hyperlinks.c
     image.c
     image-kitty.c
+    image-placeholder.c
     image-sixel.c
     input.c
     input-keys.c

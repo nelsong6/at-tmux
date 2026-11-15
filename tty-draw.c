@@ -124,6 +124,11 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 #ifndef _WIN32
 	struct grid_line	*gl;
 #endif
+#ifdef ENABLE_SIXEL
+	struct grid_cell	 blank;
+	u_int			 id, row, col;
+	int			 complete;
+#endif
 	u_int			 i, j, last_i, cx, ex, width;
 	u_int			 cellsize, bg, lsx, hsx, hex;
 	int			 flags, empty, wrapped = 0, hidden;
@@ -262,6 +267,15 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 			grid_view_get_cell(gd, px + i, py, &gc);
 			if (hidden && px + i >= hsx && px + i < hex)
 				memcpy(&gc, &grid_default_cell, sizeof gc);
+
+#ifdef ENABLE_SIXEL
+			/* A placeholder is blank; its image cell goes over it. */
+			if (image_placeholder_cell(&gc, &id, &row, &col,
+			    &complete)) {
+				image_placeholder_blank(&gc, &blank);
+				memcpy(&gc, &blank, sizeof gc);
+			}
+#endif
 
 			/* Update for codeset if needed. */
 			gcp = tty_check_codeset(tty, &gc);

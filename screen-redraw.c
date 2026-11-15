@@ -1114,6 +1114,10 @@ screen_redraw_draw_pane(struct screen_redraw_ctx *ctx, struct window_pane *wp)
 			if (rr->nx != 0) {
 				tty_draw_line(tty, s, rr->px - wp->xoff, j,
 				    rr->nx, rr->px, y, &defaults, palette);
+#ifdef ENABLE_SIXEL
+				tty_draw_placeholders(tty, s, rr->px - wp->xoff,
+				    j, rr->nx, rr->px, y);
+#endif
 			}
 		}
 	}

@@ -1084,6 +1084,10 @@ grid_string_cells(struct grid *gd, u_int px, u_int py, u_int nx,
 	u_int			 xx, end;
 	int			 has_link = 0;
 	const struct grid_line	*gl;
+#ifdef ENABLE_SIXEL
+	u_int			 id, row, col;
+	int			 complete;
+#endif
 
 	if (lastgc != NULL && *lastgc == NULL) {
 		memcpy(&lastgc1, &grid_default_cell, sizeof lastgc1);
@@ -1121,6 +1125,13 @@ grid_string_cells(struct grid *gd, u_int px, u_int py, u_int nx,
 		if (gc.flags & GRID_FLAG_TAB) {
 			data = "\t";
 			size = 1;
+#ifdef ENABLE_SIXEL
+		} else if (image_placeholder_cell(&gc, &id, &row, &col,
+		    &complete)) {
+			/* An image placeholder is a blank in text. */
+			data = " ";
+			size = 1;
+#endif
 		} else {
 			data = gc.data.data;
 			size = gc.data.size;

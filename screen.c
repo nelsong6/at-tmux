@@ -96,6 +96,8 @@ screen_init(struct screen *s, u_int sx, u_int sy, u_int hlimit)
 	TAILQ_INIT(&s->saved_images);
 	s->image_count = 0;
 	s->saved_image_count = 0;
+	TAILQ_INIT(&s->virtual_images);
+	s->virtual_image_count = 0;
 #endif
 
 	s->write_list = NULL;
@@ -191,6 +193,7 @@ screen_free(struct screen *s)
 
 #ifdef ENABLE_SIXEL
 	image_free_screen(s);
+	image_virtual_free_all(s);
 #endif
 }
 

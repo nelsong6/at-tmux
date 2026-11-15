@@ -396,7 +396,11 @@ image_upgrade_save_list(struct evbuffer *o, struct images *images)
 		if (data == NULL)
 			continue;
 		sixel_cell_size(im->data, &xpixel, &ypixel);
-		upw_u32(o, images == &im->s->saved_images);
+		/* Which list: 0 the screen's, 1 put aside, 2 virtual. */
+		if (images == &im->s->virtual_images)
+			upw_u32(o, 2);
+		else
+			upw_u32(o, images == &im->s->saved_images);
 		upw_u32(o, im->px);
 		upw_u32(o, im->py);
 		upw_u32(o, im->placed);
@@ -421,6 +425,7 @@ image_upgrade_save(struct evbuffer *evb, struct screen *s)
 
 	image_upgrade_save_list(o, &s->images);
 	image_upgrade_save_list(o, &s->saved_images);
+	image_upgrade_save_list(o, &s->virtual_images);
 	upw_obj(evb, o);
 	evbuffer_free(o);
 }
@@ -469,6 +474,12 @@ image_upgrade_restore(struct upgrade_reader *r, struct screen *s)
 		im->id = id;
 		im->placement = placement;
 		sixel_size_in_cells(si, &im->sx, &im->sy);
+		if (saved == 2) {
+			TAILQ_INSERT_TAIL(&s->virtual_images, im, entry);
+			s->virtual_image_count++;
+			image_log(im, __func__, "virtual, id=%u", id);
+			continue;
+		}
 		image_fallback(&im->fallback, im->sx, im->sy);
 		if (saved) {
 			TAILQ_INSERT_TAIL(&s->saved_images, im, entry);
