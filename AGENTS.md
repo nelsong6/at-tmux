@@ -46,13 +46,15 @@ checkout build and regression run alone are not a complete handoff.
   If reconciliation keeps replacing the development build, take the fix through
   the normal reviewed release and installation workflow. Repeatedly requesting
   another temporary upgrade does not resolve that handoff failure.
-- In the final response, say which existing terminal/server is ready and give
-  exact steps and the expected visible result. Do not tell the user to open a new
-  window or restart their terminal to load the change. If preparation failed,
-  report that explicitly instead of calling the change ready.
+- What needs real desktop input (a global key, focus, the mouse) is checked by the
+  agent on a home PC nobody is at, as the home config's `terminal.md` says; never
+  on the PC the user is at, and never handed to the user as steps to try.
+- In the final response, say which existing terminal/server is ready and what was
+  verified there. Do not tell the user to open a new window or restart their
+  terminal to load the change. If preparation failed, report that explicitly
+  instead of calling the change ready.
 
-For the status picker, the manual check is: in the existing at-terminal window,
-press **Ctrl+B**, find `set-session-status`, open it, and confirm that `working`,
+For the status picker, the check is: in an at-terminal window, press **Ctrl+B**, find `set-session-status`, open it, and confirm that `working`,
 `waiting`, and `done` are selectable rows. Enter should apply the selected status;
 Escape should leave it unchanged. `set-window-status` offers the same choices for
 only the current window. Choosing a session status affects every window in that

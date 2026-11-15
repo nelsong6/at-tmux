@@ -53,8 +53,8 @@ Do not clear the user's real links or open browsers during automated checks.
 Dragging over any row selects its text and the release copies it, as on a
 webpage; a click with no drag still runs an action (TMUX-216). Verify dragging
 and copying real displayed text in the actual terminal, including while updates
-arrive. Desktop input requires Nelson's prior
-permission; screenshots alone do not prove selection works.
+arrive, on a home PC Nelson is not at (the home config's `terminal.md`);
+screenshots alone do not prove selection works.
 
 ## Deliver to the existing terminal
 
