@@ -2715,6 +2715,13 @@ format_cb_version(__unused struct format_tree *ft)
 	return (xstrdup(getversion()));
 }
 
+/* Callback for at_protocol_version. */
+static void *
+format_cb_at_protocol_version(__unused struct format_tree *ft)
+{
+	return (xstrdup(tty_at_version()));
+}
+
 /* Callback for sixel_support. */
 static void *
 format_cb_sixel_support(__unused struct format_tree *ft)
@@ -3203,6 +3210,9 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "alternate_saved_y", FORMAT_TABLE_STRING,
 	  format_cb_alternate_saved_y
+	},
+	{ "at_protocol_version", FORMAT_TABLE_STRING,
+	  format_cb_at_protocol_version
 	},
 	{ "buffer_created", FORMAT_TABLE_TIME,
 	  format_cb_buffer_created

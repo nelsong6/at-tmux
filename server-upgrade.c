@@ -710,6 +710,7 @@ upgrade_save_screen(struct evbuffer *evb, struct screen *s)
 	upw_data(o, s->tabs, bitstr_size(s->grid->sx));
 #ifdef ENABLE_SIXEL
 	image_upgrade_save(o, s);
+	image_upgrade_save_pixels(o, s);
 #endif
 	upw_obj(evb, o);
 	evbuffer_free(o);
@@ -773,9 +774,12 @@ upgrade_restore_screen(struct upgrade_reader *r, struct screen *s)
 		size = bitstr_size(s->grid->sx);
 	memcpy(s->tabs, tabs, size);
 #ifdef ENABLE_SIXEL
-	/* A build before images were carried sent none. */
+	/* A build before images were carried sent none, and one before the
+	 * virtual images' pixels no pixels. */
 	if (o.left != 0)
 		image_upgrade_restore(&o, s);
+	if (o.left != 0)
+		image_upgrade_restore_pixels(&o, s);
 #endif
 
 	if (o.error || s->cx > s->grid->sx || s->cy >= s->grid->sy ||

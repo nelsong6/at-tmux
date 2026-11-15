@@ -56,10 +56,12 @@ jobs:
           $code = (Invoke-WebRequest "$env:GITHUB_SERVER_URL/api/v1/repos/microsoft/vcpkg/git/commits/$($baseline)?stat=false&verification=false&files=false" -Headers @{Authorization = "token $env:TOKEN"} -SkipHttpErrorCheck).StatusCode
           if ($code -eq 404) { throw "Forgejo's microsoft/vcpkg lacks vcpkg.json's builtin-baseline $($baseline): add it to microsoft/vcpkg's lines in forgejo's k8s/copies.txt" }
           if ($code -ne 200) { throw "Looking up $baseline in Forgejo's microsoft/vcpkg returned $code" }
-          $env:GIT_CONFIG_COUNT = '2'
+          $env:GIT_CONFIG_COUNT = '3'
           $env:GIT_CONFIG_KEY_0 = "url.$env:GITHUB_SERVER_URL/microsoft/vcpkg.insteadOf"; $env:GIT_CONFIG_VALUE_0 = 'https://github.com/microsoft/vcpkg'
           $env:GIT_CONFIG_KEY_1 = "http.$env:GITHUB_SERVER_URL/microsoft/vcpkg.extraHeader"
           $env:GIT_CONFIG_VALUE_1 = 'AUTHORIZATION: basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x-access-token:$env:TOKEN"))
+          # at-protocol (dep/vcpkg-overlay-ports, vcpkg_from_git) is private on Forgejo too.
+          $env:GIT_CONFIG_KEY_2 = "http.$env:GITHUB_SERVER_URL/romaine-life/at-protocol.extraHeader"; $env:GIT_CONFIG_VALUE_2 = $env:GIT_CONFIG_VALUE_1
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static

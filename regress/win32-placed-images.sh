@@ -218,8 +218,37 @@ upgraded() {
 wait_until upgraded || fail "the server was never upgraded: $($TMUX display -p '#{server_upgrade}')"
 held 2 "after upgrade-server"
 drawn 15 2 || fail "the placeholders weren't drawn after upgrade-server"
+
+# at-protocol (TMUX-217, docs/at-protocol.md): the test plays the terminal,
+# answering the server's hello on the client's input. Another version is told
+# so and keeps sixel; the same version is sent the picture once (its pixels
+# carried by the upgrade above) and placements where sixel was, and a drop
+# when the image goes.
+V=$($TMUX display -p '#{at_protocol_version}' | tr -d '\r')
+[ -n "$V" ] || fail "no at_protocol_version format"
+# hello VERSION: the APC string a terminal answers with, as hex for send-keys -H.
+hello() {
+	printf '\033_at;%s\033\\' "$(printf '\001%s%s' "$(printf "\\$(printf '%03o' ${#1})")" "$1" | base64 -w0)" |
+	    od -An -tx1 | tr -d '\n'
+}
+at_msgs() { LC_ALL=C grep -a -o "${ESC}_at;" sent.txt | wc -l; }
+from
+$OUTER send-keys -t 0 -H $(hello nope)
+told() { $OUTER capture-pane -p | tr -d '\r' | grep -q 'speaks at-protocol nope'; }
+wait_until told || fail "a hello of another version wasn't told so: $($OUTER capture-pane -p | tail -2)"
+held 2 "after a hello of another version"
+sent
+[ "$(at_msgs)" -eq 0 ] || fail "a terminal of another version was sent $(at_msgs) at-protocol messages"
+$OUTER send-keys -t 0 -H $(hello "$V")
+speaks() { [ "$($TMUX display -p '#{client_flags}' 2>/dev/null)" != "" ] && [ "$(sent; at_msgs)" -ge 3 ]; }
+wait_until speaks || fail "a hello of this version got $(at_msgs) at-protocol messages, want the picture and two placements"
+held 0 "a terminal that speaks at-protocol"
+[ "$(at_msgs)" -eq 2 ] || fail "a redraw sent $(at_msgs) at-protocol messages, want two placements and the picture not again"
+from
 run "delete 5"
-held 0 "virtual placement deleted after upgrade-server"
+sent
+[ "$(at_msgs)" -ge 1 ] || fail "deleting the image sent the terminal no drop"
+held 0 "virtual placement deleted"
 
 echo "PASS: placed images"
 exit 0

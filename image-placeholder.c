@@ -195,9 +195,11 @@ image_virtual_free(struct image *im)
 {
 	struct screen	*s = im->s;
 
+	tty_at_drop(im);
 	TAILQ_REMOVE(&s->virtual_images, im, entry);
 	s->virtual_image_count--;
 	sixel_free(im->data);
+	free(im->pixels);
 	free(im);
 }
 
@@ -217,13 +219,17 @@ image_virtual_find(struct screen *s, u_int id)
 /*
  * Keep an image as a virtual placement, replacing one with the same ID;
  * replaced says whether one went, as its placeholders must be drawn again.
- * Storing past the limit frees the oldest.
+ * The pixels (w by h, bpp bytes each, filling cols by rows cells) are kept
+ * for a client that speaks at-protocol. Storing past the limit frees the
+ * oldest.
  */
 struct image *
 image_virtual_place(struct screen *s, struct sixel_image *si, u_int id,
+    const u_char *pixels, u_int w, u_int h, u_int bpp, u_int cols, u_int rows,
     int *replaced)
 {
 	struct image	*im;
+	size_t		 n;
 
 	*replaced = 0;
 	if ((im = image_virtual_find(s, id)) != NULL) {
@@ -236,6 +242,16 @@ image_virtual_place(struct screen *s, struct sixel_image *si, u_int id,
 	im->data = si;
 	im->id = id;
 	sixel_size_in_cells(si, &im->sx, &im->sy);
+	if (pixels != NULL) {
+		n = (size_t)w * h * bpp;
+		im->pixels = xmalloc(n);
+		memcpy(im->pixels, pixels, n);
+		im->pwidth = w;
+		im->pheight = h;
+		im->pbpp = bpp;
+		im->pcols = cols;
+		im->prows = rows;
+	}
 	log_debug("%s: id=%u (%ux%u cells)", __func__, id, im->sx, im->sy);
 
 	TAILQ_INSERT_TAIL(&s->virtual_images, im, entry);
@@ -289,7 +305,7 @@ tty_draw_placeholders(struct tty *tty, struct screen *s, u_int px, u_int py,
 		return;
 	if (tty->xpixel == 0 || tty->ypixel == 0)
 		return;
-	if ((~tty->term->flags & TERM_SIXEL) &&
+	if (!tty->at_speaks && (~tty->term->flags & TERM_SIXEL) &&
 	    !tty_term_has(tty->term, TTYC_SXL))
 		return;
 
@@ -315,7 +331,78 @@ tty_draw_placeholders(struct tty *tty, struct screen *s, u_int px, u_int py,
 			continue;
 		log_debug("%s: id=%u row=%u cols %u-%u at %u,%u", __func__,
 		    id, row, col, col + run, atx + start, aty);
+		if (tty->at_speaks && im->pixels != NULL) {
+			tty_at_place(tty, im, atx + start, aty, col, row, run, 1);
+			continue;
+		}
+		if ((~tty->term->flags & TERM_SIXEL) &&
+		    !tty_term_has(tty->term, TTYC_SXL))
+			continue;
 		tty_draw_sixel_part(tty, im->data, col, row, run, 1,
 		    atx + start, aty);
 	}
+}
+
+/*
+ * A virtual image's pixels go to the next build after the screen's other
+ * state, where a build before them leaves nothing, and are matched to the
+ * image by ID when they come back.
+ */
+void
+image_upgrade_save_pixels(struct evbuffer *evb, struct screen *s)
+{
+	struct evbuffer	*o = evbuffer_new();
+	struct image	*im;
+
+	TAILQ_FOREACH(im, &s->virtual_images, entry) {
+		if (im->pixels == NULL)
+			continue;
+		upw_u32(o, im->id);
+		upw_u32(o, im->pwidth);
+		upw_u32(o, im->pheight);
+		upw_u32(o, im->pbpp);
+		upw_u32(o, im->pcols);
+		upw_u32(o, im->prows);
+		upw_data(o, im->pixels, (size_t)im->pwidth * im->pheight *
+		    im->pbpp);
+	}
+	upw_obj(evb, o);
+	evbuffer_free(o);
+}
+
+void
+image_upgrade_restore_pixels(struct upgrade_reader *r, struct screen *s)
+{
+	struct upgrade_reader	 o;
+	struct image		*im;
+	const char		*data;
+	size_t			 size;
+	u_int			 id, w, h, bpp, cols, rows;
+
+	upr_obj(r, &o);
+	while (o.left > 0 && !o.error) {
+		id = upr_u32(&o);
+		w = upr_u32(&o);
+		h = upr_u32(&o);
+		bpp = upr_u32(&o);
+		cols = upr_u32(&o);
+		rows = upr_u32(&o);
+		data = upr_data(&o, &size);
+		if (o.error || data == NULL)
+			break;
+		if ((im = image_virtual_find(s, id)) == NULL ||
+		    size != (size_t)w * h * bpp || w == 0 || h == 0 ||
+		    (bpp != 3 && bpp != 4) || cols == 0 || rows == 0)
+			continue;
+		free(im->pixels);
+		im->pixels = xmalloc(size);
+		memcpy(im->pixels, data, size);
+		im->pwidth = w;
+		im->pheight = h;
+		im->pbpp = bpp;
+		im->pcols = cols;
+		im->prows = rows;
+	}
+	if (o.error)
+		r->error = 1;
 }

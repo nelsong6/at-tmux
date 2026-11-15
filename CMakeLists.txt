@@ -189,6 +189,7 @@ set(TMUX_SOURCES
     tty.c
     tty-acs.c
     tty-draw.c
+    tty-at.c
     tty-features.c
     tty-keys.c
     tty-record.c
@@ -256,6 +257,10 @@ set(TMUX_WIN32_SOURCES
 # utf8proc answers how wide a character is. compat/utf8proc.c is not built: it passes
 # code points in wchar_t, 16 bits here, so utf8.c calls the library directly.
 find_package(utf8proc CONFIG REQUIRED)
+
+# at-protocol: the language the server speaks to an at-terminal client (ATT-7,
+# docs/at-protocol.md), pinned in dep/vcpkg-overlay-ports/at-protocol.
+find_package(at-protocol CONFIG REQUIRED)
 
 # display-palette's command descriptions, from tmux.1
 add_executable(palette-descriptions tools/palette-descriptions.c)
@@ -325,7 +330,7 @@ target_link_libraries(tmux PRIVATE
     wtsapi32
 )
 
-target_link_libraries(tmux PRIVATE utf8proc::utf8proc)
+target_link_libraries(tmux PRIVATE utf8proc::utf8proc at-protocol::at-protocol)
 
 # MSVC-specific settings
 if(MSVC)

@@ -200,13 +200,17 @@ kitty_place(struct window_pane *wp, struct screen_write_ctx *ctx,
 
 	kitty_cell_size(wp, k, &xpixel, &ypixel);
 	si = sixel_from_pixels(pixels, k->s, k->v, bpp, xpixel, ypixel);
-	free(pixels);
-	if (si == NULL)
+	if (si == NULL) {
+		free(pixels);
 		return ("EINVAL:bad image");
-	if (k->U == 1)
-		screen_write_placeimage_virtual(ctx, si, k->i);
-	else
+	}
+	if (k->U == 1) {
+		/* The pixels stay with the image, for an at-protocol client. */
+		screen_write_placeimage_virtual(ctx, si, k->i, pixels, k->s, k->v,
+		    bpp, k->c, k->r);
+	} else
 		screen_write_placeimage(ctx, si, k->i, k->p, k->C == 1);
+	free(pixels);
 	return (NULL);
 }
 

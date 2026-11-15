@@ -1,0 +1,9 @@
+{
+  "name": "at-protocol",
+  "version-string": "pinned",
+  "description": "The language at-tmux and at-terminal speak to each other (ATT-7)",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

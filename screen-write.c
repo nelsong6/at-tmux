@@ -2498,12 +2498,14 @@ screen_write_placeimage(struct screen_write_ctx *ctx, struct sixel_image *si,
  */
 void
 screen_write_placeimage_virtual(struct screen_write_ctx *ctx,
-    struct sixel_image *si, u_int id)
+    struct sixel_image *si, u_int id, const u_char *pixels, u_int w, u_int h,
+    u_int bpp, u_int cols, u_int rows)
 {
 	int	replaced;
 
-	image_virtual_place(ctx->s, si, id, &replaced);
-	if (replaced && ctx->wp != NULL)
+	image_virtual_place(ctx->s, si, id, pixels, w, h, bpp, cols, rows,
+	    &replaced);
+	if (ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 }
 

@@ -970,6 +970,18 @@ struct image {
 	u_int			 id;
 	u_int			 placement;
 
+	/*
+	 * A virtual image's pixels as the program sent them, for a client that
+	 * speaks at-protocol (tty-at.c); NULL for one restored from a build that
+	 * didn't keep them, which goes as sixel.
+	 */
+	u_char			*pixels;
+	u_int			 pwidth;
+	u_int			 pheight;
+	u_int			 pbpp;
+	u_int			 pcols;
+	u_int			 prows;
+
 	TAILQ_ENTRY (image)	 entry;
 };
 TAILQ_HEAD(images, image);
@@ -1725,6 +1737,15 @@ struct tty {
 	int		 flags;
 
 	struct tty_term	*term;
+
+	/*
+	 * at-protocol (tty-at.c): the version the terminal said in its hello,
+	 * whether it is this build's, and the virtual images sent to it by ID.
+	 */
+	char		 at_version[64];
+	int		 at_speaks;
+	u_int		*at_images;
+	u_int		 at_nimages;
 
 	u_int		 mouse_last_x;
 	u_int		 mouse_last_y;
@@ -3409,7 +3430,8 @@ void	 screen_write_placeimage(struct screen_write_ctx *,
 	     struct sixel_image *, u_int, u_int, int);
 void	 screen_write_deleteimages(struct screen_write_ctx *, int, u_int);
 void	 screen_write_placeimage_virtual(struct screen_write_ctx *,
-	     struct sixel_image *, u_int);
+	     struct sixel_image *, u_int, const u_char *, u_int, u_int, u_int,
+	     u_int, u_int);
 #endif
 void	 screen_write_alternateon(struct screen_write_ctx *,
 	     struct grid_cell *, int);
@@ -3999,11 +4021,24 @@ void		 image_placeholder_blank(const struct grid_cell *,
 		     struct grid_cell *);
 struct image	*image_virtual_find(struct screen *, u_int);
 struct image	*image_virtual_place(struct screen *, struct sixel_image *, u_int,
-		     int *);
+		     const u_char *, u_int, u_int, u_int, u_int, u_int, int *);
 int		 image_virtual_delete(struct screen *, int, u_int);
 void		 image_virtual_free_all(struct screen *);
+void		 image_upgrade_save_pixels(struct evbuffer *, struct screen *);
+void		 image_upgrade_restore_pixels(struct upgrade_reader *,
+		     struct screen *);
 void		 tty_draw_placeholders(struct tty *, struct screen *, u_int, u_int,
 		     u_int, u_int, u_int);
+
+/* tty-at.c */
+const char	*tty_at_version(void);
+void		 tty_at_hello(struct tty *);
+void		 tty_at_answered(struct tty *, const char *);
+void		 tty_at_place(struct tty *, struct image *, u_int, u_int, u_int,
+		     u_int, u_int, u_int);
+void		 tty_at_drop(struct image *);
+void		 tty_at_reset(struct tty *);
+int		 tty_keys_at(struct tty *, const char *, size_t, size_t *);
 
 /* image-kitty.c */
 char		*image_kitty(struct window_pane *, struct screen_write_ctx *,
