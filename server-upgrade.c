@@ -562,36 +562,6 @@ upgrade_same_string(const char *a, const char *b)
 	return (strcmp(a, b) == 0);
 }
 
-/*
- * On Windows, before version 5 a server's global options were tmux's stock
- * defaults and a configuration file, which this build has built in (TMUX-210):
- * only its user options carry over, so nothing the file set outlasts it.
- */
-static void
-upgrade_restore_global_options(struct upgrade_reader *r, struct options *oo)
-{
-#ifdef _WIN32
-	struct options		*old;
-	struct options_entry	*o;
-	char			*value;
-
-	if (upgrade_version < 5) {
-		old = options_create(oo);
-		options_upgrade_restore(r, old);
-		for (o = options_first(old); o != NULL; o = options_next(o)) {
-			if (*options_name(o) != '@')
-				continue;
-			value = options_to_string(o, -1, 0);
-			options_set_string(oo, options_name(o), 0, "%s", value);
-			free(value);
-		}
-		options_free(old);
-		return;
-	}
-#endif
-	options_upgrade_restore(r, oo);
-}
-
 /* Is a saved binding the same as this build's default for its key? */
 static int
 upgrade_is_default(struct upgrade_key *k)
@@ -2465,11 +2435,11 @@ server_upgrade_restore(void)
 	next_window = upr_u32(&o);
 	next_pane = upr_u32(&o);
 
-	upgrade_restore_global_options(&r, global_options);
+	options_upgrade_restore(&r, global_options);
 	upgrade_old_keys = upgrade_version == 1 &&
 	    !upgrade_legacy_has_footer(&r);
-	upgrade_restore_global_options(&r, global_s_options);
-	upgrade_restore_global_options(&r, global_w_options);
+	options_upgrade_restore(&r, global_s_options);
+	options_upgrade_restore(&r, global_w_options);
 	/*
 	 * The old server's global environment replaces the one built from this
 	 * process's environment at startup, which holds what was removed since.

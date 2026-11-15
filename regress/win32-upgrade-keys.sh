@@ -50,11 +50,7 @@ check_upgrade() {
     else
         diff -u "$OUT/before" "$OUT/after" || exit 1
     fi
-    # A build before the at settings were built in gives way to them
-    # (TMUX-210): its prefix is this build's.
-    prefix=F2
-    [ "$source_exe" = "$TEST_LEGACY_TMUX" ] && prefix=None
-    [ "$($TMUX show -gv prefix | tr -d '\r')" = $prefix ] || exit 1
+    [ "$($TMUX show -gv prefix | tr -d '\r')" = F2 ] || exit 1
     $TMUX list-keys -N -T custom | grep -q 'unicode binding' || exit 1
     [ "$($TMUX display -p '#{pane_pid}' | tr -d '\r')" = "$pane_pid" ] || exit 1
     $TMUX list-keys -T root MouseDrag1Pane | grep -q 'copy-mode -M' || exit 1

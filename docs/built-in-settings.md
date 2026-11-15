@@ -22,8 +22,5 @@ The shell is pwsh unless whoever starts the server names one in `SHELL`.
   its session set, Win+`, the alerts listener and strip-owner. A test or throwaway server
   has none of them.
 
-A running server started before this build had the settings from the home configuration.
-At the upgrade, a binding identical to this build's default becomes that default, and its
-global options other than user options give way to the built-in ones (upgrade state
-version 5). Test: `regress/win32-at-defaults.sh`, and `win32-upgrade-defaults.sh` for the
-upgrade.
+At an upgrade, a binding identical to this build's default becomes that default. Test:
+`regress/win32-at-defaults.sh`, and `win32-upgrade-defaults.sh` for the upgrade.

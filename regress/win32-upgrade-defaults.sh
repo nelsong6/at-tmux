@@ -6,10 +6,9 @@
 # or unbound on the old server stays as it was. TEST_DEFAULTS_TMUX is this
 # build with prefix i changed, F9 added and z removed
 # (build-upgrade-key-fixtures.ps1). TEST_LEGACY_TMUX predates the defaults
-# being sent: its never-rebound kill defaults come as close defaults, and
-# its global options, from before the at settings were built in, give way to
-# them (TMUX-210). A key bound by hand to exactly this build's default
-# becomes that default, so the next build's own reaches it.
+# being sent: its never-rebound kill defaults come as close defaults. A key
+# bound by hand to exactly this build's default becomes that default, so the
+# next build's own reaches it (TMUX-210).
 PATH=/bin:/usr/bin
 TERM=screen
 . "$(dirname "$0")/win32-test.sh"
@@ -105,8 +104,6 @@ SOURCE="$TEST_LEGACY_TMUX -L$TEST_SOCKET"
 $SOURCE -f"$(cygpath -m $CFG)" new -d -s legacy </dev/null ||
     fail "start legacy"
 $SOURCE bind '<' display-message USER_LT || fail "rebind <"
-$SOURCE set -g history-limit 1234 || fail "set history-limit"
-$SOURCE set -g @kept yes || fail "set @kept"
 before=$(server_pid)
 $SOURCE upgrade-server "$(cygpath -w "$TEST_TMUX")" || fail "upgrade legacy"
 wait_until changed || fail "no legacy upgrade"
@@ -121,10 +118,5 @@ $TMUX list-keys -T root MouseDown3Pane | grep -q 'close-pane' ||
 $TMUX list-keys -N -T prefix '&' | grep -q 'Close current window' ||
     fail "legacy & kept its old note"
 echo 'PASS: an older build'"'"'s never-rebound kill defaults become close'
-[ "$($TMUX show -gv history-limit | tr -d '\r')" = 50000 ] ||
-    fail "an older build's global option outlasted it"
-[ "$($TMUX show -gv @kept | tr -d '\r')" = yes ] ||
-    fail "an older build's user option was lost"
-echo 'PASS: an older build'"'"'s global options give way to the built-in ones'
 
 echo 'ALL UPGRADE DEFAULTS TESTS PASSED'
