@@ -27,3 +27,6 @@ its PR and work-package records on the pane as `@strip-*` options. The existing
 first-message hooks mark the active conversation; the condition shows the strip only for
 that conversation, until it exits. Empty agent sessions, shells and app panes do not
 reserve a row. A footer click opens that conversation's links menu (`tmux-strip menu`).
+`@strip-usage`, the conversation's context and cost and the account's usage as styled
+text, is drawn before the links arrow only while the PR and the work package still fit
+whole; a narrower pane drops it whole, before either is cut short (ATC-96).
