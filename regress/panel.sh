@@ -94,7 +94,7 @@ wait_until not_highlighted || { echo 'the highlight stayed after leaving the pan
 # click with no drag still runs the action.
 buffer_is() { [ "$($TMUX show-buffer 2>/dev/null | tr -d '\r')" = "$1" ]; }
 $OUTER send-keys -l "$(printf '\033[<0;82;3M\033[<32;84;3M\033[<32;86;3M')"
-selected() { $OUTER capture-pane -e -p | tr -d '\r' | grep 'PANEL-CONTENT' | grep -q '43m\|43;'; }
+selected() { $OUTER capture-pane -e -p | tr -d '\r' | grep -q '43mPANEL'; }
 wait_until selected || { echo 'the drag did not show its selection'; $OUTER capture-pane -e -p | grep PANEL-CONTENT | cat -v; exit 1; }
 $OUTER send-keys -l "$(printf '\033[<0;86;3m')"
 wait_until buffer_is PANEL || { echo "a drag on plain text copied '$($TMUX show-buffer 2>&1)'"; exit 1; }
@@ -108,6 +108,16 @@ wait_until buffer_is PANEL-CONTENT || { echo "a double click copied '$($TMUX sho
 $OUTER send-keys -l "$(printf '\033[<0;85;4M\033[<0;85;4m')"
 wait_until option_is @picked yes || { echo 'a click after selecting did not run the action'; exit 1; }
 $TMUX set -g @picked no
+# Rows drawn with a margin are copied without it, and deeper indentation keeps what
+# goes past it (TMUX-218: every row after the first started with the margin's space).
+tabs() { $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Links -b4 -g first -u -- \
+ All a 'set -g @tab all' PRs p 'set -g @tab prs' Tickets t 'set -g @tab tickets' History h 'set -g @tab history' "$@"; }
+tabs '- PANEL-CONTENT' '' '' '-   deeper' '' '' ' Choose action' x 'set -g @picked yes' || exit 1
+wait_until contains '|   deeper' || { echo 'the indented rows were not drawn'; $OUTER capture-pane -p; exit 1; }
+$OUTER send-keys -l "$(printf '\033[<0;82;3M\033[<32;87;5M\033[<0;87;5m')"
+wait_until buffer_is "$(printf 'PANEL-CONTENT\n  deeper\nChoos')" || { echo "a drag across indented rows copied '$($TMUX show-buffer 2>&1 | cat -A)'"; exit 1; }
+tabs -PANEL-CONTENT '' '' 'Choose action' x 'set -g @picked yes' || exit 1
+wait_until contains '|PANEL-CONTENT' || { echo 'the rows were not put back'; exit 1; }
 $TMUX send-keys -K -c "$CLIENT" Tab
 wait_until focused_is 0 || { echo 'Tab did not return focus'; exit 1; }
 # Dragging the divider sets the width, live, and holds it inside its bounds. Motion with

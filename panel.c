@@ -438,10 +438,24 @@ panel_blank(struct screen *s, u_int x)
 	    *gc.data.data == ' ');
 }
 
+/* The blank columns a line starts with, or UINT_MAX if it is all blank. */
+static u_int
+panel_leading(struct screen *s, u_int last)
+{
+	u_int x;
+
+	for (x = 0; x <= last; x++) {
+		if (!panel_blank(s, x))
+			return (x);
+	}
+	return (UINT_MAX);
+}
+
 /*
  * Copy the selection to a paste buffer and the terminal's clipboard. A row
- * wrapped onto the next line is joined back with a space, and the spaces the
- * selection starts and ends with are left out.
+ * wrapped onto the next line is joined back with a space, the indentation the
+ * copied rows share (the margin the panel's rows start with) is left out of
+ * each, and so are the spaces the selection starts and ends with.
  */
 static void
 panel_copy(struct client *c)
@@ -450,11 +464,21 @@ panel_copy(struct client *c)
 	struct screen s;
 	struct grid_cell gc;
 	u_int sl, sc, el, ec, line, x, from, to, last = pd->width - 3;
+	u_int margin = UINT_MAX, lead;
 	char *buf = NULL;
 	size_t len = 0, keep, start = 0;
 
 	if (!panel_sel_range(pd, &sl, &sc, &el, &ec))
 		return;
+	for (line = sl; line <= el; line++) {
+		if (line != sl && pd->lines[line].item == pd->lines[line - 1].item)
+			continue;
+		panel_line_screen(pd, line, &s);
+		lead = panel_leading(&s, last);
+		if ((line != sl || sc <= lead) && lead < margin)
+			margin = lead;
+		screen_free(&s);
+	}
 	for (line = sl; line <= el; line++) {
 		panel_line_screen(pd, line, &s);
 		from = line == sl ? sc : 0;
@@ -465,8 +489,11 @@ panel_copy(struct client *c)
 				while (from < to && panel_blank(&s, from))
 					from++;
 				buf[len++] = ' ';
-			} else
+			} else {
+				if (margin != UINT_MAX)
+					from = margin;
 				buf[len++] = '\n';
+			}
 		}
 		keep = len;
 		for (x = from; x <= to; x++) {
