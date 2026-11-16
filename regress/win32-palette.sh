@@ -289,7 +289,6 @@ wait $FIRST || { echo "the first command exited $? after the replacement's pick"
 rm -f "$OUT/release"
 $TMUX kill-window
 wait_until count_is 2 || exit 1
-$TMUX select-window -t first
 
 # reorder-session with no place is a folder of the places, and a pick moves
 # the session of the tab it runs on; from a key it shows them in a menu
