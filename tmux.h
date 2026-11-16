@@ -3012,6 +3012,7 @@ struct cmdq_item *cmdq_get_callback1(const char *, cmdq_cb, void *);
 struct cmdq_item *cmdq_get_error(const char *);
 struct cmdq_item *cmdq_insert_after(struct cmdq_item *, struct cmdq_item *);
 struct cmdq_item *cmdq_append(struct client *, struct cmdq_item *);
+struct cmdq_item *cmdq_append_server(struct client *, struct cmdq_item *);
 void printflike(4, 5) cmdq_insert_hook(struct session *, struct cmdq_item *,
 		     struct cmd_find_state *, const char *, ...);
 void		 cmdq_continue(struct cmdq_item *);

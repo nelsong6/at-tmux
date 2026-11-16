@@ -300,11 +300,11 @@ cmdq_merge_formats(struct cmdq_item *item, struct format_tree *ft)
 		format_merge(ft, item->state->formats);
 }
 
-/* Append an item. */
-struct cmdq_item *
-cmdq_append(struct client *c, struct cmdq_item *item)
+/* Append an item to a queue, run for a client. */
+static struct cmdq_item *
+cmdq_append_to(struct cmdq_list *queue, struct client *c,
+    struct cmdq_item *item)
 {
-	struct cmdq_list	*queue = cmdq_get(c);
 	struct cmdq_item	*next;
 
 	do {
@@ -322,6 +322,23 @@ cmdq_append(struct client *c, struct cmdq_item *item)
 		item = next;
 	} while (item != NULL);
 	return (TAILQ_LAST(&queue->list, cmdq_item_list));
+}
+
+/* Append an item. */
+struct cmdq_item *
+cmdq_append(struct client *c, struct cmdq_item *item)
+{
+	return (cmdq_append_to(cmdq_get(c), c, item));
+}
+
+/*
+ * Append an item to the server's queue but run it for a client, so it doesn't
+ * wait behind a command holding the client's own queue.
+ */
+struct cmdq_item *
+cmdq_append_server(struct client *c, struct cmdq_item *item)
+{
+	return (cmdq_append_to(cmdq_get(NULL), c, item));
 }
 
 /* Insert an item. */

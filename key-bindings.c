@@ -805,7 +805,7 @@ key_bindings_read_only(struct cmdq_item *item, __unused void *data)
 static struct cmdq_item *
 key_bindings_dispatch_formats(struct key_binding *bd, struct cmdq_item *item,
     struct client *c, struct key_event *event, struct cmd_find_state *fs,
-    struct format_tree *formats)
+    struct format_tree *formats, int server_queue)
 {
 	struct cmdq_item	*new_item;
 	struct cmdq_state	*new_state;
@@ -828,6 +828,8 @@ key_bindings_dispatch_formats(struct key_binding *bd, struct cmdq_item *item,
 	}
 	if (item != NULL)
 		new_item = cmdq_insert_after(item, new_item);
+	else if (server_queue)
+		new_item = cmdq_append_server(c, new_item);
 	else
 		new_item = cmdq_append(c, new_item);
 	return (new_item);
@@ -837,7 +839,7 @@ struct cmdq_item *
 key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
     struct client *c, struct key_event *event, struct cmd_find_state *fs)
 {
-	return (key_bindings_dispatch_formats(bd, item, c, event, fs, NULL));
+	return (key_bindings_dispatch_formats(bd, item, c, event, fs, NULL, 0));
 }
 
 /*
@@ -849,6 +851,11 @@ key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
  * the key was pressed (0 for none), or -1 where the platform doesn't say. On
  * Windows the binding gets global_key_terminal_foreground: 1 if the client
  * runs under that process, so its terminal had the focus.
+ *
+ * The key isn't typed into the client, so while the client shows a menu or
+ * popup, which may hold its queue until it closes, the binding runs from the
+ * server's queue instead of waiting behind it (TMUX-223). A menu the binding
+ * opens then finds one already open and does nothing.
  */
 void
 key_bindings_global(key_code key, pid_t foreground)
@@ -878,7 +885,8 @@ key_bindings_global(key_code key, pid_t foreground)
 #else
 	(void)foreground;
 #endif
-	key_bindings_dispatch_formats(bd, NULL, c, &event, NULL, ft);
+	key_bindings_dispatch_formats(bd, NULL, c, &event, NULL, ft,
+	    c->overlay_draw != NULL);
 	if (ft != NULL)
 		format_free(ft);
 }
