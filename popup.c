@@ -719,6 +719,23 @@ popup_present(struct client *c)
 	return (c->overlay_draw == popup_draw_cb);
 }
 
+/*
+ * Take the command waiting for a client's popup to close, so closing it
+ * doesn't continue that command.
+ */
+struct cmdq_item *
+popup_take_item(struct client *c)
+{
+	struct popup_data	*pd = c->overlay_data;
+	struct cmdq_item	*item;
+
+	if (!popup_present(c))
+		return (NULL);
+	item = pd->item;
+	pd->item = NULL;
+	return (item);
+}
+
 int
 popup_modify(struct client *c, const char *title, const char *style,
 	const char *border_style, enum box_lines lines, int flags)

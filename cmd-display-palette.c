@@ -50,8 +50,8 @@ const struct cmd_entry cmd_display_palette_entry = {
 	.name = "display-palette",
 	.alias = NULL,
 
-	.args = { "b:c:h:Pt:w:", 1, -1, NULL },
-	.usage = "[-P] [-b border-lines] [-c target-client] [-h height] "
+	.args = { "b:c:h:PRt:w:", 1, -1, NULL },
+	.usage = "[-PR] [-b border-lines] [-c target-client] [-h height] "
 		 CMD_TARGET_PANE_USAGE
 		 " [-w width] program [argument ...]",
 
@@ -96,6 +96,7 @@ struct palette_entry {
 
 struct palette {
 	struct cmdq_item	*item;
+	struct cmdq_state	*state;	/* a pick's commands run with this */
 	struct client		*tc;
 	struct cmd_find_state	*fs;
 
@@ -983,6 +984,8 @@ palette_free(struct palette *p)
 	free(p->entries);
 	free(p->tags);
 	evbuffer_free(p->rows);
+	if (p->state != NULL)
+		cmdq_free_state(p->state);
 	if (p->out != -1)
 		close(p->out);
 	server_client_unref(p->tc);
@@ -1059,14 +1062,14 @@ cmd_display_palette_close(int status, void *arg)
 			panel_act(p->tc, pe->panel - 1, pe->command);
 	} else if (pe->cmdlist != NULL) {
 		cmdq_insert_after(item, cmdq_get_command(pe->cmdlist,
-		    cmdq_get_state(item)));
+		    p->state));
 	} else {
 		if (pe->template != NULL)
 			command = palette_template(pe->template, text);
 		else if (pe->command != NULL)
 			command = xstrdup(pe->command);
 		if (command != NULL && cmd_parse_and_insert(command, NULL, item,
-		    cmdq_get_state(item), &error) == CMD_PARSE_ERROR) {
+		    p->state, &error) == CMD_PARSE_ERROR) {
 			cmdq_insert_after(item, cmdq_get_error(error));
 			free(error);
 		}
@@ -1112,8 +1115,10 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	char			*cause = NULL, **argv = NULL;
 	int			 argc = 0, in[2], out[2];
 	u_int			 w, h;
+	struct cmdq_item	*waiting = NULL;
 
-	if (tc->overlay_draw != NULL)
+	if (tc->overlay_draw != NULL &&
+	    (!args_has(args, 'R') || !popup_present(tc)))
 		return (CMD_RETURN_NORMAL);
 	if (args_has(args, 'P') && panel_width(tc) == 0) {
 		cmdq_error(item, "no side panel is showing on %s", tc->name);
@@ -1164,6 +1169,7 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 
 	p = xcalloc(1, sizeof *p);
 	p->item = item;
+	p->state = cmdq_link_state(cmdq_get_state(item));
 	p->tc = tc;
 	tc->references++;
 	p->fs = target;
@@ -1180,13 +1186,25 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	}
 
 	/*
+	 * With -R, a popup already open is closed and this palette opens in
+	 * its place. Whatever waited for that popup waits for this one
+	 * instead, so this command holds no queue of its own (TMUX-225).
+	 */
+	if (tc->overlay_draw != NULL) {
+		waiting = popup_take_item(tc);
+		server_client_clear_overlay(tc);
+		if (waiting != NULL)
+			p->item = waiting;
+	}
+
+	/*
 	 * A picker that fails (not 0, nor 130 for a cancel) leaves the popup
 	 * open on what it printed until a key, so the failure is seen, not a
 	 * flash (FZT-75).
 	 */
 	args_to_vector(args, &argc, &argv);
 	if (popup_display(POPUP_CLOSEEXITCANCEL|POPUP_CLOSEANYKEY,
-	    lines, item,
+	    lines, p->item,
 	    (tty->sx - w) / 2, (tty->sy - h) / 2, w, h, NULL, NULL, argc, argv,
 	    server_client_get_cwd(tc, target->s), NULL, tc, target->s, NULL,
 	    NULL, cmd_display_palette_close, p, in[0], out[1]) != 0) {
@@ -1197,6 +1215,8 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 		close(in[1]);
 		close(out[1]);
 		palette_free(p);
+		if (waiting != NULL)
+			cmdq_continue(waiting);
 		return (CMD_RETURN_ERROR);
 	}
 	cmd_free_argv(argc, argv);
@@ -1204,5 +1224,5 @@ cmd_display_palette_exec(struct cmd *self, struct cmdq_item *item)
 	close(out[1]);
 
 	palette_send_rows(in[1], p->rows);
-	return (CMD_RETURN_WAIT);
+	return (waiting != NULL ? CMD_RETURN_NORMAL : CMD_RETURN_WAIT);
 }

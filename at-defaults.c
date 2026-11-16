@@ -220,7 +220,7 @@ static const char *const at_commands[] = {
 	 * tmux while it is in front.
 	 */
 	"set -g @fzt-automate 'C:/Program Files/at-home/fzt-automate/current/fzt-automate.exe'",
-	"set -g @at-menu 'display-palette -b none -w 90% -h 80% \"#{@fzt-automate}\" --popup --window \"#{window_id}\" --client \"#{client_name}\"'",
+	"set -g @at-menu 'display-palette -R -b none -w 90% -h 80% \"#{@fzt-automate}\" --popup --window \"#{window_id}\" --client \"#{client_name}\"'",
 	"bind -n C-b run-shell -C '#{E:@at-menu} --open tmux'",
 	"bind -n M-Tab run-shell -C '#{E:@at-menu} --open windows'",
 	"bind -n M-BTab run-shell -C '#{E:@at-menu} --open windows'",

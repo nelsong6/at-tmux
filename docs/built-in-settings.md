@@ -28,7 +28,8 @@ the terminal and delivers the menu key when it attaches. The launch request
 is consumed once; Ctrl+Alt+Tab stays with Windows.
 at-terminal's own foreground interception still delivers the same root binding,
 so whichever hook sees the press first opens one menu. With the menu already
-open, Alt+Tab brings at-terminal forward to it rather than waiting for it to close.
+open, Alt+Tab brings at-terminal forward and opens a fresh windows menu in its
+place, and Win+` a fresh menu (`display-palette -R` in `@at-menu`, TMUX-225).
 
 At an upgrade, a binding identical to this build's default becomes that default. Test:
 `regress/win32-at-defaults.sh`, and `win32-upgrade-defaults.sh` for the upgrade.

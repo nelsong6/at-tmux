@@ -252,6 +252,45 @@ out=$($TMUX display-palette -b nonsense -c "$CLIENT" cmd 2>&1) &&
 echo "$out" | grep -q 'popup-border-lines' ||
     { echo "a bad border type said: $out"; exit 1; }
 
+# -R closes a popup already open and opens in its place (TMUX-225): what
+# waited for the first (a command-line client's display-palette here) waits for
+# the new one instead, and the -R command itself returns at once. Without -R, a
+# palette over an open popup opens nothing.
+held_palette() {
+	$TMUX display-palette "$@" -c "$CLIENT" -w 100% -h 100% "$PS" -NoProfile \
+	    -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
+}
+got_rows() { [ -e "$OUT/rows" ]; }
+gone() { ! kill -0 "$1" 2>/dev/null; }
+rm -f "$OUT/rows" "$OUT/done" "$OUT/release"
+printf '%s\n' pick=nothing hold=1 >"$OUT/pick"
+held_palette &
+FIRST=$!
+wait_until got_rows || { echo "the first held palette never opened"; exit 1; }
+rm -f "$OUT/rows"
+$TMUX display-palette -c "$CLIENT" cmd ||
+    { echo "a palette over an open popup failed"; exit 1; }
+sleep 0.5
+got_rows && { echo "a palette without -R replaced the open one"; exit 1; }
+printf '%s\n' pick=new-window hold=1 >"$OUT/pick"
+held_palette -R &
+SECOND=$!
+wait_until got_rows || { echo "-R opened no palette in place of the first"; exit 1; }
+wait_until gone $SECOND || { echo "display-palette -R waited for its popup"; exit 1; }
+wait $SECOND || { echo "display-palette -R exited $?"; exit 1; }
+gone $FIRST &&
+    { echo "the first palette's command stopped waiting when it was replaced"; exit 1; }
+: >"$OUT/release"
+wait_until picker_done || { echo "the replacing picker never finished"; exit 1; }
+wait_until count_is 3 || { echo "the replacing palette's pick did not run"; exit 1; }
+wait_until gone $FIRST ||
+    { echo "the first command still waits after the replacement closed"; exit 1; }
+wait $FIRST || { echo "the first command exited $? after the replacement's pick"; exit 1; }
+rm -f "$OUT/release"
+$TMUX kill-window
+wait_until count_is 2 || exit 1
+$TMUX select-window -t first
+
 # reorder-session with no place is a folder of the places, and a pick moves
 # the session of the tab it runs on; from a key it shows them in a menu
 # (TMUX-74: a command-alias of that name had hidden the command).

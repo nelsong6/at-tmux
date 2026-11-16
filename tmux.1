@@ -7724,7 +7724,7 @@ through the root key table once.
 The request is recorded only if the program starts, and repeated launches
 replace a pending request rather than opening several menus.
 .It Xo Ic display-palette
-.Op Fl P
+.Op Fl PR
 .Op Fl b Ar border-lines
 .Op Fl c Ar target-client
 .Op Fl h Ar height
@@ -7773,6 +7773,17 @@ does.
 Nothing runs if
 .Ar program
 exits with another status.
+.Pp
+If
+.Ar target-client
+already shows a popup or menu, nothing is displayed.
+With
+.Fl R ,
+a popup already showing is closed and the palette opens in its place;
+a command waiting for that popup to close waits for the palette instead,
+and
+.Ic display-palette
+itself returns at once.
 .Pp
 .Fl b
 sets the type of characters used for the popup's border, as for
