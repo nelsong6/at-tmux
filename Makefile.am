@@ -102,6 +102,7 @@ dist_tmux_SOURCES = \
 	cmd-display-palette.c \
 	cmd-play-sound.c \
 	cmd-display-panes.c \
+	cmd-export-pane.c \
 	cmd-find-window.c \
 	cmd-find.c \
 	cmd-if-shell.c \

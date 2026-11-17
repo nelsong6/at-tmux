@@ -911,6 +911,7 @@ int  win32_pty_resume(struct win32_pty *pty);
 int  win32_pty_can_export(void);
 int  win32_pty_export(struct win32_pty *pty, HANDLE child,
     struct win32_pty_handoff *h);
+void win32_pty_forget(struct win32_pty *pty);
 struct win32_pty *win32_pty_import(const struct win32_pty_handoff *h);
 
 /* win32-process.c */

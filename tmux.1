@@ -1834,6 +1834,25 @@ the old server continues running.
 The
 .Ic server_upgrade
 format shows whether the server is waiting and why, or why it failed.
+.It Xo Ic export-pane
+.Fl p Ar server-pid
+.Op Fl t Ar target-pane
+.Ar pane-file
+.Xc
+(Windows only.)
+Hand
+.Ar target-pane Ns 's
+program, its console and its screen to the server whose process is
+.Ar server-pid ,
+writing them to
+.Ar pane-file ,
+which
+.Ic split-window
+.Fl M
+reads on that server.
+The program goes on running.
+.Ar target-pane
+stays, dead, saying which server took it.
 .It Xo Ic adopt-pane
 .Fl p Ar server-pid
 .Fl f Ar fd
@@ -3957,6 +3976,7 @@ the command behaves like
 .Op Fl e Ar environment
 .Op Fl F Ar format
 .Op Fl l Ar size
+.Op Fl M Ar pane-file
 .Op Fl t Ar target-pane
 .Op Ar shell-command Op Ar argument ...
 .Xc
@@ -4007,6 +4027,16 @@ For example:
 .Bd -literal -offset indent
 $ make 2>&1|tmux splitw -dI &
 .Ed
+.Pp
+With
+.Fl M
+(Windows only), the new pane is the pane another server wrote to
+.Ar pane-file
+with
+.Ic export-pane :
+its program goes on running, with its screen as it was, resized to the new
+pane.
+None of the other server's options for the pane come with it.
 .Pp
 All other options have the same meaning as for the
 .Ic new-window

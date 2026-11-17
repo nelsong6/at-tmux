@@ -73,6 +73,7 @@ set(TMUX_SOURCES
     cmd-play-sound.c
     cmd-display-panes.c
     cmd-find.c
+    cmd-export-pane.c
     cmd-find-window.c
     cmd-if-shell.c
     cmd-join-pane.c

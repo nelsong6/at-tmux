@@ -4129,6 +4129,10 @@ extern int	 server_upgrading;
 int		 server_upgrade_request(const char *, char **);
 const char	*server_upgrade_status(void);
 int		 server_upgrade_restore(void);
+int		 server_upgrade_export_pane(struct window_pane *, pid_t,
+		     const char *, char **);
+int		 server_upgrade_import_pane(struct window_pane *, const char *,
+		     char **);
 
 /* Each module saves and restores the state only it can see. */
 void		 grid_upgrade_save(struct evbuffer *, struct grid *,

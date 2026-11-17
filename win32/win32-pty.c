@@ -593,6 +593,28 @@ win32_pty_export(struct win32_pty *pty, HANDLE child,
 }
 
 /*
+ * Let go of a console handed on by win32_pty_export, after win32_pty_stop, without
+ * ending it or its program: the process that took it holds copies of every handle.
+ * The HPCON's own memory is conpty.dll's, freed only by closing the console, so it
+ * is left.
+ */
+void
+win32_pty_forget(struct win32_pty *pty)
+{
+	struct pty_conpty	*pc = (struct pty_conpty *)pty->hPC;
+
+	CloseHandle(pty->hPipeIn);
+	CloseHandle(pty->hPipeOut);
+	CloseHandle(pc->signal);
+	CloseHandle(pc->reference);
+	CloseHandle(pc->process);
+	CloseHandle(pty->hProcess);
+	if (pty->hThread != NULL)
+		CloseHandle(pty->hThread);
+	free(pty);
+}
+
+/*
  * Take over a console handed on by win32_pty_export. Nothing reads it until
  * win32_pty_resume: the old server may still need it.
  */

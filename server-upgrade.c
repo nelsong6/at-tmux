@@ -939,18 +939,117 @@ upgrade_save_pane(struct evbuffer *evb, struct window_pane *wp,
 	return (0);
 }
 
-static struct window_pane *
-upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
+/*
+ * Read what upgrade_save_pane wrote after the pane's id into wp. A pane moved
+ * from another server keeps the place it was given here and none of that
+ * server's options or pane flags; its screen and size are the old server's
+ * until it is resized.
+ */
+static void
+upgrade_read_pane(struct upgrade_reader *o, struct window_pane *wp, int moved)
 {
-	struct upgrade_reader		 o;
-	struct window_pane		*wp;
+	struct upgrade_reader		 skip;
 #ifdef _WIN32
 	struct win32_pty_handoff	 h;
 #endif
 	struct grid			*gd;
-	u_int				 id, next_window, next_pane;
+	u_int				 xoff, yoff, flags;
 	int				 i;
 	char				*s;
+
+	wp->sx = upr_u32(o);
+	wp->sy = upr_u32(o);
+	xoff = upr_u32(o);
+	yoff = upr_u32(o);
+	flags = upr_u32(o);
+	if (moved)
+		flags = wp->flags & ~PANE_EMPTY;
+	else {
+		wp->xoff = xoff;
+		wp->yoff = yoff;
+		flags &= ~PANE_VISITED;
+	}
+	/* Its cached default style is this process's to work out again. */
+	wp->flags = flags|PANE_REDRAW|PANE_STYLECHANGED;
+	cmd_free_argv(wp->argc, wp->argv);
+	free(wp->shell);
+	free(wp->cwd);
+	wp->argc = upr_u32(o);
+	if (wp->argc < 0 || (size_t)wp->argc > o->left) {
+		wp->argc = 0;
+		o->error = 1;
+	}
+	if (wp->argc != 0) {
+		wp->argv = xcalloc(wp->argc, sizeof *wp->argv);
+		for (i = 0; i < wp->argc; i++) {
+			s = upr_str(o);
+			wp->argv[i] = (s == NULL) ? xstrdup("") : s;
+		}
+	} else
+		wp->argv = NULL;
+	wp->shell = upr_str(o);
+	wp->cwd = upr_str(o);
+	wp->pid = (pid_t)upr_u32(o);
+	if ((s = upr_str(o)) != NULL) {
+		strlcpy(wp->tty, s, sizeof wp->tty);
+		free(s);
+	}
+	wp->status = upr_u32(o);
+	upr_time(o, &wp->dead_time);
+	if (moved)
+		upr_obj(o, &skip);
+	else
+		options_upgrade_restore(o, wp->options);
+	upgrade_restore_palette(o, &wp->palette);
+
+	/*
+	 * The screen was made at the window's size; make it the pane's. The
+	 * grid restored into it brings its own history limit.
+	 */
+	screen_free(&wp->base);
+	screen_init(&wp->base, wp->sx, wp->sy, 0);
+	wp->base.hidden_text = wp->options;
+	upgrade_restore_screen(o, &wp->base);
+	gd = wp->base.grid;
+	if (gd->sx != wp->sx || gd->sy != wp->sy)
+		o->error = 1;
+
+#ifdef _WIN32
+	if (upr_u32(o)) {
+		h.signal = upr_u64(o);
+		h.reference = upr_u64(o);
+		h.conhost = upr_u64(o);
+		h.in = upr_u64(o);
+		h.out = upr_u64(o);
+		h.process = upr_u64(o);
+		h.pid = upr_u32(o);
+		if (!o->error) {
+			wp->win32_pty = win32_pty_import(&h);
+			if (wp->win32_pty == NULL)
+				o->error = 1;
+		}
+	}
+#else
+	/* Inherited at the same number; not read until the old server goes. */
+	if (upr_u32(o))
+		wp->fd = (int)upr_u32(o);
+#endif
+	if (upr_u32(o)) {
+		if (wp->ictx != NULL)
+			input_free(wp->ictx);
+		wp->ictx = input_init(wp, NULL, &wp->palette, NULL);
+		input_upgrade_restore(o, wp->ictx, wp->base.hyperlinks);
+	}
+	if (upgrade_version >= 3)
+		window_copy_upgrade_read(o, wp);
+}
+
+static struct window_pane *
+upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
+{
+	struct upgrade_reader	 o;
+	struct window_pane	*wp;
+	u_int			 id, next_window, next_pane;
 
 	upr_obj(r, &o);
 	id = upr_u32(&o);
@@ -963,73 +1062,7 @@ upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
 	wp = window_add_pane(w, NULL, 0, SPAWN_FULLSIZE);
 	window_set_next_ids(next_window, next_pane);
 
-	wp->sx = upr_u32(&o);
-	wp->sy = upr_u32(&o);
-	wp->xoff = upr_u32(&o);
-	wp->yoff = upr_u32(&o);
-	/* Its cached default style is this process's to work out again. */
-	wp->flags = (upr_u32(&o) & ~PANE_VISITED) | PANE_REDRAW|PANE_STYLECHANGED;
-	wp->argc = upr_u32(&o);
-	if (wp->argc < 0 || (size_t)wp->argc > o.left)
-		o.error = 1;
-	else if (wp->argc != 0) {
-		wp->argv = xcalloc(wp->argc, sizeof *wp->argv);
-		for (i = 0; i < wp->argc; i++) {
-			s = upr_str(&o);
-			wp->argv[i] = (s == NULL) ? xstrdup("") : s;
-		}
-	} else
-		wp->argv = NULL;
-	wp->shell = upr_str(&o);
-	wp->cwd = upr_str(&o);
-	wp->pid = (pid_t)upr_u32(&o);
-	if ((s = upr_str(&o)) != NULL) {
-		strlcpy(wp->tty, s, sizeof wp->tty);
-		free(s);
-	}
-	wp->status = upr_u32(&o);
-	upr_time(&o, &wp->dead_time);
-	options_upgrade_restore(&o, wp->options);
-	upgrade_restore_palette(&o, &wp->palette);
-
-	/*
-	 * The screen was made at the window's size; make it the pane's. The
-	 * grid restored into it brings its own history limit.
-	 */
-	screen_free(&wp->base);
-	screen_init(&wp->base, wp->sx, wp->sy, 0);
-	wp->base.hidden_text = wp->options;
-	upgrade_restore_screen(&o, &wp->base);
-	gd = wp->base.grid;
-	if (gd->sx != wp->sx || gd->sy != wp->sy)
-		o.error = 1;
-
-#ifdef _WIN32
-	if (upr_u32(&o)) {
-		h.signal = upr_u64(&o);
-		h.reference = upr_u64(&o);
-		h.conhost = upr_u64(&o);
-		h.in = upr_u64(&o);
-		h.out = upr_u64(&o);
-		h.process = upr_u64(&o);
-		h.pid = upr_u32(&o);
-		if (!o.error) {
-			wp->win32_pty = win32_pty_import(&h);
-			if (wp->win32_pty == NULL)
-				o.error = 1;
-		}
-	}
-#else
-	/* Inherited at the same number; not read until the old server goes. */
-	if (upr_u32(&o))
-		wp->fd = (int)upr_u32(&o);
-#endif
-	if (upr_u32(&o)) {
-		wp->ictx = input_init(wp, NULL, &wp->palette, NULL);
-		input_upgrade_restore(&o, wp->ictx, wp->base.hyperlinks);
-	}
-	if (upgrade_version >= 3)
-		window_copy_upgrade_read(&o, wp);
+	upgrade_read_pane(&o, wp, 0);
 	if (o.error)
 		r->error = 1;
 	return (wp);
@@ -1643,50 +1676,60 @@ upgrade_flush_clients(void)
  * console, behind what was already queued.
  */
 static void
-upgrade_stop_panes(void)
+upgrade_stop_pane(struct window_pane *wp)
 {
-	struct window_pane	*wp;
 	struct evbuffer		*evb, *out;
 
 	evb = evbuffer_new();
-	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
-		if (wp->win32_pty == NULL)
-			continue;
-		bufferevent_disable(wp->event, EV_READ|EV_WRITE);
-		out = bufferevent_get_output(wp->event);
-		upgrade_send_all(wp->fd, out);
-		win32_pty_stop(wp->win32_pty, evb);
-		log_debug("upgrade: %%%u stopped with %zu bytes left", wp->id,
-		    EVBUFFER_LENGTH(evb));
-		window_pane_upgrade_feed(wp, evb);
-		evbuffer_drain(evb, EVBUFFER_LENGTH(evb));
-		if (EVBUFFER_LENGTH(out) != 0) {
-			win32_pty_write(wp->win32_pty, EVBUFFER_DATA(out),
-			    EVBUFFER_LENGTH(out));
-			evbuffer_drain(out, EVBUFFER_LENGTH(out));
-		}
-		wp->fd = -1;
-	}
+	bufferevent_disable(wp->event, EV_READ|EV_WRITE);
+	out = bufferevent_get_output(wp->event);
+	upgrade_send_all(wp->fd, out);
+	win32_pty_stop(wp->win32_pty, evb);
+	log_debug("upgrade: %%%u stopped with %zu bytes left", wp->id,
+	    EVBUFFER_LENGTH(evb));
+	window_pane_upgrade_feed(wp, evb);
 	evbuffer_free(evb);
+	if (EVBUFFER_LENGTH(out) != 0) {
+		win32_pty_write(wp->win32_pty, EVBUFFER_DATA(out),
+		    EVBUFFER_LENGTH(out));
+		evbuffer_drain(out, EVBUFFER_LENGTH(out));
+	}
+	wp->fd = -1;
 }
 
-/* Read the consoles again after a handover that did not happen. */
+static void
+upgrade_stop_panes(void)
+{
+	struct window_pane	*wp;
+
+	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
+		if (wp->win32_pty != NULL)
+			upgrade_stop_pane(wp);
+	}
+}
+
+/* Read a console again after a handover that did not happen. */
+static void
+upgrade_resume_pane(struct window_pane *wp)
+{
+	bufferevent_free(wp->event);
+	wp->event = NULL;
+	wp->fd = win32_pty_resume(wp->win32_pty);
+	if (wp->fd == -1) {
+		wp->flags |= PANE_EXITED;
+		return;
+	}
+	window_pane_upgrade_event(wp);
+}
+
 static void
 upgrade_resume_panes(void)
 {
 	struct window_pane	*wp;
 
 	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
-		if (wp->win32_pty == NULL || wp->fd != -1)
-			continue;
-		bufferevent_free(wp->event);
-		wp->event = NULL;
-		wp->fd = win32_pty_resume(wp->win32_pty);
-		if (wp->fd == -1) {
-			wp->flags |= PANE_EXITED;
-			continue;
-		}
-		window_pane_upgrade_event(wp);
+		if (wp->win32_pty != NULL && wp->fd == -1)
+			upgrade_resume_pane(wp);
 	}
 }
 #else
@@ -2558,6 +2601,171 @@ fail:
 	_exit(1);
 #endif
 	return (-1);
+}
+
+/*
+ * Moving one pane to another server. export-pane writes the pane as
+ * upgrade-server hands it on, its console's handles already copied into the
+ * other server, to a file split-window -M reads there. The program, its
+ * console and its screen move; the pane left here says where they went.
+ */
+#define UPGRADE_PANE_MAGIC "tmux-pane"
+
+int
+server_upgrade_export_pane(struct window_pane *wp, pid_t pid, const char *path,
+    char **cause)
+{
+#ifdef _WIN32
+	struct evbuffer	*evb;
+	HANDLE		 child;
+	FILE		*f;
+	size_t		 size;
+	int		 saved, written = 0;
+
+	if (!win32_pty_can_export()) {
+		*cause = xstrdup("this build's consoles can't be handed on");
+		return (-1);
+	}
+	if (wp->win32_pty == NULL || wp->fd == -1 ||
+	    (wp->flags & PANE_EXITED)) {
+		*cause = xstrdup("the pane's program isn't running");
+		return (-1);
+	}
+	child = OpenProcess(PROCESS_DUP_HANDLE, FALSE, (DWORD)pid);
+	if (child == NULL) {
+		xasprintf(cause, "can't open process %ld: error %lu", (long)pid,
+		    GetLastError());
+		return (-1);
+	}
+
+	window_pane_reset_mode_all(wp);
+	upgrade_stop_pane(wp);
+	evb = evbuffer_new();
+	upw_str(evb, UPGRADE_PANE_MAGIC);
+	upw_u32(evb, UPGRADE_VERSION);
+	saved = (upgrade_save_pane(evb, wp, child) == 0);
+	CloseHandle(child);
+	if (saved && (f = fopen(path, "wb")) != NULL) {
+		size = EVBUFFER_LENGTH(evb);
+		written = (fwrite(EVBUFFER_DATA(evb), 1, size, f) == size);
+		if (fclose(f) != 0)
+			written = 0;
+		if (!written)
+			remove(path);
+	}
+	evbuffer_free(evb);
+	if (!saved || !written) {
+		if (!saved)
+			xasprintf(cause, "can't hand the console to process %ld",
+			    (long)pid);
+		else
+			xasprintf(cause, "can't write %s", path);
+		upgrade_resume_pane(wp);
+		return (-1);
+	}
+
+	/* The program is the other server's: let it go without ending it. */
+	bufferevent_free(wp->event);
+	wp->event = NULL;
+	win32_pty_forget(wp->win32_pty);
+	wp->win32_pty = NULL;
+	wp->pid = 0;
+	wp->status = 0;
+	wp->flags |= PANE_EXITED|PANE_STATUSREADY;
+	options_set_number(wp->options, "remain-on-exit", 1);
+	options_set_string(wp->options, "remain-on-exit-format", 0,
+	    "Moved to the tmux server with process %ld", (long)pid);
+	server_destroy_pane(wp, 0);
+	return (0);
+#else
+	(void)wp;
+	(void)pid;
+	(void)path;
+	*cause = xstrdup("moving a pane is only on Windows");
+	return (-1);
+#endif
+}
+
+/*
+ * Make wp, a pane split-window has just made with nothing in it, the pane
+ * export-pane wrote to path, at wp's size.
+ */
+int
+server_upgrade_import_pane(struct window_pane *wp, const char *path,
+    char **cause)
+{
+#ifdef _WIN32
+	struct upgrade_reader	 r, o;
+	FILE			*f;
+	u_char			*data;
+	char			*magic;
+	long			 size;
+	uint32_t		 version;
+	u_int			 sx = wp->sx, sy = wp->sy;
+
+	if ((f = fopen(path, "rb")) == NULL) {
+		xasprintf(cause, "%s: %s", path, strerror(errno));
+		return (-1);
+	}
+	if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) <= 0) {
+		fclose(f);
+		xasprintf(cause, "%s is empty", path);
+		return (-1);
+	}
+	rewind(f);
+	data = xmalloc(size);
+	if (fread(data, 1, size, f) != (size_t)size) {
+		fclose(f);
+		free(data);
+		xasprintf(cause, "%s: short read", path);
+		return (-1);
+	}
+	fclose(f);
+
+	r.p = data;
+	r.left = size;
+	r.error = 0;
+	magic = upr_str(&r);
+	version = upr_u32(&r);
+	if (magic == NULL || strcmp(magic, UPGRADE_PANE_MAGIC) != 0 ||
+	    version < 1 || version > UPGRADE_VERSION) {
+		free(magic);
+		free(data);
+		xasprintf(cause, "%s is not a pane this build can take", path);
+		return (-1);
+	}
+	free(magic);
+	upgrade_version = version;
+
+	upr_obj(&r, &o);
+	upr_u32(&o);
+	upgrade_read_pane(&o, wp, 1);
+	free(data);
+
+	/* The empty pane read nothing. */
+	bufferevent_free(wp->event);
+	wp->event = NULL;
+	if (!o.error && wp->win32_pty != NULL)
+		wp->fd = win32_pty_resume(wp->win32_pty);
+	if (wp->fd == -1) {
+		if (wp->win32_pty != NULL) {
+			win32_pty_close(wp->win32_pty);
+			wp->win32_pty = NULL;
+		}
+		*cause = xstrdup("can't take over the pane's console");
+		return (-1);
+	}
+	window_pane_upgrade_event(wp);
+	win32_process_watch(win32_pty_get_process(wp->win32_pty), wp->pid);
+	window_copy_upgrade_apply(wp);
+	window_pane_resize(wp, sx, sy);
+	return (0);
+#else
+	(void)wp;
+	(void)path;
+	*cause = xstrdup("moving a pane is only on Windows");
+	return (-1);
+#endif
 }
 
 #endif /* HAVE_SERVER_UPGRADE */

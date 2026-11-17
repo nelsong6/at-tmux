@@ -41,9 +41,9 @@ const struct cmd_entry cmd_split_window_entry = {
 	.name = "split-window",
 	.alias = "splitw",
 
-	.args = { "bc:de:fF:hIl:p:PRt:vZ", 0, -1, NULL },
+	.args = { "bc:de:fF:hIl:M:p:PRt:vZ", 0, -1, NULL },
 	.usage = "[-bdefhIPRvZ] [-c start-directory] [-e environment] "
-		 "[-F format] [-l size] " CMD_TARGET_PANE_USAGE
+		 "[-F format] [-l size] [-M pane-file] " CMD_TARGET_PANE_USAGE
 		 " [shell-command [argument ...]]",
 
 	.target = { 't', CMD_FIND_PANE, 0 },
@@ -68,7 +68,7 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 	struct layout_cell	*lc;
 	struct cmd_find_state	 fs;
 	int			 size, flags, input;
-	const char		*template;
+	const char		*template, *moved;
 	char			*cause = NULL, *cp;
 	struct args_value	*av;
 	u_int			 count = args_count(args), curval = 0;
@@ -108,6 +108,18 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 		return (CMD_RETURN_ERROR);
 	}
 
+	moved = args_get(args, 'M');
+#ifndef HAVE_SERVER_UPGRADE
+	if (moved != NULL) {
+		cmdq_error(item, "-M is only on Windows");
+		return (CMD_RETURN_ERROR);
+	}
+#endif
+	if (moved != NULL && (count != 0 || args_has(args, 'I'))) {
+		cmdq_error(item, "-M takes the pane's program from pane-file");
+		return (CMD_RETURN_ERROR);
+	}
+
 	window_push_zoom(wp->window, 1, args_has(args, 'Z'));
 	input = (args_has(args, 'I') && count == 0);
 
@@ -116,7 +128,8 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 		flags |= SPAWN_BEFORE;
 	if (args_has(args, 'f'))
 		flags |= SPAWN_FULLSIZE;
-	if (input || (count == 1 && *args_string(args, 0) == '\0'))
+	if (input || moved != NULL ||
+	    (count == 1 && *args_string(args, 0) == '\0'))
 		flags |= SPAWN_EMPTY;
 
 	lc = layout_split_pane(wp, type, size, flags);
@@ -160,6 +173,21 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 		environ_free(sc.environ);
 		return (CMD_RETURN_ERROR);
 	}
+#ifdef HAVE_SERVER_UPGRADE
+	if (moved != NULL &&
+	    server_upgrade_import_pane(new_wp, moved, &cause) != 0) {
+		server_client_remove_pane(new_wp);
+		layout_close_pane(new_wp);
+		window_remove_pane(wp->window, new_wp);
+		window_pop_zoom(wp->window);
+		cmdq_error(item, "%s", cause);
+		free(cause);
+		if (sc.argv != NULL)
+			cmd_free_argv(sc.argc, sc.argv);
+		environ_free(sc.environ);
+		return (CMD_RETURN_ERROR);
+	}
+#endif
 	if (input) {
 		switch (window_pane_start_input(new_wp, item, &cause)) {
 		case -1:
