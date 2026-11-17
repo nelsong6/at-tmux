@@ -1284,11 +1284,20 @@ options_push_changes(const char *name)
 
 	if (strcmp(name, "@claude") == 0)
 		window_status_seen();
-	if (strcmp(name, "automatic-rename") == 0) {
+	/*
+	 * A window's automatic name is worked out again only when its active
+	 * pane has changed, which output does. A user option can be what the
+	 * format reads (@claude-title, which a Claude session's start hook sets
+	 * after its program has drawn and gone quiet), so setting one, or the
+	 * format itself, has every automatic name checked again (TMUX-231).
+	 */
+	if (*name == '@' ||
+	    strcmp(name, "automatic-rename") == 0 ||
+	    strcmp(name, "automatic-rename-format") == 0) {
 		RB_FOREACH(w, windows, &windows) {
 			if (w->active == NULL)
 				continue;
-			if (options_get_number(w->options, name))
+			if (options_get_number(w->options, "automatic-rename"))
 				w->active->flags |= PANE_CHANGED;
 		}
 	}
