@@ -77,6 +77,8 @@ server_pending_ttys(void)
  * Pending tty channel connections waiting to be matched with a client.
  * When a TTY channel connection arrives in server_accept(), we store it
  * here until the client sends MSG_IDENTIFY_TTYTOKEN to claim it.
+ * Each is a socket, so it is closed with closesocket(): the C runtime's
+ * close() takes it for a bad argument and that ends the server (TMUX-229).
  */
 #define MAX_PENDING_TTYS    16
 #define PENDING_TTY_EXPIRY  30  /* seconds */
@@ -123,7 +125,7 @@ server_add_pending_tty(const char *token, int fd)
 		if (now - pt->created >= PENDING_TTY_EXPIRY) {
 			log_debug("expiring pending tty: token=%s fd=%d",
 			    pt->token, pt->fd);
-			close(pt->fd);
+			closesocket((SOCKET)pt->fd);
 			TAILQ_REMOVE(&pending_ttys, pt, entry);
 			free(pt);
 		} else
@@ -133,7 +135,7 @@ server_add_pending_tty(const char *token, int fd)
 	/* Enforce cap. */
 	if (count >= MAX_PENDING_TTYS) {
 		log_debug("pending tty queue full, rejecting fd=%d", fd);
-		close(fd);
+		closesocket((SOCKET)fd);
 		return;
 	}
 
