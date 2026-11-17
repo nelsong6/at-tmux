@@ -31,5 +31,10 @@ so whichever hook sees the press first opens one menu. With the menu already
 open, Alt+Tab brings at-terminal forward and opens a fresh windows menu in its
 place, and Win+` a fresh menu (`display-palette -R` in `@at-menu`, TMUX-225).
 
+A plain drag selects text over any program that didn't ask for drags: one that takes
+only clicks (mode 1000, as gvoice-tui and the fzt pickers do) keeps its clicks, and a
+drag starts tmux's selection as it does over a program that took no mouse. A program
+that asked for drags (1002 or 1003) gets them (TMUX-227; `regress/win32-at-defaults.sh`).
+
 At an upgrade, a binding identical to this build's default becomes that default. Test:
 `regress/win32-at-defaults.sh`, and `win32-upgrade-defaults.sh` for the upgrade.

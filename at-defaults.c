@@ -185,6 +185,13 @@ static const char *const at_commands[] = {
 	"bind -n WheelDownPane if -F -t = '#{||:#{pane_in_mode},#{mouse_any_flag}}' { send -M } { if -F -t = '#{alternate_on}' { send -t = -N 3 Down } }",
 
 	/*
+	 * A drag selects text unless the program asked for drags (1002 or 1003): one
+	 * that asked only for clicks (1000) keeps them, and the drag selects as it
+	 * does over a program that took no mouse (TMUX-227).
+	 */
+	"bind -n MouseDrag1Pane if -F '#{||:#{pane_in_mode},#{||:#{mouse_button_flag},#{mouse_all_flag}}}' { send -M } { copy-mode -M }",
+
+	/*
 	 * Windows-style keys: Ctrl+Tab, Ctrl+1..9, Ctrl+W, Ctrl+Shift+PgUp/PgDn,
 	 * Ctrl+N, Ctrl+` between sessions, Ctrl+Shift+T reopening the last window.
 	 */

@@ -2,15 +2,17 @@
 
 # The at system's settings are built in (TMUX-210): a server reads no
 # configuration file of its own, starts with them, returns to them on set -u,
-# and leaves what only the at server does (Win+`) to the at server.
+# leaves what only the at server does (Win+`) to the at server, and lets a
+# plain drag select over a program that asked only for clicks (TMUX-227).
 
 PATH=/bin:/usr/bin
 TERM=screen
 . "$(dirname "$0")/win32-test.sh"
 . "$(dirname "$0")/win32-wait.sh"
 TMUX="$TEST_TMUX -L$TEST_SOCKET"
+OUTER="$TEST_TMUX -L$TEST_SOCKET-outer"
 HOMEDIR=$(mktemp -d)
-trap "$TMUX kill-server 2>/dev/null; rm -rf $HOMEDIR" 0 1 15
+trap "$TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null; rm -rf $HOMEDIR" 0 1 15
 
 fail() {
 	echo "FAIL: $1"
@@ -58,6 +60,55 @@ echo 'PASS: set -u returns to the built-in settings'
 [ -z "$(value @session-set-dir)" ] ||
     fail "a test server writes the session set"
 echo 'PASS: only the at server has its global key and session set'
+
+# A plain drag selects text over a program that asked only for clicks (mode
+# 1000, as tcell's MouseButtonEvents does), and reaches one that asked for
+# drags (1002) (TMUX-227). Real mouse packets reach an attached client through
+# an outer server's pane.
+cat >"$HOMEDIR/mode.sh" <<'EOF'
+printf '\033[?%sh\033[?1006hSELECT THIS LINE\n' "$1"
+exec sleep 600
+EOF
+program() { echo "$(cygpath -d /usr/bin/bash) $(cygpath -m "$HOMEDIR/mode.sh") $1"; }
+flag() { $TMUX display -p -t drag "#{$1}" | tr -d '\r'; }
+shown() { $TMUX capture-pane -p -t drag | grep -q 'SELECT THIS LINE'; }
+# drag: presses on the line's first column, drags to the sixth and releases.
+drag() {
+	sleep 0.4 # tmux's click timer, so this is no double click
+	$OUTER send-keys -H $(printf '\033[<0;1;%dM\033[<32;6;%dM\033[<0;6;%dm' "$row" "$row" "$row" | od -An -tx1)
+}
+$TMUX new -d -s drag -x 81 -y 24 "$(program 1000)" </dev/null || fail "start drag"
+printf "set -g default-shell '%s'\nset -g status off\n" "$COMSPEC" >"$HOMEDIR/outer.conf"
+$OUTER -f "$HOMEDIR/outer.conf" new -d -x 81 -y 24 </dev/null || fail "start outer"
+$OUTER send-keys "set TMUX=" Enter "\"$(cygpath -w "$TEST_TMUX")\" -L$TEST_SOCKET attach -t drag" Enter
+attached() { [ "$($TMUX list-clients | wc -l)" = 1 ]; }
+wait_until attached || fail "no client attached"
+# The line's row on the client's screen, under the window bar.
+row() { $OUTER capture-pane -p | tr -d '\r' | grep -n 'SELECT THIS LINE' | cut -d: -f1; }
+drawn() { [ -n "$(row)" ]; }
+wait_until drawn || fail "the client never drew the line"
+row=$(row)
+standard() { [ "$(flag mouse_standard_flag)" = 1 ] && shown; }
+wait_until standard || fail "the pane never asked for clicks"
+[ "$(flag mouse_button_flag)" = 0 ] || fail "mode 1000 set the drag flag"
+drag
+copied() {
+	$TMUX show-buffer 2>/dev/null | grep -q '^SELEC' &&
+	    [ "$(flag pane_in_mode)" = 0 ]
+}
+wait_until copied ||
+    fail "a plain drag didn't select: buffer '$($TMUX show-buffer 2>/dev/null)'"
+echo 'PASS: a plain drag selects over a program that asked only for clicks'
+
+$TMUX delete-buffer
+$TMUX respawn-pane -k -t drag "$(program 1002)"
+button() { [ "$(flag mouse_button_flag)" = 1 ] && shown; }
+wait_until button || fail "the pane never asked for drags"
+drag
+sleep 1
+[ "$(flag pane_in_mode)" = 0 ] || fail "a drag the program asked for started copy mode"
+! $TMUX show-buffer >/dev/null 2>&1 || fail "a drag the program asked for was copied"
+echo 'PASS: a drag reaches a program that asked for drags'
 
 echo 'ALL AT DEFAULTS TESTS PASSED'
 exit 0
