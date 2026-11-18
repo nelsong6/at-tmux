@@ -26,8 +26,10 @@ static const struct {
 	 * Windows numbered from 1 and closing up, the mouse, a long history, no
 	 * prefix (Ctrl+B is the at menu), and no timer redrawing the status line
 	 * (TMUX-112). at-terminal (Windows Terminal 1.25) speaks the kitty keyboard
-	 * protocol and synchronized output but never names itself, so both are
-	 * asked for.
+	 * protocol, synchronized output and OSC 8 hyperlinks but never names
+	 * itself, so all three are asked for. With hyperlinks passed on, a
+	 * program's links reach the terminal, which opens one on Ctrl+click, so a
+	 * plain click (one that only focuses a pane) opens nothing (ATC-154).
 	 */
 	{ "base-index",
 	  "1" },
@@ -55,6 +57,8 @@ static const struct {
 	  "xterm-256color:Eneks=\\E[>1u:Dseks=\\E[<u" },
 	{ "terminal-features[91]",
 	  "xterm-256color:sync" },
+	{ "terminal-features[92]",
+	  "xterm-256color:hyperlinks" },
 	{ "prefix",
 	  "None" },
 

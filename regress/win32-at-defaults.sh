@@ -3,7 +3,8 @@
 # The at system's settings are built in (TMUX-210): a server reads no
 # configuration file of its own, starts with them, returns to them on set -u,
 # leaves what only the at server does (Win+`) to the at server, and lets a
-# plain drag select over a program that asked only for clicks (TMUX-227).
+# plain drag select over a program that asked only for clicks (TMUX-227), and
+# passes a program's links on to the terminal (ATC-154).
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -80,7 +81,8 @@ drag() {
 $TMUX new -d -s drag -x 81 -y 24 "$(program 1000)" </dev/null || fail "start drag"
 printf "set -g default-shell '%s'\nset -g status off\n" "$COMSPEC" >"$HOMEDIR/outer.conf"
 $OUTER -f "$HOMEDIR/outer.conf" new -d -x 81 -y 24 </dev/null || fail "start outer"
-$OUTER send-keys "set TMUX=" Enter "\"$(cygpath -w "$TEST_TMUX")\" -L$TEST_SOCKET attach -t drag" Enter
+# The client names its terminal as at-terminal's does.
+$OUTER send-keys "set TMUX=" Enter "set TERM=xterm-256color" Enter "\"$(cygpath -w "$TEST_TMUX")\" -L$TEST_SOCKET attach -t drag" Enter
 attached() { [ "$($TMUX list-clients | wc -l)" = 1 ]; }
 wait_until attached || fail "no client attached"
 # The line's row on the client's screen, under the window bar.
@@ -109,6 +111,27 @@ sleep 1
 [ "$(flag pane_in_mode)" = 0 ] || fail "a drag the program asked for started copy mode"
 ! $TMUX show-buffer >/dev/null 2>&1 || fail "a drag the program asked for was copied"
 echo 'PASS: a drag reaches a program that asked for drags'
+
+# A program's links reach the terminal as OSC 8 hyperlinks, so at-terminal
+# opens one on Ctrl+click and a plain click, one that only focuses a pane,
+# opens nothing (ATC-154). The outer server's pane holds what the client drew,
+# its links included.
+features() { $TMUX display -p '#{client_termfeatures}' | tr -d '\r'; }
+features | grep -q hyperlinks ||
+    fail "the client has no hyperlinks feature: $(features)"
+cat >"$HOMEDIR/link.sh" <<'EOF'
+printf '\033]8;;https://example.com/at-link\033\\LINK TEXT\033]8;;\033\\\n'
+exec sleep 600
+EOF
+$TMUX respawn-pane -k -t drag \
+    "$(cygpath -d /usr/bin/bash) $(cygpath -m "$HOMEDIR/link.sh")"
+linked() {
+	$OUTER capture-pane -ep | tr -d '\r' |
+	    grep -q 'https://example.com/at-link.*LINK TEXT'
+}
+wait_until linked ||
+    fail "the link never reached the terminal: $($OUTER capture-pane -ep | grep 'LINK TEXT' | od -c | head -5)"
+echo "PASS: a program's link reaches the terminal as a hyperlink"
 
 echo 'ALL AT DEFAULTS TESTS PASSED'
 exit 0
