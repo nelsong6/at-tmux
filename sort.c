@@ -381,8 +381,15 @@ sort_get_clients(u_int *n, struct sort_criteria *sort_crit)
 	static struct client	**l = NULL;
 	static u_int		  lsz = 0;
 
+	/*
+	 * A client is named once it has identified itself, so one that has
+	 * connected and not yet done so is left out: comparing its NULL name
+	 * ended the server whenever choose-client was rebuilt then (TMUX-233).
+	 */
 	i = 0;
 	TAILQ_FOREACH(c, &clients, entry) {
+		if (~c->flags & CLIENT_IDENTIFIED)
+			continue;
 		if (lsz <= i) {
 			lsz += 100;
 			l = xreallocarray(l, lsz, sizeof *l);
