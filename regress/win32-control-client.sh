@@ -158,7 +158,7 @@ if ci_desktop; then
 		wait_until ctl_has '^global='
 	) | $TMUX -C attach -tctrl >$CTL 2>&1 &
 	wait_until ctl_has '^attached$' || fail "global: no client: $(cat $CTL)"
-	PS="$(cygpath "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+	PS="$(cygpath -u "$POWERSHELL_EXE")"
 	PRESS=$("$PS" -NoProfile -ExecutionPolicy Bypass \
 	    -File "$(dirname "$0")/win32-press.ps1" 2>&1 | tr -d '\r')
 	echo "press: $PRESS"

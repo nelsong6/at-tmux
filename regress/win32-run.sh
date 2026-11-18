@@ -1,12 +1,12 @@
 #!/bin/sh
 
 # win32-run.sh TEST: runs regress/TEST and fails it if it leaves anything
-# running from this checkout's build folder, naming each process and then
-# ending it. It fails without running TEST if something from the build folder
-# is running already, and ends nothing then.
+# running from the build folder (TEST_BUILD, else this checkout's build),
+# naming each process and then ending it. It fails without running TEST if
+# something from the build folder is running already, and ends nothing then.
 
 dir=$(dirname "$0")
-build=$(cygpath -aw "$dir/../build")
+build=$(cygpath -aw "${TEST_BUILD:-$dir/../build}")
 
 # running SECONDS ACTION: lists the build folder's processes still running
 # after up to SECONDS for them to exit; ACTION end then ends them.

@@ -58,7 +58,7 @@ $TMUX start-program -K M-BTab "$WTMUX" "-L$TEST_SOCKET" \
 [ -z "$($TMUX show -gqv @launch-key | tr -d '\r')" ] ||
     fail "key ran without a client"
 
-PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -m "$POWERSHELL_EXE")"
 attach() {
     "$PS" -NoProfile -ExecutionPolicy Bypass \
         -File "$(cygpath -w "$(dirname "$0")/win32-pty.ps1")" \

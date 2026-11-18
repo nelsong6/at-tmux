@@ -5,7 +5,7 @@ TERM=screen
 export TERM
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 case "$(uname -s)" in
- MINGW*|MSYS*) . "$(dirname "$0")/win32-test.sh"; EXE=$(cygpath -ma "$TEST_TMUX"); PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe" ;;
+ MINGW*|MSYS*) . "$(dirname "$0")/win32-test.sh"; EXE=$(cygpath -ma "$TEST_TMUX"); PS="$(cygpath -m "$POWERSHELL_EXE")" ;;
  *) TEST_SOCKET="panel-$$"; EXE="$TEST_TMUX"; PS=/bin/sh ;;
 esac
 PATH="$(cd "$(dirname "$TEST_TMUX")" && pwd):$PATH"

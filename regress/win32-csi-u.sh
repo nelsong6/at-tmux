@@ -33,7 +33,7 @@ fail() {
 
 CFG="$OUT/csi-u.conf"
 cat >"$CFG" <<EOF
-set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+set -g default-shell "$(cygpath -m "$POWERSHELL_EXE")"
 set -g status off
 set -s extended-keys on
 set -s terminal-features[90] 'xterm-256color:extkeys'

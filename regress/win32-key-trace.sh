@@ -23,7 +23,7 @@ trap "$OUTER kill-server 2>/dev/null; $TMUX kill-server 2>/dev/null; rm -rf $OUT
 
 CFG="$OUT/trace.conf"
 cat >"$CFG" <<EOF
-set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+set -g default-shell "$(cygpath -m "$POWERSHELL_EXE")"
 set -g status off
 EOF
 
@@ -70,7 +70,7 @@ $OUTER send-keys Escape
 
 # A pane whose console has stopped reading: more input than the pipe holds
 # leaves the write blocked, and that pane is named.
-PS="$(cygpath -u "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -u "$POWERSHELL_EXE")"
 CONSOLE=$("$PS" -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"ParentProcessId=$(tr -d '\r' <<EOF
 $($TMUX display-message -p '#{pid}')
 EOF

@@ -34,14 +34,14 @@ cd "$OUT" || exit 1
 # given sixel and titles by hand. Every surface reads @probe; window-style does
 # too, and gives a blue background only for "blue".
 cat >outer.conf <<EOF
-set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+set -g default-shell "$(cygpath -m "$POWERSHELL_EXE")"
 # The outer server stands in for Windows Terminal, whose TERM is xterm-256color.
 set -g default-terminal xterm-256color
 set -g status off
 set -g window-size manual
 EOF
 cat >test.conf <<EOF
-set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+set -g default-shell "$(cygpath -m "$POWERSHELL_EXE")"
 set -as terminal-features ',xterm-256color:sixel:title'
 set -g status-left ''
 set -g status-right 'S:#{@probe}:#{@claude}'
@@ -61,7 +61,10 @@ EOF
 E='[string][char]27'
 Q='[string][char]34'
 PRINT="[Console]::Write($E + '[H' + $E + '[2J' + $E + 'Pq' + $Q + '1;1;20;12#1;2;100;0;0#1!20~-!20~' + $E + '\\' + 'AFTER-IMAGE')"
-$TMUX -vv -f test.conf new -d -x60 -y16 \
+# The window is named: one named after its pane's title takes the console's,
+# which is PowerShell's full path (with "Administrator: " on an elevated
+# runner), and fills the status line, leaving status-right no room.
+$TMUX -vv -f test.conf new -d -n redraw -x60 -y16 \
     "while (-not (Test-Path '$(cygpath -m "$OUT/go")')) { Start-Sleep -Milliseconds 50 }; $PRINT; Start-Sleep 120" \
     </dev/null || exit 1
 LEFT=$($TMUX list-panes -F '#{pane_id}' | tr -d '\r')

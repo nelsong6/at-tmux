@@ -96,7 +96,7 @@ $TMUX source-file "$NATIVE/unicode.conf"
 cat >"$OUT/unicode.ps1" <<'PS'
 [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env:TMUX_ENV_UNICODE))
 PS
-POWERSHELL="$SYSTEMROOT/System32/WindowsPowerShell/v1.0/powershell.exe"
+POWERSHELL="$(cygpath -m "$POWERSHELL_EXE")"
 $TMUX run-shell -t probe:^ "call \"$POWERSHELL\" -NoProfile -NonInteractive -File \"$NATIVE/unicode.ps1\" > \"$NATIVE/unicode.txt\""
 snapshot=$(tr -d '\r' <"$OUT/unicode.txt")
 expected=$(printf 'caf\303\251 \346\235\261\344\272\254' | base64)

@@ -42,7 +42,7 @@ fail() {
 	exit 1
 }
 
-PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -m "$POWERSHELL_EXE")"
 cat >outer.conf <<EOF
 set -g default-shell "$PS"
 set -g status off

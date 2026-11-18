@@ -7,6 +7,11 @@ on:
   push:
     branches: [master]
 
+# One push at a time, never cancelled: each fast-forwards from the one before.
+concurrency:
+  group: github-sync-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   sync:
     runs-on: ubuntu-latest

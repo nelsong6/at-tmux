@@ -261,23 +261,12 @@ The resulting `tmux.exe` is a single statically-linked binary in
 `build/Release/`. For debug builds, use `--config Debug` (output in
 `build/Debug/`). Copy `tmux.exe` to a directory in `%PATH%`.
 
-CI runs on Forgejo Actions (`.forgejo/workflows/ci.yml`) for every pull
-request and every push to master; the macOS build runs on GitHub
-(`.github/workflows/macos.yml`) from Forgejo's push mirror. Every master commit
-whose CI passes becomes a Forgejo release, tagged `git describe`, with
-`tmux-windows-<tag>.zip` and its `.sha256`.
-
-After merging, update the default-branch checkout and publish its signed
-Forgejo release to the home tools share:
-
-```powershell
-git switch master
-git pull --ff-only origin master
-pwsh -NoProfile -File .\publish.ps1
-```
-
-`publish-tool` must be on PATH. The script checks the release's SHA256 and
-runs the home profile's `tmux/sync-servers.ps1` afterwards if it exists.
+CI comes from pipeline-templates' `cmake` and `release` suites: a pull request
+that changes the code builds the `ci` preset in `CMakePresets.json` and runs
+the `regress/` tests through CTest, and every merge to master that
+changes the build becomes a Forgejo release, `v3.6a.N`, with
+`tmux-windows-<tag>.zip` and `at-protocol.txt`, which home-sync installs on
+every home PC.
 
 ## Debugging
 

@@ -32,7 +32,7 @@ cd "$OUT" || exit 1
 # Windows are sized by hand: resizing a pane drops its images, and the resize
 # below is the client's alone.
 cat >test.conf <<EOF
-set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+set -g default-shell "$(cygpath -m "$POWERSHELL_EXE")"
 # The outer server stands in for Windows Terminal, whose TERM is xterm-256color.
 set -g default-terminal xterm-256color
 set -g status off

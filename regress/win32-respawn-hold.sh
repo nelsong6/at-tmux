@@ -15,7 +15,7 @@ TMUX="$TEST_TMUX -L$TEST_SOCKET"
 OUTER="$TEST_TMUX -L$TEST_SOCKET-outer"
 OUT=$(mktemp -d)
 trap '$OUTER kill-server 2>/dev/null; $TMUX kill-server 2>/dev/null; rm -rf "$OUT"' 0 1 15
-PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -m "$POWERSHELL_EXE")"
 
 fail() {
 	echo "FAIL: $1"

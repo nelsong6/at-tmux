@@ -354,7 +354,9 @@ if(MSVC)
     )
     # A release ships its PDB, so a crash log names function, file and line.
     # /DEBUG alone turns off the optimizations a Release link has by default.
-    target_compile_options(tmux PRIVATE $<$<CONFIG:Release>:/Zi>)
+    # /Z7 keeps each object's debug information in the object, which sccache can
+    # cache (it can't a shared /Zi PDB); the link still writes tmux.pdb.
+    target_compile_options(tmux PRIVATE $<$<CONFIG:Release>:/Z7>)
     target_link_options(tmux PRIVATE
         $<$<CONFIG:Release>:/DEBUG>
         $<$<CONFIG:Release>:/OPT:REF>
@@ -370,9 +372,206 @@ add_library(tmux-wer SHARED win32/tmux-wer.c win32/win32-crash.c)
 target_compile_definitions(tmux-wer PRIVATE _CRT_SECURE_NO_WARNINGS)
 add_dependencies(tmux tmux-wer)
 
-# Install
 add_executable(alt-tab-test regress/alt-tab.c)
+
+# tmux.exe loads conpty.dll and OpenConsole.exe, the pseudoconsole Windows Terminal
+# ships, from its own folder, so the package carries them: Microsoft's NuGet package,
+# through Artifact Keeper.
+set(CONPTY_VERSION 1.25.260930003)
+set(CONPTY_PACKAGE ${CMAKE_CURRENT_BINARY_DIR}/conpty-${CONPTY_VERSION}.nupkg)
+file(DOWNLOAD
+    https://artifacts.home.romaine.life/nuget/nuget/v3/flatcontainer/microsoft.windows.console.conpty/${CONPTY_VERSION}/microsoft.windows.console.conpty.${CONPTY_VERSION}.nupkg
+    ${CONPTY_PACKAGE}
+    EXPECTED_HASH SHA256=02b07b349af66d801159bdf9e440d4a1ce78bb951f37fc8609731665afdae7ee
+    TLS_VERIFY ON)
+file(ARCHIVE_EXTRACT INPUT ${CONPTY_PACKAGE} DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/conpty
+    PATTERNS runtimes/win-x64/native/conpty.dll build/native/runtimes/x64/OpenConsole.exe)
+
+# The at-protocol commit this build speaks, beside tmux.exe and as its own release
+# asset, for home-sync to install it with the at-terminal that speaks the same (ATT-7).
+set(AT_PROTOCOL_PORT ${CMAKE_CURRENT_SOURCE_DIR}/dep/vcpkg-overlay-ports/at-protocol/portfile.cmake)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${AT_PROTOCOL_PORT})
+file(STRINGS ${AT_PROTOCOL_PORT} AT_PROTOCOL_REF REGEX "^set\\(REF [0-9a-f]+\\)")
+string(REGEX REPLACE "^set\\(REF ([0-9a-f]+)\\).*$" "\\1" AT_PROTOCOL_REF "${AT_PROTOCOL_REF}")
+if(NOT AT_PROTOCOL_REF)
+    message(FATAL_ERROR "no set(REF <commit>) in ${AT_PROTOCOL_PORT}")
+endif()
+# The commit and a LF, as releases have always had it; file(WRITE) ends it CRLF on Windows.
+file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/at-protocol.txt CONTENT "${AT_PROTOCOL_REF}\n" NEWLINE_STYLE UNIX)
+
+# Install: bin/ is the release's tmux-windows-<tag>.zip and at-protocol.txt is
+# also its own asset (pipeline-templates' fleet.json).
 install(TARGETS tmux RUNTIME DESTINATION bin)
+install(FILES
+    $<TARGET_FILE:tmux-wer>
+    $<TARGET_PDB_FILE:tmux>
+    ${CMAKE_CURRENT_BINARY_DIR}/conpty/runtimes/win-x64/native/conpty.dll
+    ${CMAKE_CURRENT_BINARY_DIR}/conpty/build/native/runtimes/x64/OpenConsole.exe
+    ${CMAKE_CURRENT_BINARY_DIR}/at-protocol.txt
+    DESTINATION bin)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/at-protocol.txt DESTINATION .)
+
+# Tests: the regress/ scripts, each run by Git Bash through win32-run.sh. pipeline-
+# templates' cmake suite runs them on every PR that changes the code, four at a
+# time, and a failing one keeps the change from the PCs (PIPT-21). Each test has
+# a folder of its own under t/ (regress/win32-stage.cmake): its own copy of the
+# tmux.exe it runs and what that test needs beside it. Its TEMP is a folder of its
+# own too, under a short root: libevent makes its socket pairs from a temporary
+# file name, which must fit an AF_UNIX path (108 characters).
+# win32-run.sh fails a test that leaves anything running from its folder
+# (TEST_BUILD) and ends it, so it touches no other test's processes; TEST_SOCKET
+# names the test's own servers (\\.\pipe\tmux-<user>-<label>). TIMEOUT is seconds.
+enable_testing()
+find_program(TMUX_TEST_BASH bash PATHS "$ENV{ProgramFiles}/Git/bin" NO_DEFAULT_PATH)
+find_program(TMUX_TEST_PWSH pwsh)
+if(NOT TMUX_TEST_BASH OR NOT TMUX_TEST_PWSH)
+    message(FATAL_ERROR "the tests need Git for Windows' bash ($ENV{ProgramFiles}/Git/bin) and pwsh")
+endif()
+set(TMUX_TEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/t)
+# The Windows PowerShell the tests' panes run, with no profile
+# (regress/win32-noprofile.c): the account's profile printed into the panes.
+add_executable(test-powershell regress/win32-noprofile.c)
+set_target_properties(test-powershell PROPERTIES OUTPUT_NAME powershell
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test-powershell)
+set(TMUX_TEST_CONPTY ${CMAKE_CURRENT_BINARY_DIR}/conpty-files)
+file(COPY ${CMAKE_CURRENT_BINARY_DIR}/conpty/runtimes/win-x64/native/conpty.dll
+    ${CMAKE_CURRENT_BINARY_DIR}/conpty/build/native/runtimes/x64/OpenConsole.exe
+    DESTINATION ${TMUX_TEST_CONPTY})
+set_property(GLOBAL PROPERTY TMUX_TEST_STAGE "")
+string(MD5 TMUX_TEST_TEMP "${CMAKE_CURRENT_BINARY_DIR}")
+string(SUBSTRING ${TMUX_TEST_TEMP} 0 8 TMUX_TEST_TEMP)
+file(TO_CMAKE_PATH "$ENV{TEMP}/tmux-tests-${TMUX_TEST_TEMP}" TMUX_TEST_TEMP)
+string(LENGTH "${TMUX_TEST_TEMP}" length)
+if(length GREATER 70)
+    message(FATAL_ERROR "TEMP is too long for the tests' temporary folders: ${TMUX_TEST_TEMP}")
+endif()
+
+# tmux_test(NAME SCRIPT KIND [TIMEOUT s] [LOCK resource]): KIND names what sits
+# beside the test's tmux.exe (win32-stage.cmake).
+function(tmux_test name script kind)
+    cmake_parse_arguments(T "" "TIMEOUT;LOCK" "" ${ARGN})
+    set(dir ${TMUX_TEST_DIR}/${name})
+    add_test(NAME ${name} COMMAND ${TMUX_TEST_BASH} regress/win32-run.sh ${script}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    get_property(tests GLOBAL PROPERTY TMUX_TEST_STAGE)
+    list(LENGTH tests number)
+    file(TO_NATIVE_PATH ${TMUX_TEST_TEMP}/${number} temp)
+    # Git Bash's mktemp reads TMPDIR before TEMP.
+    set(environment TEST_TMUX=${dir}/tmux.exe TEST_BUILD=${dir} TEMP=${temp} TMP=${temp}
+        TEST_POWERSHELL=${dir}/shell/powershell.exe
+        TMPDIR=${TMUX_TEST_TEMP}/${number})
+    set(fixtures staged)
+    if(kind STREQUAL "keys")
+        list(APPEND environment TEST_LEGACY_TMUX=${dir}/legacy-keys/tmux.exe
+            TEST_SHIFTED_TMUX=${dir}/shifted-keys/tmux.exe
+            TEST_DEFAULTS_TMUX=${dir}/other-defaults/tmux.exe)
+        list(APPEND fixtures keys-staged)
+    endif()
+    set_tests_properties(${name} PROPERTIES ENVIRONMENT "${environment}"
+        FIXTURES_REQUIRED "${fixtures}")
+    if(T_TIMEOUT)
+        set_tests_properties(${name} PROPERTIES TIMEOUT ${T_TIMEOUT})
+    endif()
+    if(T_LOCK)
+        set_tests_properties(${name} PROPERTIES RESOURCE_LOCK ${T_LOCK})
+    endif()
+    set_property(GLOBAL APPEND PROPERTY TMUX_TEST_STAGE "${name}=${kind}=${number}")
+endfunction()
+
+# The build's tmux.exe, with no ConPTY beside it: Windows' own console. A global
+# key is registered for the whole desktop, so the tests that bind one take turns.
+foreach(script win32-key-trace win32-basic win32-at-defaults win32-claude-swarm
+        win32-format-strings win32-conf-syntax)
+    tmux_test(${script} ${script}.sh build)
+endforeach()
+foreach(script conf-crlf win32-pty-close win32-keys win32-csi-u win32-late-terminal
+        win32-detach-exec)
+    tmux_test(${script} ${script}.sh build TIMEOUT 300)
+endforeach()
+foreach(script win32-has-session win32-file win32-strftime win32-char-width
+        win32-tty-pending win32-clock win32-respawn-failed win32-respawn-hold)
+    tmux_test(${script} ${script}.sh build)
+endforeach()
+foreach(script win32-message-log win32-run-shell-background)
+    tmux_test(${script} ${script}.sh build TIMEOUT 300)
+endforeach()
+foreach(script win32-layout win32-attach-size win32-cell-size win32-wrap)
+    tmux_test(${script} ${script}.sh build)
+endforeach()
+tmux_test(win32-control-client win32-control-client.sh build LOCK global-keys)
+foreach(script win32-hidden-text win32-client-name)
+    tmux_test(${script} ${script}.sh build TIMEOUT 180)
+endforeach()
+foreach(script win32-pane-clear win32-popup-output)
+    tmux_test(${script} ${script}.sh build TIMEOUT 300)
+endforeach()
+foreach(script win32-linesize win32-palette)
+    tmux_test(${script} ${script}.sh build)
+endforeach()
+foreach(script win32-process-watch win32-environment win32-child-path)
+    tmux_test(${script} ${script}.sh build TIMEOUT 300)
+endforeach()
+foreach(script win32-keep-alive win32-set-status win32-single-window win32-copy-name
+        win32-caller win32-reorder-session win32-session-set)
+    tmux_test(${script} ${script}.sh build)
+endforeach()
+foreach(script win32-restore-programs win32-session-offer win32-restore-set
+        win32-busy-server win32-new-window-draw win32-new-window-options
+        win32-option-rename win32-system-app)
+    tmux_test(${script} ${script}.sh build TIMEOUT 300)
+endforeach()
+# A crash read with the PDB beside the exe.
+tmux_test(win32-session-ended win32-session-ended.sh pdb TIMEOUT 300)
+tmux_test(win32-global-foreground win32-global-foreground.sh build TIMEOUT 300 LOCK global-keys)
+# Runs alt-tab-test.exe from beside tmux.exe.
+tmux_test(win32-start-program win32-start-program.sh alt-tab TIMEOUT 300 LOCK global-keys)
+
+# Beside conpty.dll and OpenConsole.exe, as a release runs: a console changes
+# hands only through conpty.dll.
+foreach(script win32-pty-close win32-pane-clear win32-popup-output win32-sixel
+        win32-sixel-cap win32-placed-images win32-option-redraw win32-upgrade
+        win32-move-pane panel panel-fill win32-close win32-pane-footer win32-strip
+        win32-flight)
+    tmux_test(conpty-${script} ${script}.sh conpty)
+endforeach()
+
+# Upgrades between this build and builds with other key numbers and defaults,
+# built from the pre-footer commit and from this one changed
+# (build-upgrade-key-fixtures.ps1). It compiles four files at a time, so it takes
+# all four of CTest's slots while it runs.
+foreach(script win32-upgrade-keys win32-upgrade-defaults)
+    tmux_test(conpty-${script} ${script}.sh keys TIMEOUT 300)
+endforeach()
+add_test(NAME build-key-fixtures COMMAND ${TMUX_TEST_PWSH} -NoLogo -NoProfile -NonInteractive
+    -File regress/build-upgrade-key-fixtures.ps1 -CMake ${CMAKE_COMMAND}
+    -Build ${CMAKE_CURRENT_BINARY_DIR} -Conpty ${TMUX_TEST_CONPTY}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set_tests_properties(build-key-fixtures PROPERTIES FIXTURES_SETUP keys PROCESSORS 4)
+
+# The package of a home PC: its PDB beside tmux.exe and none at the build path.
+tmux_test(package-win32-crash-log win32-crash-log.sh package TIMEOUT 300)
+
+get_property(TMUX_TEST_STAGE GLOBAL PROPERTY TMUX_TEST_STAGE)
+set(TMUX_TEST_STAGE_FILE ${CMAKE_CURRENT_BINARY_DIR}/test-stage-$<CONFIG>.cmake)
+file(GENERATE OUTPUT ${TMUX_TEST_STAGE_FILE} CONTENT "set(TESTS \"${TMUX_TEST_STAGE}\")
+set(EXE \"$<TARGET_FILE:tmux>\")
+set(WER \"$<TARGET_FILE:tmux-wer>\")
+set(ALTTAB \"$<TARGET_FILE:alt-tab-test>\")
+set(POWERSHELL \"$<TARGET_FILE:test-powershell>\")
+set(PDB \"$<TARGET_PDB_FILE:tmux>\")
+set(CONPTY \"${TMUX_TEST_CONPTY}\")
+set(DIR \"${TMUX_TEST_DIR}\")
+set(TEMP \"${TMUX_TEST_TEMP}\")
+set(FIXTURES \"${CMAKE_CURRENT_BINARY_DIR}\")
+")
+foreach(mode stage keys restore)
+    add_test(NAME ${mode}-tests COMMAND ${CMAKE_COMMAND} -DMODE=${mode}
+        -DSTAGE=${TMUX_TEST_STAGE_FILE} -P ${CMAKE_CURRENT_SOURCE_DIR}/regress/win32-stage.cmake)
+endforeach()
+set_tests_properties(stage-tests PROPERTIES FIXTURES_SETUP staged)
+set_tests_properties(keys-tests PROPERTIES FIXTURES_SETUP keys-staged
+    FIXTURES_REQUIRED "keys;staged")
+set_tests_properties(restore-tests PROPERTIES FIXTURES_CLEANUP staged)
 
 # Print summary
 message(STATUS "")

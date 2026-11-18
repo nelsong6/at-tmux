@@ -28,6 +28,7 @@ tmux.1.*
 # Windows build output
 build/
 build2/
+out/
 *.exe
 *.obj
 *.pdb

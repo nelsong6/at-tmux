@@ -1,6 +1,5 @@
 #!/bin/sh
-# Mac and Linux: build, then run the tests CI's linux job lists. On Windows, Forgejo
-# runs the whole suite on every master commit before it releases.
+# Mac and Linux: build, then run the tests that cover the Unix build.
 set -e
 case $(uname -s) in
 MINGW*|MSYS*|CYGWIN*) exit 0 ;;
@@ -8,7 +7,7 @@ esac
 cd "$(dirname "$0")/.."
 [ -f Makefile ] || { sh autogen.sh; ./configure --enable-utf8proc; }
 make -j4
-for t in $(sed -n 's/.*TEST_TMUX="$PWD\/tmux" sh regress\/\([a-z0-9-]*\.sh\).*/\1/p' .forgejo/workflows/tests.yml); do
+for t in conf-crlf.sh palette.sh panel.sh panel-fill.sh hold.sh upgrade.sh flight.sh play-sound.sh claude-attention.sh; do
 	echo "== $t"
 	TEST_TMUX="$PWD/tmux" sh "regress/$t"
 done

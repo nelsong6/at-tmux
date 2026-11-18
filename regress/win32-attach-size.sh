@@ -21,7 +21,7 @@ trap "$TMUX kill-server 2>/dev/null; rm -rf $OUT" 0 1 15
 
 $TMUX -fNUL new -d -x100 -y30 </dev/null || exit 1
 
-PS="$(cygpath "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -u "$POWERSHELL_EXE")"
 "$PS" -NoProfile -ExecutionPolicy Bypass \
     -File "$(cygpath -w "$(dirname "$0")/win32-pty.ps1")" \
     -Command "\"$(cygpath -wa "$TEST_TMUX")\" -L$TEST_SOCKET set -g @identified 1 ; run -d 3 ; attach" \

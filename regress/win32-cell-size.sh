@@ -22,7 +22,7 @@ wait_gone
 OUT=$(mktemp -d)
 trap "$TMUX kill-server 2>/dev/null; rm -rf $OUT" 0 1 15
 
-PS="$(cygpath "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -u "$POWERSHELL_EXE")"
 
 cell() {
 	$TMUX $1 -F "#{$2_cell_width}x#{$2_cell_height}" 2>/dev/null | tr -d '\r'

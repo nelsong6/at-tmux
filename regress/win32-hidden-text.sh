@@ -26,7 +26,7 @@ trap "$OUTER kill-server 2>/dev/null; $TMUX kill-server 2>/dev/null; rm -rf $OUT
 DOT=$(printf '\302\267')
 CFG="$OUT/hidden.conf"
 cat >"$CFG" <<EOF
-set -g default-shell "$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+set -g default-shell "$(cygpath -m "$POWERSHELL_EXE")"
 set -g status off
 EOF
 INNER_CFG="$OUT/inner.conf"

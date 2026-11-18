@@ -32,7 +32,7 @@ fail() {
 }
 
 WATCH=$(cygpath -wa "$(dirname "$0")/win32-close-watch.ps1")
-PS="$SYSTEMROOT\System32\WindowsPowerShell\v1.0\powershell.exe"
+PS="$(cygpath -w "$POWERSHELL_EXE")"
 
 # watch NAME [HANG]: the command for a program that records its events in
 # mark-NAME and returns from its handler after HANG seconds.

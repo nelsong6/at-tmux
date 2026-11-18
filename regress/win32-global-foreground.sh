@@ -34,7 +34,7 @@ $TMUX bind -T global 'W-`' set -gF @fg '#{global_key_terminal_foreground}' ||
     fail "format set outside a global key"
 
 if ci_desktop; then
-	PS="$(cygpath "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+	PS="$(cygpath -u "$POWERSHELL_EXE")"
 	: >$OUT.raw
 	"$PS" -NoProfile -ExecutionPolicy Bypass \
 	    -File "$(cygpath -w "$(dirname "$0")/win32-foreground.ps1")" \

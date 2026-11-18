@@ -21,7 +21,7 @@ OUT=$(mktemp -d)
 trap "$TMUX kill-server 2>/dev/null; rm -rf $OUT" 0 1 15
 T=$(printf '\t')
 
-PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -m "$POWERSHELL_EXE")"
 SYS=$(cygpath -w "$SYSTEMROOT")
 LONG="$SYS\System32\PING.EXE -n 300 127.0.0.1 >nul"
 cat >"$OUT/test.conf" <<EOF

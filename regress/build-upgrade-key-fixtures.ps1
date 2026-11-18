@@ -1,19 +1,38 @@
-param([string]$CMake = 'cmake', [string]$LegacyExecutable)
+# Build is the current build's folder (its CMakeCache.txt names the vcpkg packages the
+# fixtures share), Conpty a folder holding conpty.dll and OpenConsole.exe; the fixtures
+# are built inside Build. CTest runs this before the key upgrade tests (CMakeLists.txt).
+param([string]$CMake = 'cmake', [string]$LegacyExecutable, [string]$Build, [string]$Conpty)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
+if (-not $Build) { $Build = "$repo/build" }
+if (-not $Conpty) { $Conpty = "$Build/upgrade" }
 $legacyCommit = '529c862fae20fa4e3c55ad342a4999011ab291cb'
-$dependencyCache = Select-String -Path "$repo/build/CMakeCache.txt" -Pattern '^VCPKG_INSTALLED_DIR:[^=]+=(.+)$'
+$dependencyCache = Select-String -Path "$Build/CMakeCache.txt" -Pattern '^VCPKG_INSTALLED_DIR:[^=]+=(.+)$'
 if (-not $dependencyCache) { throw 'Current build dependency location missing' }
 $dependencyInstall = $dependencyCache.Matches[0].Groups[1].Value
+# Where vcpkg builds a port, if the current build names one (the cmake suite's short folder).
+$installOptions = Select-String -Path "$Build/CMakeCache.txt" -Pattern '^VCPKG_INSTALL_OPTIONS:[^=]+=(.+)$'
+# One project at a time, four compiles in it.
+if (-not $env:_CL_) { $env:_CL_ = '/MP4' }
+# No MSBuild node outlives the build.
+$env:MSBUILDDISABLENODEREUSE = '1'
 
 function Build-Fixture([string]$name, [string]$commit, [bool]$shift, [bool]$defaults = $false) {
-    $source = Join-Path $repo "build/$name-source"
-    $output = Join-Path $repo "build/$name"
+    $source = Join-Path $Build "$name-source"
+    $output = Join-Path $Build $name
+    # A kept build folder holds the last run's source: the fixture starts from its commit again.
+    if (Test-Path $source) {
+        git -C $repo worktree remove --force $source 2>$null
+        if (Test-Path $source) { Remove-Item -Recurse -Force $source }
+    }
+    git -C $repo worktree prune
     git -C $repo worktree add --detach $source $commit
     if ($LASTEXITCODE) { throw "Creating $name source failed" }
     # The historical source predates the runner's manifest-mode toolchain.
     if (-not (Test-Path "$source/vcpkg.json")) {
         Copy-Item "$repo/vcpkg.json" "$source/vcpkg.json"
+        # and the overlay ports it names
+        if (-not (Test-Path "$source/dep")) { Copy-Item -Recurse "$repo/dep" "$source/dep" }
     }
     if ($shift) {
         $header = Join-Path $source 'tmux.h'
@@ -39,11 +58,14 @@ function Build-Fixture([string]$name, [string]$commit, [bool]$shift, [bool]$defa
         "-DVCPKG_INSTALLED_DIR=$dependencyInstall",
         '-DVCPKG_TARGET_TRIPLET=x64-windows-static')
     if ($env:VCPKG_MANIFEST_MODE -eq 'OFF') { $cmakeArgs += '-DVCPKG_MANIFEST_MODE=OFF' }
+    if ($installOptions) { $cmakeArgs += "-DVCPKG_INSTALL_OPTIONS=$($installOptions.Matches[0].Groups[1].Value)" }
     & $CMake @cmakeArgs
     if ($LASTEXITCODE) { throw "Configuring $name failed" }
-    & $CMake --build $output --config Debug --parallel 4
+    & $CMake --build $output --config Debug --parallel 1
     if ($LASTEXITCODE) { throw "Building $name failed" }
-    Copy-Item "$repo/build/upgrade/conpty.dll", "$repo/build/upgrade/OpenConsole.exe" "$output/Debug/"
+    # Built, the source leaves no worktree registered in the checkout.
+    git -C $repo worktree remove --force $source
+    Copy-Item "$Conpty/conpty.dll", "$Conpty/OpenConsole.exe" "$output/Debug/"
     return "$output/Debug/tmux.exe"
 }
 
@@ -57,7 +79,7 @@ $defaults = Build-Fixture 'other-defaults' 'HEAD' $false $true | Select-Object -
 $env:TEST_LEGACY_TMUX = $LegacyExecutable.Replace('\', '/')
 $env:TEST_SHIFTED_TMUX = $shifted.Replace('\', '/')
 $env:TEST_DEFAULTS_TMUX = $defaults.Replace('\', '/')
-$env:TEST_TMUX = './build/upgrade/tmux.exe'
+$env:TEST_TMUX = "$Conpty/tmux.exe".Replace('\', '/')
 if ($env:GITHUB_ENV) {
     "TEST_LEGACY_TMUX=$env:TEST_LEGACY_TMUX" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
     "TEST_SHIFTED_TMUX=$env:TEST_SHIFTED_TMUX" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV

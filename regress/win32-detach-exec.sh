@@ -25,7 +25,7 @@ fail() {
 	FAIL=1
 }
 
-PS="$(cygpath "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -u "$POWERSHELL_EXE")"
 WIN=$(cygpath -wa "$TEST_TMUX")
 
 $TMUX -fNUL new -d -x80 -y24 </dev/null || exit 1

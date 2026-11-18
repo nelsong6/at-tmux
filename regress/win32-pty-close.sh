@@ -17,7 +17,7 @@ fail() {
 
 $TMUX -fNUL new -d -s close -n keep </dev/null || fail "start server"
 FLOOD=$(cygpath -wa "$(dirname "$0")/win32-pty-flood.ps1")
-PS="$SYSTEMROOT\System32\WindowsPowerShell\v1.0\powershell.exe"
+PS="$(cygpath -w "$POWERSHELL_EXE")"
 for i in 1 2 3 4; do
 	$TMUX new-window -d -t close: -n "busy$i" \
 	    "$PS" -NoProfile -File "$FLOOD" || fail "start busy$i"

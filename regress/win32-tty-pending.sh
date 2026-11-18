@@ -18,7 +18,7 @@ wait_gone
 
 trap "$TMUX kill-server 2>/dev/null" 0 1 15
 
-PS="$(cygpath -u "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -u "$POWERSHELL_EXE")"
 CHANNEL=$(cygpath -w "$(dirname "$0")/win32-tty-channel.ps1")
 
 fail() {

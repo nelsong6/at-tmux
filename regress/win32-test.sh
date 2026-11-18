@@ -3,6 +3,12 @@
 SHELL=$COMSPEC
 export SHELL
 
+# The Windows PowerShell a test's panes run. Under CTest it is TEST_POWERSHELL,
+# win32-noprofile.c's powershell.exe, which starts it with -NoProfile: the
+# profile of the account running the tests printed errors into the panes the
+# tests read (PIPT-21). A test names it in the form it needs with cygpath.
+POWERSHELL_EXE=${TEST_POWERSHELL:-$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe}
+
 if [ -z "$TEST_SOCKET" ]; then
 	_socket_dir=$(mktemp -d) || exit 1
 	_socket_name=${_socket_dir##*/}

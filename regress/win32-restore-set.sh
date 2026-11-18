@@ -31,7 +31,7 @@ fail() {
 }
 
 T=$(printf '\t')
-PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -m "$POWERSHELL_EXE")"
 
 # A pane that stays up, doing nothing, with {id} in a comment.
 SYS=$(cygpath -w "$SYSTEMROOT")
@@ -54,7 +54,9 @@ status_has() {
 }
 restoring() { status_has '^restoring '; }
 restored() { [ -z "$($TMUX display -p '#{server_restore}' | tr -d '\r')" ]; }
-slow_restore() { $TMUX set-hook -g after-new-window 'run-shell -d 0.3'; }
+# A restore paced at 1 s a window outlasts the test's own commands while it
+# runs, even beside other tests (at 0.3 s one ended before the check).
+slow_restore() { $TMUX set-hook -g after-new-window 'run-shell -d 1'; }
 quick_restore() { $TMUX set-hook -gu after-new-window; }
 snap_has() { grep -q -- "$1" "$SNAP" 2>/dev/null; }
 

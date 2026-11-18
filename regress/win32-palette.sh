@@ -18,7 +18,7 @@ wait_gone
 OUT=$(mktemp -d)
 trap "$TMUX kill-server 2>/dev/null; rm -rf $OUT" 0 1 15
 
-PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -m "$POWERSHELL_EXE")"
 PICK="$(cygpath -m "$(dirname "$0")/win32-palette-pick.ps1")"
 
 cat >"$OUT/test.conf" <<EOF

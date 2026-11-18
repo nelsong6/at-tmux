@@ -22,7 +22,7 @@ trap "$TMUX kill-server 2>/dev/null; rm -rf $OUT" 0 1 15
 export TMUX_ERROR_LOG_DIR=$(cygpath -w "$OUT")
 fail() { echo "FAIL: $*"; exit 1; }
 
-PS="$(cygpath -m "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+PS="$(cygpath -m "$POWERSHELL_EXE")"
 
 cat >"$OUT/test.conf" <<EOF
 set -g default-shell '$COMSPEC'
