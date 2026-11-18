@@ -7,6 +7,11 @@ one package both compile, pinned in `dep/vcpkg-overlay-ports/at-protocol/portfil
 its `REF` is the one place this build's version of the language is chosen, and the build
 says that commit in its hello. `#{at_protocol_version}` shows it.
 
+Only the Windows build speaks it (`HAVE_AT_PROTOCOL`, set in `CMakeLists.txt`). The Mac
+and Linux builds have no at-terminal to talk to and no way to fetch the package, so they
+leave `tty-at.c` out: no hello, sixel or nothing to every terminal, and
+`#{at_protocol_version}` is empty.
+
 ## The handshake (tty-at.c)
 
 With its opening requests to a client terminal (`tty_send_requests`), the server sends
