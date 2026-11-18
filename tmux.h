@@ -1544,6 +1544,7 @@ struct session {
 
 #define SESSION_ALERTED 0x1
 #define SESSION_CLOSING 0x2
+#define SESSION_HIDDEN 0x4 /* new-session -H: left out of the sessions row */
 	int		 flags;
 
 	u_int		 attached;
@@ -3827,6 +3828,7 @@ RB_PROTOTYPE(sessions, session, entry, session_cmp);
 int	session_group_cmp(struct session_group *, struct session_group *s2);
 RB_PROTOTYPE(session_groups, session_group, entry, session_group_cmp);
 int		 session_alive(struct session *);
+struct session	*session_shown(struct session *);
 struct session	*session_find(const char *);
 struct session	*session_find_by_id_str(const char *);
 struct session	*session_find_by_id(u_int);

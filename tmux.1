@@ -1297,7 +1297,7 @@ Lock all clients attached to
 .Ar target-session .
 .Tg new
 .It Xo Ic new-session
-.Op Fl AdDEPX
+.Op Fl AdDEHPX
 .Op Fl c Ar start-directory
 .Op Fl e Ar environment
 .Op Fl f Ar flags
@@ -1316,6 +1316,20 @@ Create a new session with name
 The new session is attached to the current terminal unless
 .Fl d
 is given.
+.Fl H
+makes it a hidden session: the sessions row neither lists nor counts it, so
+making or ending one adds or removes no row, and a client on it shows the
+first visible session of its group
+.Pq Fl t
+as its own; choose-tree,
+.Ic switch-client
+.Fl n
+and
+.Fl p ,
+a target that names no session, and the saved session set pass over it.
+The
+.Ql session_hidden
+format is 1 for one.
 .Ar window-name
 and
 .Ar shell-command
@@ -7021,6 +7035,7 @@ The following variables are available, where appropriate:
 .It Li "session_group_many_attached" Ta "" Ta "1 if multiple clients attached to sessions in group"
 .It Li "session_group_size" Ta "" Ta "Size of session group"
 .It Li "session_grouped" Ta "" Ta "1 if session in a group"
+.It Li "session_hidden" Ta "" Ta "1 if session is hidden (new-session -H)"
 .It Li "session_id" Ta "" Ta "Unique session ID"
 .It Li "session_last_attached" Ta "" Ta "Time session last attached"
 .It Li "session_many_attached" Ta "" Ta "1 if multiple clients attached"

@@ -2641,6 +2641,18 @@ format_cb_session_grouped(struct format_tree *ft)
 	return (NULL);
 }
 
+/* Callback for session_hidden. */
+static void *
+format_cb_session_hidden(struct format_tree *ft)
+{
+	if (ft->s != NULL) {
+		if (ft->s->flags & SESSION_HIDDEN)
+			return (xstrdup("1"));
+		return (xstrdup("0"));
+	}
+	return (NULL);
+}
+
 /* Callback for session_id. */
 static void *
 format_cb_session_id(struct format_tree *ft)
@@ -3617,6 +3629,9 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "session_grouped", FORMAT_TABLE_STRING,
 	  format_cb_session_grouped
+	},
+	{ "session_hidden", FORMAT_TABLE_STRING,
+	  format_cb_session_hidden
 	},
 	{ "session_id", FORMAT_TABLE_STRING,
 	  format_cb_session_id
@@ -4606,8 +4621,8 @@ format_loop_sessions(struct format_expand_state *es, const char *fmt)
 	struct format_expand_state	  next;
 	char				 *all, *active, *use, *expanded, *value;
 	size_t				  valuelen;
-	struct session			 *s, **l;
-	int				  i, n, last = 0;
+	struct session			 *s, **l, *shown = NULL;
+	int				  i, n, final, last = 0;
 
 	if (format_choose(es, fmt, &all, &active, 0) != 0) {
 		all = xstrdup(fmt);
@@ -4617,17 +4632,27 @@ format_loop_sessions(struct format_expand_state *es, const char *fmt)
 	value = xcalloc(1, 1);
 	valuelen = 1;
 
+	/*
+	 * Hidden sessions (new-session -H) are left out, and a client on one has
+	 * the session it is grouped with as its own.
+	 */
+	if (ft->c != NULL)
+		shown = session_shown(ft->c->session);
 	l = sort_get_sessions(&n, sc);
-	for (i = 0; i < n; i++) {
+	for (final = n - 1; final >= 0; final--) {
+		if (~l[final]->flags & SESSION_HIDDEN)
+			break;
+	}
+	for (i = 0; i <= final; i++) {
 		s = l[i];
+		if (s->flags & SESSION_HIDDEN)
+			continue;
 		format_log(es, "session loop: $%u", s->id);
-		if (active != NULL &&
-		    ft->c != NULL &&
-		    s->id == ft->c->session->id)
+		if (active != NULL && s == shown)
 			use = active;
 		else
 			use = all;
-		if (i == n - 1)
+		if (i == final)
 			last = FORMAT_LAST;
 		nft = format_create(c, item, FORMAT_NONE, ft->flags|last);
 		format_defaults(nft, ft->c, s, NULL, NULL);

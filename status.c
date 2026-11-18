@@ -230,7 +230,8 @@ status_timer_start_all(void)
 
 /*
  * Does this session draw the sessions row: status and the session bar are
- * on, and the server has more than one session.
+ * on, and the server has more than one session that isn't hidden
+ * (new-session -H).
  */
 static int
 status_sessions_row(struct session *s)
@@ -242,7 +243,7 @@ status_sessions_row(struct session *s)
 	    !options_get_number(s->options, "status-session-bar"))
 		return (0);
 	RB_FOREACH(loop, sessions, &sessions) {
-		if (++n > 1)
+		if ((~loop->flags & SESSION_HIDDEN) && ++n > 1)
 			return (1);
 	}
 	return (0);

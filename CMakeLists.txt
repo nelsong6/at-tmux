@@ -512,7 +512,7 @@ foreach(script win32-process-watch win32-environment win32-child-path)
     tmux_test(${script} ${script}.sh build TIMEOUT 300)
 endforeach()
 foreach(script win32-keep-alive win32-set-status win32-single-window win32-copy-name
-        win32-caller win32-reorder-session win32-session-set)
+        win32-caller win32-reorder-session win32-session-set win32-hidden-session)
     tmux_test(${script} ${script}.sh build)
 endforeach()
 foreach(script win32-restore-programs win32-session-offer win32-restore-set

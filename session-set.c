@@ -670,6 +670,8 @@ ss_sessions(void)
 		fatalx("out of memory");
 	l = sort_get_sessions(&n, &sc);
 	for (i = 0; i < n; i++) {
+		if (l[i]->flags & SESSION_HIDDEN)
+			continue;
 		position = 0;
 		RB_FOREACH(wl, winlinks, &l[i]->windows)
 			ss_window(evb, l[i], wl, ++position);

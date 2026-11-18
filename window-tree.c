@@ -368,6 +368,8 @@ window_tree_build(void *modedata, struct sort_criteria *sort_crit,
 		return;
 	s = l[n - 1];
 	for (i = 0; i < n; i++) {
+		if (l[i]->flags & SESSION_HIDDEN)
+			continue;
 		if (data->squash_groups &&
 		    (sg = session_group_contains(s)) != NULL) {
 			if ((sg == current && s != data->fs.s) ||

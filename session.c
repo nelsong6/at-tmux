@@ -153,7 +153,6 @@ session_create(const char *prefix, const char *name, const char *cwd,
 		} while (RB_FIND(sessions, &sessions, s) != NULL);
 	}
 	RB_INSERT(sessions, &sessions, s);
-	status_sessions_changed();
 
 	log_debug("new session %s $%u", s->name, s->id);
 
@@ -215,7 +214,8 @@ session_destroy(struct session *s, int notify, const char *from)
 	RB_REMOVE(sessions, &sessions, s);
 	if (RB_EMPTY(&sessions))
 		session_set_closed();
-	status_sessions_changed();
+	if (~s->flags & SESSION_HIDDEN)
+		status_sessions_changed();
 	if (notify)
 		notify_session("session-closed", s);
 
@@ -301,12 +301,33 @@ session_update_activity(struct session *s, struct timeval *from)
 	}
 }
 
-/* Find the next usable session. */
+/*
+ * The session the sessions row shows as a client's: its own, or for a hidden
+ * session (new-session -H) the first visible one in its group, or NULL.
+ */
+struct session *
+session_shown(struct session *s)
+{
+	struct session_group	*sg;
+	struct session		*loop;
+
+	if (s == NULL || (~s->flags & SESSION_HIDDEN))
+		return (s);
+	if ((sg = session_group_contains(s)) == NULL)
+		return (NULL);
+	TAILQ_FOREACH(loop, &sg->sessions, gentry) {
+		if (~loop->flags & SESSION_HIDDEN)
+			return (loop);
+	}
+	return (NULL);
+}
+
+/* Find the next usable session, passing over hidden ones. */
 struct session *
 session_next_session(struct session *s, struct sort_criteria *sort_crit)
 {
 	struct session	**l;
-	u_int		  n, i;
+	u_int		  n, i, j;
 
 	if (RB_EMPTY(&sessions) || !session_alive(s))
 		return (NULL);
@@ -318,18 +339,22 @@ session_next_session(struct session *s, struct sort_criteria *sort_crit)
 	}
 	if (i == n)
 		fatalx("session %s not found in sorted list", s->name);
-	i++;
-	if (i == n)
-		i = 0;
+	for (j = 0; j < n; j++) {
+		i++;
+		if (i == n)
+			i = 0;
+		if (~l[i]->flags & SESSION_HIDDEN)
+			break;
+	}
 	return (l[i]);
 }
 
-/* Find the previous usable session. */
+/* Find the previous usable session, passing over hidden ones. */
 struct session *
 session_previous_session(struct session *s, struct sort_criteria *sort_crit)
 {
 	struct session	**l;
-	u_int		  n, i;
+	u_int		  n, i, j;
 
 	if (RB_EMPTY(&sessions) || !session_alive(s))
 		return (NULL);
@@ -341,9 +366,13 @@ session_previous_session(struct session *s, struct sort_criteria *sort_crit)
 	}
 	if (i == n)
 		fatalx("session %s not found in sorted list", s->name);
-	if (i == 0)
-		i = n;
-	i--;
+	for (j = 0; j < n; j++) {
+		if (i == 0)
+			i = n;
+		i--;
+		if (~l[i]->flags & SESSION_HIDDEN)
+			break;
+	}
 	return (l[i]);
 }
 

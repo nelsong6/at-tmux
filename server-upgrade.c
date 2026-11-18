@@ -1281,6 +1281,8 @@ upgrade_restore_session(struct upgrade_reader *r)
 	memcpy(&s->activity_time, &tv[2], sizeof s->activity_time);
 	memcpy(&s->last_activity_time, &tv[3], sizeof s->last_activity_time);
 	s->flags = flags;
+	if (~s->flags & SESSION_HIDDEN)
+		status_sessions_changed();
 	if (group != NULL) {
 		if ((sg = session_group_find(group)) == NULL)
 			sg = session_group_new(group);

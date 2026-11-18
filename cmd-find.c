@@ -141,6 +141,9 @@ cmd_find_session_better(struct session *s, struct session *than, int flags)
 
 	if (than == NULL)
 		return (1);
+	/* A hidden session (new-session -H) is never chosen over another. */
+	if ((s->flags & SESSION_HIDDEN) != (than->flags & SESSION_HIDDEN))
+		return (~s->flags & SESSION_HIDDEN);
 	if (flags & CMD_FIND_PREFER_UNATTACHED) {
 		attached = (than->attached != 0);
 		if (attached && s->attached == 0)

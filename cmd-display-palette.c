@@ -633,6 +633,8 @@ palette_menu(struct palette *p, u_int depth, const char *name,
 		    "switch-client -Zt '%%'";
 		palette_add(p, depth, name, desc, NULL);
 		RB_FOREACH(s, sessions, &sessions) {
+			if (s->flags & SESSION_HIDDEN)
+				continue;
 			xasprintf(&sdesc, "%u windows%s",
 			    winlink_count(&s->windows),
 			    s->attached != 0 ? " (attached)" : "");

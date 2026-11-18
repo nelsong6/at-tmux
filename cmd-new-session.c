@@ -41,8 +41,8 @@ const struct cmd_entry cmd_new_session_entry = {
 	.name = "new-session",
 	.alias = "new",
 
-	.args = { "Ac:dDe:EF:f:n:Ps:t:x:Xy:", 0, -1, NULL },
-	.usage = "[-AdDEPX] [-c start-directory] [-e environment] [-F format] "
+	.args = { "Ac:dDe:EF:f:Hn:Ps:t:x:Xy:", 0, -1, NULL },
+	.usage = "[-AdDEHPX] [-c start-directory] [-e environment] [-F format] "
 		 "[-f flags] [-n window-name] [-s session-name] "
 		 CMD_TARGET_SESSION_USAGE " [-x width] [-y height] "
 		 "[shell-command [argument ...]]",
@@ -278,6 +278,10 @@ cmd_new_session_exec(struct cmd *self, struct cmdq_item *item)
 		av = args_next_value(av);
 	}
 	s = session_create(prefix, newname, cwd, env, oo, tiop);
+	if (args_has(args, 'H'))
+		s->flags |= SESSION_HIDDEN;
+	else
+		status_sessions_changed();
 
 	/* Spawn the initial window. */
 	sc.item = item;
