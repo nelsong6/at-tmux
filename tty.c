@@ -581,7 +581,9 @@ tty_send_requests(struct tty *tty)
 			tty_puts(tty, "\033[>q");
 		tty_puts(tty, "\033]10;?\033\\\033]11;?\033\\");
 		tty->flags |= (TTY_WAITBG|TTY_WAITFG);
+#ifdef HAVE_AT_PROTOCOL
 		tty_at_hello(tty);
+#endif
 	} else
 		tty->flags |= TTY_ALL_REQUEST_FLAGS;
 	tty->last_requests = time(NULL);
@@ -702,7 +704,9 @@ tty_close(struct tty *tty)
 
 		tty_term_free(tty->term);
 		tty_keys_free(tty);
+#ifdef HAVE_AT_PROTOCOL
 		tty_at_reset(tty);
+#endif
 
 		tty->flags &= ~TTY_OPENED;
 	}

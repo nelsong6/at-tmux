@@ -299,6 +299,7 @@ target_compile_definitions(tmux PRIVATE
     HAVE_IMSG
     HAVE_EVENT2_EVENT_H
     ENABLE_SIXEL
+    HAVE_AT_PROTOCOL
     HAVE_STDINT_H
 )
 
