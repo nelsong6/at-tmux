@@ -3,7 +3,7 @@
 # A window's automatic name follows a user option its format reads, even when
 # its program prints nothing more (TMUX-231). tmux works a name out again only
 # after the window's active pane changes, which output does; a Claude session's
-# start hook sets @claude-title after its program has drawn and gone quiet, so
+# start hook set @claude-title after its program had drawn and gone quiet, so
 # after a restore every at-claude window kept the name it had before the hook
 # ran until something in it was drawn again. Setting a user option, at any
 # scope, or the format itself has every automatic name checked again; a window

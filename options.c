@@ -1287,9 +1287,9 @@ options_push_changes(const char *name)
 	/*
 	 * A window's automatic name is worked out again only when its active
 	 * pane has changed, which output does. A user option can be what the
-	 * format reads (@claude-title, which a Claude session's start hook sets
-	 * after its program has drawn and gone quiet), so setting one, or the
-	 * format itself, has every automatic name checked again (TMUX-231).
+	 * format reads, set after its program has drawn and gone quiet (as
+	 * @claude-title was until TMUX-232), so setting one, or the format
+	 * itself, has every automatic name checked again (TMUX-231).
 	 */
 	if (*name == '@' ||
 	    strcmp(name, "automatic-rename") == 0 ||

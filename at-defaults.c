@@ -60,11 +60,13 @@ static const struct {
 
 	/*
 	 * A window is named by the title its program sets, else by the program;
-	 * pwsh, its folder-name title and the hostname count as no title. A Claude
-	 * or Codex window takes the short name its hooks set (HOMECFG-129).
+	 * pwsh, its folder-name title and the hostname count as no title. A Codex
+	 * window takes the short name its hooks set (HOMECFG-129). at-claude names
+	 * its window itself with rename-window, so this format never names it once
+	 * it has (TMUX-232).
 	 */
 	{ "automatic-rename-format",
-	  "#{?#{@codex-title},#{@codex-title},#{?#{@claude-title},#{@claude-title},#{?#{==:#{pane_current_command},claude},#{s/^[^ -~]+ //:pane_title},#{?#{||:#{==:#{pane_current_command},pwsh},#{||:#{==:#{pane_title},#{b:pane_current_path}},#{==:#{pane_title},#{host_short}}}},#{pane_current_command},#{pane_title}}}}}" },
+	  "#{?#{@codex-title},#{@codex-title},#{?#{||:#{==:#{pane_current_command},pwsh},#{||:#{==:#{pane_title},#{b:pane_current_path}},#{==:#{pane_title},#{host_short}}}},#{pane_current_command},#{pane_title}}}" },
 
 	/*
 	 * Claude Code's bypass permissions label is hidden (TMUX-183).
