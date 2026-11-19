@@ -1132,7 +1132,12 @@ window_pane_destroy(struct window_pane *wp)
 
 	if (wp->pipe_fd != -1) {
 		bufferevent_free(wp->pipe_event);
+#ifdef _WIN32
+		/* A socketpair end, not a C runtime descriptor (TMUX-241). */
+		closesocket((SOCKET)wp->pipe_fd);
+#else
 		close(wp->pipe_fd);
+#endif
 	}
 
 	if (event_initialized(&wp->resize_timer))

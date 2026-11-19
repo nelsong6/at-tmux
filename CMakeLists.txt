@@ -508,7 +508,8 @@ endforeach()
 foreach(script win32-linesize win32-palette)
     tmux_test(${script} ${script}.sh build)
 endforeach()
-foreach(script win32-process-watch win32-environment win32-child-path)
+foreach(script win32-process-watch win32-environment win32-child-path
+        win32-pipe-pane-close)
     tmux_test(${script} ${script}.sh build TIMEOUT 300)
 endforeach()
 foreach(script win32-keep-alive win32-set-status win32-single-window win32-copy-name
