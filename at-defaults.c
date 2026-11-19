@@ -220,6 +220,7 @@ static const char *const at_commands[] = {
 	"bind -n 'C-~' switch-client -p -O index",
 	"bind -n 'C-S-`' switch-client -p -O index",
 	"bind -n -N 'Reopen the window closed last' C-S-t reopen-window",
+	"bind -n -N 'Give the side panel the keyboard' C-S-o display-panel -F",
 
 	/*
 	 * What move-window and bring-to-session run.

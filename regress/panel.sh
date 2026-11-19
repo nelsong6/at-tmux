@@ -120,6 +120,17 @@ tabs -PANEL-CONTENT '' '' 'Choose action' x 'set -g @picked yes' || exit 1
 wait_until contains '|PANEL-CONTENT' || { echo 'the rows were not put back'; exit 1; }
 $TMUX send-keys -K -c "$CLIENT" Tab
 wait_until focused_is 0 || { echo 'Tab did not return focus'; exit 1; }
+# Unfocused, the footer names the built-in key that gives it the keyboard again, and
+# that key and display-panel -F do (TMUX-244).
+wait_until contains 'Click or C-S-o to use' || { echo 'the footer does not name the focus key'; $OUTER capture-pane -p; exit 1; }
+$TMUX send-keys -K -c "$CLIENT" C-S-o
+wait_until focused_is 1 || { echo 'C-S-o did not focus the panel'; exit 1; }
+$TMUX send-keys -K -c "$CLIENT" Tab
+wait_until focused_is 0 || exit 1
+$TMUX display-panel -c "$CLIENT" -F || { echo 'display-panel -F failed'; exit 1; }
+wait_until focused_is 1 || { echo 'display-panel -F did not focus the panel'; exit 1; }
+$TMUX send-keys -K -c "$CLIENT" Tab
+wait_until focused_is 0 || exit 1
 # Dragging the divider sets the width, live, and holds it inside its bounds. Motion with
 # no press on the divider moves nothing.
 # Each no-move is read once a tab click sent behind it has landed.
@@ -164,6 +175,7 @@ wait_until contains NEXT-VIEW || exit 1
 wait_until focused_is 0 || { echo 'navigation stole conversation focus'; exit 1; }
 $TMUX display-panel -c "$CLIENT" -C
 wait_until width_is 120 || { echo 'close did not return columns'; exit 1; }
+if $TMUX display-panel -c "$CLIENT" -F 2>/dev/null; then echo 'display-panel -F succeeded with no panel'; exit 1; fi
 # Generations belong to input order, independently of background command order.
 $TMUX display-panel -c "$CLIENT" -t "$SOURCE" -T Navigation -- Next n 'set -gF @navigation "#{panel_action_generation}"'
 $TMUX send-keys -K -c "$CLIENT" n

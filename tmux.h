@@ -4172,6 +4172,7 @@ void		 window_pane_upgrade_feed(struct window_pane *,
 u_int panel_width(struct client *);
 void panel_resized(void);
 void panel_clear(struct client *);
+int panel_focus(struct client *);
 void panel_draw(struct client *);
 int panel_key(struct client *, struct key_event *);
 #define PANEL_ACTION_ROW 0

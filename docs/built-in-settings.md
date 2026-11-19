@@ -10,7 +10,9 @@ They hold what the home configuration (`windows.conf` and shell-config's shared
 `tmux.conf`) used to: windows numbered from 1, the mouse, no prefix, Ctrl+B and Alt+Tab
 opening the at menu, the Windows-style keys, the Ctrl+T chords, the command aliases in the
 at menu, the hidden bypass label, the system session and the conversation strip's formats.
-The shell is pwsh unless whoever starts the server names one in `SHELL`.
+The shell is pwsh unless whoever starts the server names one in `SHELL`. Ctrl+Shift+O
+gives the side panel the keyboard (`display-panel -F`), which otherwise only a click
+on it does once Tab has handed the keyboard back (TMUX-244).
 
 - **Options** take these values as their defaults (`at_defaults_option`, called from
   `options_default`), so `set -u` returns to them.

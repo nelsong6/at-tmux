@@ -229,6 +229,41 @@ panel_clear(struct client *c)
 	}
 }
 
+/* Give a showing panel the keyboard, as a click on it does; 0 if none shows. */
+int
+panel_focus(struct client *c)
+{
+	if (panel_width(c) == 0)
+		return (0);
+	c->panel->focused = 1;
+	c->flags |= CLIENT_REDRAWOVERLAY;
+	return (1);
+}
+
+/*
+ * The root key that runs display-panel -F, for the unfocused footer to name;
+ * NULL when none does.
+ */
+static const char *
+panel_focus_key(void)
+{
+	struct key_table *table = key_bindings_get_table("root", 0);
+	struct key_binding *bd;
+	const char *key = NULL;
+	char *command;
+
+	if (table == NULL)
+		return (NULL);
+	for (bd = key_bindings_first(table); bd != NULL && key == NULL;
+	    bd = key_bindings_next(table, bd)) {
+		command = cmd_list_print(bd->cmdlist, 0);
+		if (strcmp(command, "display-panel -F") == 0)
+			key = key_string_lookup_key(bd->key, 0);
+		free(command);
+	}
+	return (key);
+}
+
 struct screen *
 panel_mode(struct client *c)
 {
@@ -289,7 +324,8 @@ panel_draw(struct client *c)
 	struct grid_cell gc, selected, mode, cell;
 	u_int width = panel_width(c), height, y, top, row, i, x, w;
 	u_int sl, sc, el, ec, from, to;
-	const char *text;
+	const char *text, *focus;
+	char unfocused[64];
 	struct key_table *table;
 	int prompt;
 	if (width == 0)
@@ -298,6 +334,12 @@ panel_draw(struct client *c)
 	/* The footer names / as the panel's prompt when the panel key table binds it. */
 	table = key_bindings_get_table("panel", 0);
 	prompt = table != NULL && key_bindings_get(table, '/') != NULL;
+	/* Unfocused, it names the key that gives it the keyboard, if one is bound. */
+	focus = pd->focused ? NULL : panel_focus_key();
+	if (focus != NULL)
+		snprintf(unfocused, sizeof unfocused, "#[dim] Click or %s to use", focus);
+	else
+		strlcpy(unfocused, "#[dim] Click to use", sizeof unfocused);
 	height = c->tty.sy - status_line_size(c);
 	top = status_at_line(c) == 0 ? status_line_size(c) : 0;
 	screen_resize(&pd->screen, width, height, 0);
@@ -323,8 +365,7 @@ panel_draw(struct client *c)
 			}
 			continue;
 		} else if (y == height - 1)
-			text = !pd->focused ?
-			    "#[dim] Click to use" : prompt ?
+			text = !pd->focused ? unfocused : prompt ?
 			    "#[dim] / commands   Esc close   Tab back to pane" :
 			    "#[dim] Esc close   Tab back to pane";
 		else {

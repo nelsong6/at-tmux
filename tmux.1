@@ -7870,7 +7870,7 @@ when the popup closes; otherwise nothing runs.
 It is an error if no panel is showing.
 .Tg menu
 .It Xo Ic display-panel
-.Op Fl CNu
+.Op Fl CFNu
 .Op Fl b Ar tab-count
 .Op Fl c Ar target-client
 .Op Fl g Ar generation
@@ -7911,7 +7911,11 @@ The panel uses the existing menu styles.
 Click an action or select it with the arrow keys and Enter.
 Page Up, Page Down and the mouse wheel scroll.
 Tab returns keyboard input to the conversation while keeping the panel visible;
-click the panel to focus it again.
+click the panel to focus it again, or use
+.Fl F ,
+which gives a showing panel the keyboard from a command (bound to C-S-o by
+default; the unfocused panel's footer names the key bound to it).
+It is an error if no panel is showing.
 Escape closes the focused panel and
 .Fl C
 closes it from a command.
