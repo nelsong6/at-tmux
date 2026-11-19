@@ -1,7 +1,8 @@
 name: GitHub sync
 
 # A push to master here fast-forwards GitHub's, so the work machines see it. Nothing is
-# ever forced: master moving on both sides fails the job and shows in Alerts. The other direction
+# ever forced: master moving on both sides fails the job and shows in Alerts, unless GitHub's
+# commits wait in their pull request. The other direction
 # is .github/workflows/forgejo-sync.yml.
 on:
   push:
@@ -37,7 +38,15 @@ jobs:
           [ "$ours" = "$theirs" ] && exit 0
           # GitHub is ahead: its own sync carries that.
           git merge-base --is-ancestor "$ours" "$theirs" && exit 0
-          git merge-base --is-ancestor "$theirs" "$ours"
+          if ! git merge-base --is-ancestor "$theirs" "$ours"; then
+            # Both moved: GitHub's commits wait in the pull request repo-sync opened from
+            # github/master (HOMECFG-248), and its merge's push brings GitHub here. With no
+            # such branch holding them, the fetch or the check fails and Alerts says so.
+            git fetch -q https://forgejo.romaine.life/nelsong6/at-tmux.git github/master
+            git merge-base --is-ancestor "$theirs" FETCH_HEAD
+            echo "GitHub's master waits in its pull request from github/master"
+            exit 0
+          fi
           git push -q "$github" "$ours:refs/heads/master"
           echo "GitHub's master moved to $ours"
 
