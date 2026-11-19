@@ -707,6 +707,151 @@ client_exec(const char *shell, const char *shellcmd)
 
 #ifdef _WIN32
 /*
+ * Every escape sequence and string the server sends reaches the console in one
+ * write (TMUX-240). The console is a pseudoconsole, and between two writes it
+ * may write to the terminal itself: when the size poll (win32-signal.c) calls
+ * GetConsoleScreenBufferInfo and the console thinks its cursor position may be
+ * wrong, it sends the terminal a cursor position request (ESC [ 6 n) then and
+ * there. Landing inside an at-protocol message, a sixel image or any sequence,
+ * that ESC ends it early in the terminal, which drops what came before it and
+ * prints what follows as text. So output is written up to the end of the last
+ * complete sequence, and an unfinished one waits for the rest.
+ */
+enum client_relay_state {
+	CLIENT_RELAY_GROUND,
+	CLIENT_RELAY_ESCAPE,		/* ESC */
+	CLIENT_RELAY_ESCAPE_INTER,	/* ESC and intermediates */
+	CLIENT_RELAY_CSI,		/* ESC [ */
+	CLIENT_RELAY_STRING,		/* ESC P, ESC ], ESC X, ESC ^, ESC _ */
+	CLIENT_RELAY_STRING_ESCAPE	/* ESC in a string: ST or its end */
+};
+
+/*
+ * The most a string is held for: past this it goes as it is, with a line in
+ * the error log, rather than holding output without end.
+ */
+#define CLIENT_RELAY_MAX (64 * 1024 * 1024)
+
+static struct evbuffer		*client_relay_held;
+static enum client_relay_state	 client_relay_state;
+static int			 client_relay_osc;
+
+/*
+ * Moves the scanner over one byte; returns 1 when the byte leaves it in
+ * ground, after a complete sequence or plain text.
+ */
+static int
+client_relay_scan(u_char ch)
+{
+	switch (client_relay_state) {
+	case CLIENT_RELAY_GROUND:
+		if (ch == '\033') {
+			client_relay_state = CLIENT_RELAY_ESCAPE;
+			return (0);
+		}
+		return (1);
+	case CLIENT_RELAY_ESCAPE:
+		switch (ch) {
+		case '[':
+			client_relay_state = CLIENT_RELAY_CSI;
+			return (0);
+		case 'P':
+		case ']':
+		case 'X':
+		case '^':
+		case '_':
+			client_relay_osc = (ch == ']');
+			client_relay_state = CLIENT_RELAY_STRING;
+			return (0);
+		case '\033':
+			return (0);
+		case 0x18:
+		case 0x1a:
+			client_relay_state = CLIENT_RELAY_GROUND;
+			return (1);
+		}
+		if (ch >= 0x20 && ch <= 0x2f) {
+			client_relay_state = CLIENT_RELAY_ESCAPE_INTER;
+			return (0);
+		}
+		client_relay_state = CLIENT_RELAY_GROUND;
+		return (1);
+	case CLIENT_RELAY_ESCAPE_INTER:
+		if (ch >= 0x20 && ch <= 0x2f)
+			return (0);
+		if (ch == '\033') {
+			client_relay_state = CLIENT_RELAY_ESCAPE;
+			return (0);
+		}
+		client_relay_state = CLIENT_RELAY_GROUND;
+		return (1);
+	case CLIENT_RELAY_CSI:
+		if (ch >= 0x40 && ch <= 0x7e) {
+			client_relay_state = CLIENT_RELAY_GROUND;
+			return (1);
+		}
+		if (ch == '\033') {
+			client_relay_state = CLIENT_RELAY_ESCAPE;
+			return (0);
+		}
+		if (ch == 0x18 || ch == 0x1a) {
+			client_relay_state = CLIENT_RELAY_GROUND;
+			return (1);
+		}
+		return (0);
+	case CLIENT_RELAY_STRING:
+		if (ch == '\033') {
+			client_relay_state = CLIENT_RELAY_STRING_ESCAPE;
+			return (0);
+		}
+		if ((ch == '\007' && client_relay_osc) || ch == 0x18 ||
+		    ch == 0x1a) {
+			client_relay_state = CLIENT_RELAY_GROUND;
+			return (1);
+		}
+		return (0);
+	case CLIENT_RELAY_STRING_ESCAPE:
+		if (ch == '\\') {
+			client_relay_state = CLIENT_RELAY_GROUND;
+			return (1);
+		}
+		/* An ESC that isn't ST ends the string and starts a sequence. */
+		client_relay_state = CLIENT_RELAY_ESCAPE;
+		return (client_relay_scan(ch));
+	}
+	return (1);
+}
+
+/* Writes the first len bytes held to the console. */
+static void
+client_relay_write(size_t len)
+{
+	static int	 reported;
+	u_char		*data = EVBUFFER_DATA(client_relay_held);
+	size_t		 done = 0;
+	DWORD		 written;
+	char		*msg;
+
+	/* The console may take less than it is given; what is left is lost. */
+	while (done < len) {
+		if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), data + done,
+		    (DWORD)(len - done), &written, NULL) || written == 0) {
+			if (!reported) {
+				xasprintf(&msg, "the console refused %zu of %zu "
+				    "bytes of output (error %lu)", len - done, len,
+				    GetLastError());
+				log_message(msg);
+				free(msg);
+				reported = 1;
+			}
+			break;
+		}
+		done += written;
+	}
+	evbuffer_drain(client_relay_held, len);
+}
+
+/*
  * Tty relay: read from tty socket, write to console stdout.
  * This is the libevent callback fired when the server sends tty output.
  */
@@ -715,30 +860,38 @@ client_tty_read_cb(int fd, __unused short events, __unused void *arg)
 {
 	static int	 reported;
 	char		 buf[8192], *msg;
-	int		 n, done = 0;
-	DWORD		 written;
+	int		 n, i;
+	size_t		 before, complete;
 
 	n = recv((SOCKET)fd, buf, sizeof buf, 0);
 	if (n <= 0) {
 		event_del(&client_tty_event);
 		return;
 	}
-	/* The console may take less than it is given; what is left is lost. */
-	while (done < n) {
-		if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buf + done,
-		    n - done, &written, NULL) || written == 0) {
-			if (!reported) {
-				xasprintf(&msg, "the console refused %d of %d "
-				    "bytes of output (error %lu)", n - done, n,
-				    GetLastError());
-				log_message(msg);
-				free(msg);
-				reported = 1;
-			}
-			return;
-		}
-		done += written;
+	if (client_relay_held == NULL)
+		client_relay_held = evbuffer_new();
+
+	/* What is held is all one unfinished sequence: complete starts at 0. */
+	before = EVBUFFER_LENGTH(client_relay_held);
+	complete = 0;
+	for (i = 0; i < n; i++) {
+		if (client_relay_scan((u_char)buf[i]))
+			complete = before + i + 1;
 	}
+	evbuffer_add(client_relay_held, buf, n);
+
+	if (EVBUFFER_LENGTH(client_relay_held) - complete > CLIENT_RELAY_MAX) {
+		if (!reported) {
+			xasprintf(&msg, "a sequence of more than %d bytes went "
+			    "to the console in pieces", CLIENT_RELAY_MAX);
+			log_message(msg);
+			free(msg);
+			reported = 1;
+		}
+		complete = EVBUFFER_LENGTH(client_relay_held);
+	}
+	if (complete != 0)
+		client_relay_write(complete);
 }
 
 /*
@@ -816,6 +969,15 @@ client_stop_tty_relay(void)
 		closesocket((SOCKET)client_tty_fd);
 		client_tty_fd = -1;
 	}
+
+	/* An unfinished sequence held back goes now, as it came. */
+	if (client_relay_held != NULL) {
+		if (EVBUFFER_LENGTH(client_relay_held) != 0)
+			client_relay_write(EVBUFFER_LENGTH(client_relay_held));
+		evbuffer_free(client_relay_held);
+		client_relay_held = NULL;
+	}
+	client_relay_state = CLIENT_RELAY_GROUND;
 
 	/* Restore console mode. */
 	win32_tty_restore();

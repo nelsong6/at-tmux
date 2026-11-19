@@ -48,19 +48,34 @@ tty_at_version(void)
 	return (at_proto_version());
 }
 
-static void
+/*
+ * Send a message whole or not at all (TMUX-240). While the client can't keep
+ * up, tmux discards what it would write (TTY_BLOCK) and later redraws, which
+ * places every image again; a message discarded then is not sent, so a picture
+ * is never thought delivered when it didn't go. Once a message is in the
+ * output, nothing is discarded until the output has all gone (TTY_NOBLOCK, as
+ * for passthrough and sixel), so it can't be cut off part-way.
+ */
+static int
 tty_at_send(struct tty *tty, const at_proto_msg *msg)
 {
 	char	*out;
 	size_t	 len;
 
+	if (tty->flags & TTY_BLOCK) {
+		log_debug("%s: not sending %s while blocked", tty->client->name,
+		    at_proto_kind_name(msg->kind));
+		return (-1);
+	}
 	if (at_proto_encode(msg, &out, &len) != 0) {
 		log_debug("%s: can't encode %s", tty->client->name,
 		    at_proto_kind_name(msg->kind));
-		return;
+		return (-1);
 	}
 	tty_puts(tty, out);
+	tty->flags |= TTY_NOBLOCK;
 	free(out);
+	return (0);
 }
 
 /* Say hello to the terminal. */
@@ -153,14 +168,14 @@ tty_at_has(struct tty *tty, u_int id)
 	return (0);
 }
 
-/* Send a virtual image to the terminal, once. */
-static void
+/* Send a virtual image to the terminal, once; 0 once it has gone. */
+static int
 tty_at_store(struct tty *tty, struct image *im)
 {
 	at_proto_msg	msg;
 
 	if (tty_at_has(tty, im->at_id))
-		return;
+		return (0);
 	memset(&msg, 0, sizeof msg);
 	msg.kind = AT_PROTO_IMAGE_STORE;
 	msg.u.image_store.id = im->at_id;
@@ -171,13 +186,15 @@ tty_at_store(struct tty *tty, struct image *im)
 	msg.u.image_store.format = im->pbpp == 4 ? AT_PROTO_RGBA : AT_PROTO_RGB;
 	msg.u.image_store.pixels = im->pixels;
 	msg.u.image_store.len = (size_t)im->pwidth * im->pheight * im->pbpp;
-	tty_at_send(tty, &msg);
+	if (tty_at_send(tty, &msg) != 0)
+		return (-1);
 	tty->at_images = xreallocarray(tty->at_images, tty->at_nimages + 1,
 	    sizeof *tty->at_images);
 	tty->at_images[tty->at_nimages++] = im->at_id;
 	log_debug("%s: sent image %u as %u (%ux%u, %ux%u cells)",
 	    tty->client->name, im->id, im->at_id, im->pwidth, im->pheight,
 	    im->pcols, im->prows);
+	return (0);
 }
 
 /*
@@ -190,7 +207,8 @@ tty_at_place(struct tty *tty, struct image *im, u_int x, u_int y, u_int sc,
 {
 	at_proto_msg	msg;
 
-	tty_at_store(tty, im);
+	if (tty_at_store(tty, im) != 0)
+		return;
 	memset(&msg, 0, sizeof msg);
 	msg.kind = AT_PROTO_IMAGE_PLACE;
 	msg.u.image_place.id = im->at_id;
