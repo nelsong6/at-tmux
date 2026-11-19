@@ -265,7 +265,9 @@ static const char *const at_commands[] = {
 	 * and these fit them to its width, so nothing runs to draw it (TMUX-133).
 	 * A click on it opens the strip's menu; a follow-up's session starts from
 	 * the @followup folder and guide (AGT-3). The usage part is dropped whole
-	 * before it would cut the PR or the ticket short (ATC-96).
+	 * before it would cut the PR or the ticket short (ATC-96), and the CI part,
+	 * Forgejo's CI load, is dropped the same way before the usage part is
+	 * (AGT-43).
 	 */
 	"set -g @strip-session '#{?@codex-session,#{@codex-session},#{@claude-session}}'",
 	"set -g @strip-agent '#{?@codex-session,codex,claude}'",
@@ -275,12 +277,15 @@ static const char *const at_commands[] = {
 	"set -g @w-fu '#{?@strip-followups,#{e|+:#{w:@strip-followups},3},0}'",
 	"set -g @w-ag '#{?@strip-agents,#{e|+:#{w:@strip-agents},3},0}'",
 	"set -g @w-us '#{?@strip-usage,#{e|+:#{w:@strip-usage},3},0}'",
+	"set -g @w-ci '#{?@strip-ci,#{e|+:#{w:@strip-ci},3},0}'",
 	"set -g @w-rest0 '#{e|-:#{e|-:#{e|-:#{e|-:#{e|-:#{pane_width},#{E:@w-who}},#{w:@strip-more}},12},#{E:@w-fu}},#{E:@w-ag}}'",
 	"set -g @n-pr '#{e|+:#{e|+:#{?@strip-plan,#{e|+:#{w:@strip-plan},1},0},#{w:@strip-pr}},#{?#{E:@wide},2,0}}'",
 	"set -g @w-tmin '#{e|+:#{?#{e|<:#{w:@strip-ticket},10},#{w:@strip-ticket},10},#{?#{E:@wide},2,0}}'",
 	"set -g @w-tfull '#{e|+:#{w:@strip-ticket},#{?#{E:@wide},2,0}}'",
 	"set -g @us-on '#{&&:#{@strip-usage},#{e|>=:#{e|-:#{E:@w-rest0},#{E:@w-us}},#{e|+:#{E:@n-pr},#{E:@w-tfull}}}}'",
-	"set -g @w-rest '#{?#{E:@us-on},#{e|-:#{E:@w-rest0},#{E:@w-us}},#{E:@w-rest0}}'",
+	"set -g @w-rest1 '#{?#{E:@us-on},#{e|-:#{E:@w-rest0},#{E:@w-us}},#{E:@w-rest0}}'",
+	"set -g @ci-on '#{&&:#{@strip-ci},#{e|>=:#{e|-:#{E:@w-rest1},#{E:@w-ci}},#{e|+:#{E:@n-pr},#{E:@w-tfull}}}}'",
+	"set -g @w-rest '#{?#{E:@ci-on},#{e|-:#{E:@w-rest1},#{E:@w-ci}},#{E:@w-rest1}}'",
 	"set -g @w-pr0 '#{?#{e|<=:#{E:@n-pr},#{e|-:#{E:@w-rest},#{E:@w-tmin}}},#{E:@n-pr},#{e|-:#{E:@w-rest},#{E:@w-tmin}}}'",
 	"set -g @w-pr '#{?#{E:@wide},#{e|-:#{E:@w-pr0},2},#{E:@w-pr0}}'",
 	"set -g @w-plan '#{?#{e|>:#{w:@strip-plan},#{E:@w-pr}},#{E:@w-pr},#{w:@strip-plan}}'",
@@ -299,7 +304,7 @@ static const char *const at_commands[] = {
 	"set -g @r-copy-pr '#{?#{&&:#{E:@wide},#{@strip-pr-url}},#{E:@on-copy-pr},}'",
 	"set -g @on-copy-t ' #[range=user|copy-ticket,fg=#8A9199]\xee\xaf\x8c#[norange,fg=default]'",
 	"set -g @r-copy-t '#{?#{&&:#{E:@wide},#{@strip-focus-ticket}},#{E:@on-copy-t},}'",
-	"set -g @r-big ' #[range=user|who,fg=#73D0FF]#{E:@c-who}#[norange,fg=default] \xe2\x94\x82 #[range=user|pr]#{E:@c-pr}#[norange,fg=default]#{E:@r-copy-pr} \xe2\x94\x82 #[range=user|ticket,fg=#D2A6FF]#{E:@c-ticket}#[norange,fg=default]#{E:@r-copy-t}#{?@strip-followups, \xe2\x94\x82 #{@strip-followups},}#{?@strip-agents, \xe2\x94\x82 #{@strip-agents},}#{?#{E:@us-on}, \xe2\x94\x82 #{@strip-usage},} \xe2\x94\x82 #[range=user|links,fg=#8A9199]#{@strip-more}#[norange,fg=default]'",
+	"set -g @r-big ' #[range=user|who,fg=#73D0FF]#{E:@c-who}#[norange,fg=default] \xe2\x94\x82 #[range=user|pr]#{E:@c-pr}#[norange,fg=default]#{E:@r-copy-pr} \xe2\x94\x82 #[range=user|ticket,fg=#D2A6FF]#{E:@c-ticket}#[norange,fg=default]#{E:@r-copy-t}#{?@strip-followups, \xe2\x94\x82 #{@strip-followups},}#{?@strip-agents, \xe2\x94\x82 #{@strip-agents},}#{?#{E:@ci-on}, \xe2\x94\x82 #{@strip-ci},}#{?#{E:@us-on}, \xe2\x94\x82 #{@strip-usage},} \xe2\x94\x82 #[range=user|links,fg=#8A9199]#{@strip-more}#[norange,fg=default]'",
 	"bind -n MouseDown1Footer select-pane -t = \\; run-shell -b '#{E:@strip-menu} --part \"#{mouse_status_range}\"'",
 	"set -g @followup-repos 'D:/repos'",
 	"set -g @followup-guide 'S:/shell-config-profile-home/claude/topics/spawned-session.md'",

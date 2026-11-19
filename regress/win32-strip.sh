@@ -3,7 +3,8 @@
 # The conversation strip's built-in formats, drawn by an attached client. Its usage
 # part (ATC-96) is drawn with its own style, measured by the width it draws, and
 # dropped whole, never cut, before the PR or the work package would be cut short;
-# the narrow layout never shows it.
+# the narrow layout never shows it. The CI part (AGT-43) is drawn before the usage
+# part, with its own style, and dropped whole the same way, before the usage part is.
 PATH=/bin:/usr/bin
 TERM=screen
 . "$(dirname "$0")/win32-test.sh"
@@ -34,6 +35,10 @@ cat >"$OUT/usage.conf" <<'EOF'
 set -p -t %0 @strip-usage '105k/1M ctx · $0.97 │ #[fg=#F07178]week 100%#[fg=default] · resets Wed 7:59am'
 EOF
 USAGE='105k/1M ctx · $0.97 │ week 100% · resets Wed 7:59am'
+cat >"$OUT/ci.conf" <<'EOF2'
+set -p -t %0 @strip-ci '#[range=user|ci]CI 4 running · #[fg=#FFAD66]9 waiting, oldest 25m#[fg=default] · 3 queued to merge#[norange]'
+EOF2
+CI='CI 4 running · 9 waiting, oldest 25m · 3 queued to merge'
 
 $TMUX -f "$OUT/test.conf" new -d -s strip -x 120 -y 10 </dev/null || exit 1
 $OUTER -f "$OUT/outer.conf" new -d -x 120 -y 10 </dev/null || exit 1
@@ -55,6 +60,13 @@ usage() {
         $TMUX source-file "$(cygpath -w "$OUT/usage.conf")" || exit 1
     else
         $TMUX set -pu -t %0 @strip-usage
+    fi
+}
+ci() {
+    if [ "$1" = on ]; then
+        $TMUX source-file "$(cygpath -w "$OUT/ci.conf")" || exit 1
+    else
+        $TMUX set -pu -t %0 @strip-ci
     fi
 }
 row_is() { [ "$(row)" = "$1" ]; }
@@ -95,6 +107,38 @@ shown 0 || { echo 'the narrow layout budgets the usage part'; exit 1; }
 narrow() { row | grep -q '›$' && ! row | grep -q 'ctx'; }
 wait_until narrow || { echo "the narrow strip shows the usage part: '$(row)'"; exit 1; }
 echo 'PASS: narrower strips do not show it'
+
+# The CI part takes its 56 columns and a separator, 59. Alone, at 125 the who part is
+# 20 and what is left, 125-20-4-12 = 89, is exactly 59+17+13; at 124 it is one short.
+usage off
+ci_shown() { [ "$($TMUX display -p -t %0 '#{E:@ci-on}' | tr -d '\r')" = "$1" ]; }
+WIDE_CI=" nelson │ repo #12 · open │ HOMECFG-238 │ $CI │ +4 ›"
+width 125
+ci on
+ci_shown 1 && wait_until row_is "$WIDE_CI" || { echo "a wide strip has no CI part: '$(row)'"; exit 1; }
+styled | grep -q "$(printf '\033')\[38;2;255;173;102m9 waiting, oldest 25m" ||
+    { echo 'the CI part has lost its style'; styled | od -c | head; exit 1; }
+echo 'PASS: a wide strip shows the CI part, its style drawn'
+width 124
+ci_shown 0 && wait_until row_is "$WIDE" || { echo "a strip too narrow for it still shows the CI part: '$(row)'"; exit 1; }
+echo 'PASS: the CI part is dropped whole, and the PR and ticket are as without it'
+
+# With the usage part too, both fit from 181: the who part is 22 and 181-22-4-12 = 143
+# is 54+59+17+13. At 180 the CI part goes first and the usage part stays.
+usage on
+width 181
+WIDE_BOTH=" nelson │ repo #12 · open │ HOMECFG-238 │ $CI │ $USAGE │ +4 ›"
+ci_shown 1 && shown 1 && wait_until row_is "$WIDE_BOTH" ||
+    { echo "a strip wide for both lacks one: '$(row)'"; exit 1; }
+width 180
+ci_shown 0 && shown 1 && wait_until row_is "$WIDE_US" ||
+    { echo "one column short, the CI part didn't go before the usage part: '$(row)'"; exit 1; }
+echo 'PASS: the CI part is drawn before the usage part and dropped before it'
+width 30
+ci_shown 0 || { echo 'the narrow layout budgets the CI part'; exit 1; }
+narrow_ci() { row | grep -q '›$' && ! row | grep -q 'queued'; }
+wait_until narrow_ci || { echo "the narrow strip shows the CI part: '$(row)'"; exit 1; }
+echo 'PASS: the narrow strip does not show the CI part'
 
 echo 'ALL STRIP TESTS PASSED'
 exit 0
