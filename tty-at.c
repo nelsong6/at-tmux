@@ -19,8 +19,14 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#ifdef __APPLE__
+#include <libproc.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 #include <at_protocol.h>
 
@@ -93,24 +99,41 @@ tty_at_hello(struct tty *tty)
 
 /*
  * The running server's file on disk is newer than the process: home-sync
- * installed a release and switched the current junction under it.
+ * installed a release and switched the current junction under it, or on a
+ * Mac or Linux machine a new build was installed over it.
  */
 static int
 tty_at_installed_is_newer(char *path, size_t pathlen)
 {
-#ifdef _WIN32
 	struct stat	sb;
+#if defined(__linux__)
+	ssize_t		n;
+	char		*deleted;
+#endif
 
+#if defined(_WIN32)
 	if (GetModuleFileNameA(NULL, path, pathlen) == 0)
 		return (0);
-	if (stat(path, &sb) != 0)
+#elif defined(__APPLE__)
+	if (proc_pidpath(getpid(), path, pathlen) <= 0)
 		return (0);
-	return (sb.st_mtime > start_time.tv_sec);
+#elif defined(__linux__)
+	/* Installed over, the file the process runs is "<path> (deleted)". */
+	n = readlink("/proc/self/exe", path, pathlen - 1);
+	if (n <= 0)
+		return (0);
+	path[n] = '\0';
+	deleted = strstr(path, " (deleted)");
+	if (deleted != NULL && deleted[10] == '\0')
+		*deleted = '\0';
 #else
 	path[0] = '\0';
 	(void)pathlen;
 	return (0);
 #endif
+	if (stat(path, &sb) != 0)
+		return (0);
+	return (sb.st_mtime > start_time.tv_sec);
 }
 
 /* The terminal answered hello with its version. */
@@ -119,7 +142,7 @@ tty_at_answered(struct tty *tty, const char *version)
 {
 	struct client	*c = tty->client;
 	static int	 upgrading;
-	char		 path[1024], *cause;
+	char		 path[4096], *cause;
 
 	strlcpy(tty->at_version, version, sizeof tty->at_version);
 	free(tty->at_images);
@@ -152,8 +175,8 @@ tty_at_answered(struct tty *tty, const char *version)
 		return;
 	}
 	status_message_set(c, 0, 1, 0, 0, "The terminal speaks at-protocol "
-	    "%.12s and this server %.12s: avatars go as sixel until home-sync "
-	    "brings them together", version, at_proto_version());
+	    "%.12s and this server %.12s: avatars go as sixel until both are "
+	    "built from the same at-protocol", version, at_proto_version());
 }
 
 static int

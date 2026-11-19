@@ -492,6 +492,18 @@ tty_default_features(int *feat, const char *name, u_int version)
 		  .features = TTY_FEATURES_BASE_MODERN_XTERM
 		              ",cstyle,extkeys"
 		},
+		/*
+		 * Rio, which at-terminal is built on for Windows, macOS and
+		 * Linux (ATT-19, TMUX-239): curly and coloured underlines,
+		 * the kitty keyboard protocol, synchronized output, OSC 8 and
+		 * OSC 7, cursor colour and style, focus reports (rio-vt's
+		 * handler). No overline or left and right margins.
+		 */
+		{ .name = "Rio",
+		  .features = TTY_FEATURES_BASE_MODERN_XTERM
+			      ",ccolour,cstyle,extkeys,focus,hyperlinks,osc7,sync"
+			      ",usstyle"
+		},
 		{ .name = "XTerm",
 		  /*
 		   * xterm also supports DECSLRM and DECFRA, but they can be

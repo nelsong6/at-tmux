@@ -7,10 +7,16 @@ one package both compile, pinned in `dep/vcpkg-overlay-ports/at-protocol/portfil
 its `REF` is the one place this build's version of the language is chosen, and the build
 says that commit in its hello. `#{at_protocol_version}` shows it.
 
-Only the Windows build speaks it (`HAVE_AT_PROTOCOL`, set in `CMakeLists.txt`). The Mac
-and Linux builds have no at-terminal to talk to and no way to fetch the package, so they
-leave `tty-at.c` out: no hello, sixel or nothing to every terminal, and
-`#{at_protocol_version}` is empty.
+Every build speaks it (`HAVE_AT_PROTOCOL`), since at-terminal is built on Rio for
+Windows, macOS and Linux (ATT-19, TMUX-239). The Windows build gets the package through
+vcpkg from Forgejo (`CMakeLists.txt`). The Mac and Linux builds can't reach Forgejo, so
+`configure` runs `dep/at-protocol.sh`, which reads the same `REF` from the portfile and
+fetches that commit from the package's GitHub push mirror
+(https://github.com/romaine-life/at-protocol, private, so git needs a GitHub sign-in) into
+`dep/at-protocol`, again only when the `REF` changes; changing the portfile runs
+`configure` again. `--disable-at-protocol` builds without it: no hello, sixel to every
+terminal, and `#{at_protocol_version}` empty. at-protocol carries images, so it needs
+them, which every build now has (`--disable-sixel` turns them off).
 
 ## The handshake (tty-at.c)
 
@@ -22,9 +28,10 @@ attributes replies are read.
 - The same version: the client speaks at-protocol (`tty->at_speaks`), and is drawn again.
 - Another version: the server tells that client on one line and, when its own file on
   disk is newer than the running process (home-sync installed a release and switched the
-  `current` junction under it), hands itself to it with `upgrade-server`. Otherwise
-  home-sync's next run brings the pair together. Either way that client keeps getting
-  sixel, so nothing is lost in between.
+  `current` junction under it, or on a Mac or Linux machine a new build was installed
+  over it: `proc_pidpath`, `/proc/self/exe`), hands itself to it with `upgrade-server`.
+  Otherwise home-sync's next run brings the pair together. Either way that client keeps
+  getting sixel, so nothing is lost in between.
 - No answer (any other terminal, a test server's pane): sixel, as always.
 
 ## Images
@@ -43,4 +50,12 @@ sixel until the program sends it again.
 
 `regress/win32-placed-images.sh` plays the terminal: it sends the inner client a hello
 with the wrong version and reads the message, then one with `#{at_protocol_version}` and
-reads the placements where sixel was.
+reads the placements where sixel was. `regress/at-protocol.sh` does the same on macOS and
+Linux, and checks the build speaks the version the portfile pins.
+
+## Terminal features
+
+A terminal that names itself `Rio` or `at-terminal` in its XTVERSION answer gets the
+features Rio has (`tty-features.c`): curly and coloured underlines, the kitty keyboard
+protocol, synchronized output, OSC 8 and OSC 7, cursor colour and style, and focus
+reports.

@@ -17,8 +17,15 @@
  */
 
 #include <sys/types.h>
+#ifndef _WIN32
+#include <netinet/in.h>
+#endif
 
 #include <limits.h>
+#ifndef _WIN32
+/* glibc's b64_pton is a macro for __b64_pton, in libresolv. */
+#include <resolv.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 

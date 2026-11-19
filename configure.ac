@@ -461,15 +461,45 @@ if test "x$enable_cgroups" = xyes; then
 	fi
 fi
 
-# Enable sixel support.
+# Images: sixel, kitty graphics and their Unicode placeholders, which at-claude's
+# avatars are (TMUX-239). On unless --disable-sixel, as the Windows build has them.
 AC_ARG_ENABLE(
 	sixel,
-	AS_HELP_STRING(--enable-sixel, enable sixel images)
+	AS_HELP_STRING(--disable-sixel, build without images),
+	,
+	enable_sixel=yes
 )
 if test "x$enable_sixel" = xyes; then
 	AC_DEFINE(ENABLE_SIXEL)
 fi
 AM_CONDITIONAL(ENABLE_SIXEL, [test "x$enable_sixel" = xyes])
+
+# at-protocol, the language the server speaks to at-terminal (docs/at-protocol.md,
+# TMUX-239): its source at the commit the Windows build pins, fetched by
+# dep/at-protocol.sh. Changing the pin runs configure again.
+AC_ARG_ENABLE(
+	at-protocol,
+	AS_HELP_STRING(--disable-at-protocol, build without at-protocol),
+	,
+	enable_at_protocol=yes
+)
+if test "x$enable_at_protocol" = xyes; then
+	if test "x$enable_sixel" != xyes; then
+		AC_MSG_ERROR([at-protocol carries images: drop --disable-sixel or add --disable-at-protocol])
+	fi
+	AC_MSG_CHECKING(for at-protocol)
+	at_protocol_ref=`sh "$srcdir/dep/at-protocol.sh" "$srcdir"`
+	if test -z "$at_protocol_ref"; then
+		AC_MSG_RESULT(no)
+		AC_MSG_ERROR([can't fetch at-protocol (dep/at-protocol.sh says why); --disable-at-protocol builds without it])
+	fi
+	AC_MSG_RESULT($at_protocol_ref)
+	AC_DEFINE(HAVE_AT_PROTOCOL)
+	AC_DEFINE_UNQUOTED(AT_PROTOCOL_VERSION, "$at_protocol_ref")
+fi
+AM_CONDITIONAL(HAVE_AT_PROTOCOL, [test "x$enable_at_protocol" = xyes])
+AC_SUBST(CONFIG_STATUS_DEPENDENCIES,
+	['$(top_srcdir)/dep/vcpkg-overlay-ports/at-protocol/portfile.cmake'])
 
 # Check for b64_ntop. If we have b64_ntop, we assume b64_pton as well.
 AC_MSG_CHECKING(for b64_ntop)
