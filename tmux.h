@@ -4043,6 +4043,7 @@ void		 image_upgrade_restore_pixels(struct upgrade_reader *,
 void		 tty_draw_placeholders(struct tty *, struct screen *, u_int, u_int,
 		     u_int, u_int, u_int);
 
+#ifdef HAVE_AT_PROTOCOL
 /* tty-at.c */
 const char	*tty_at_version(void);
 void		 tty_at_hello(struct tty *);
@@ -4052,6 +4053,7 @@ void		 tty_at_place(struct tty *, struct image *, u_int, u_int, u_int,
 void		 tty_at_drop(struct image *);
 void		 tty_at_reset(struct tty *);
 int		 tty_keys_at(struct tty *, const char *, size_t, size_t *);
+#endif
 
 /* image-kitty.c */
 char		*image_kitty(struct window_pane *, struct screen_write_ctx *,

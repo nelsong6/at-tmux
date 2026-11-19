@@ -195,7 +195,9 @@ image_virtual_free(struct image *im)
 {
 	struct screen	*s = im->s;
 
+#ifdef HAVE_AT_PROTOCOL
 	tty_at_drop(im);
+#endif
 	TAILQ_REMOVE(&s->virtual_images, im, entry);
 	s->virtual_image_count--;
 	sixel_free(im->data);
@@ -341,10 +343,12 @@ tty_draw_placeholders(struct tty *tty, struct screen *s, u_int px, u_int py,
 			continue;
 		log_debug("%s: id=%u row=%u cols %u-%u at %u,%u", __func__,
 		    id, row, col, col + run, atx + start, aty);
+#ifdef HAVE_AT_PROTOCOL
 		if (tty->at_speaks && im->pixels != NULL) {
 			tty_at_place(tty, im, atx + start, aty, col, row, run, 1);
 			continue;
 		}
+#endif
 		if ((~tty->term->flags & TERM_SIXEL) &&
 		    !tty_term_has(tty->term, TTYC_SXL))
 			continue;
