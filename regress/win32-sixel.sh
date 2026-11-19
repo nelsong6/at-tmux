@@ -67,14 +67,18 @@ LOG=$(ls tmux-out-*.log 2>/dev/null | head -1)
 [ -n "$LOG" ] || { echo 'no output log'; exit 1; }
 
 # drawn FROM: from byte FROM of the log, the client drew the text that follows
-# the image, and with it the image as a sixel and no placeholder.
+# the image, and the image as a sixel or the placeholder. A redraw writes a
+# pane's text before its images (screen_redraw_draw_pane), so the text can be
+# in the log while the image isn't yet.
 drawn() {
 	tail -c +"$(($1 + 1))" "$LOG" >drawn.txt
-	grep -a -q AFTER-IMAGE drawn.txt
+	grep -a -q AFTER-IMAGE drawn.txt || return 1
+	grep -a -q "$(printf '\033')P0;[0-9]*q" drawn.txt ||
+	    grep -a -q 'SIXEL IMAGE' drawn.txt
 }
 check() {
 	if ! wait_until drawn "$1"; then
-		echo "$2: the client never drew the pane"
+		echo "$2: the client never drew the pane and its image"
 		$OUTER capture-pane -p
 		exit 1
 	fi
