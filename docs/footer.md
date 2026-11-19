@@ -30,3 +30,6 @@ reserve a row. A footer click opens that conversation's links menu (`tmux-strip 
 `@strip-usage`, the conversation's context and cost and the account's usage as styled
 text, is drawn before the links arrow only while the PR and the work package still fit
 whole; a narrower pane drops it whole, before either is cut short (ATC-96).
+`@strip-ci`, Forgejo's CI load as styled text carrying its own click range (`ci`),
+is drawn before the usage part on the same terms, and dropped before the usage part
+is (AGT-43).

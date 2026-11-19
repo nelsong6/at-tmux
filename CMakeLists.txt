@@ -400,17 +400,16 @@ endif()
 # The commit and a LF, as releases have always had it; file(WRITE) ends it CRLF on Windows.
 file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/at-protocol.txt CONTENT "${AT_PROTOCOL_REF}\n" NEWLINE_STYLE UNIX)
 
-# Install: bin/ is the release's tmux-windows-<tag>.zip and at-protocol.txt is
-# also its own asset (pipeline-templates' fleet.json).
-install(TARGETS tmux RUNTIME DESTINATION bin)
+# Install: everything at the prefix root, each file a release asset under its own
+# name (pipeline-templates' release suite, PIPT-33).
+install(TARGETS tmux RUNTIME DESTINATION .)
 install(FILES
     $<TARGET_FILE:tmux-wer>
     $<TARGET_PDB_FILE:tmux>
     ${CMAKE_CURRENT_BINARY_DIR}/conpty/runtimes/win-x64/native/conpty.dll
     ${CMAKE_CURRENT_BINARY_DIR}/conpty/build/native/runtimes/x64/OpenConsole.exe
     ${CMAKE_CURRENT_BINARY_DIR}/at-protocol.txt
-    DESTINATION bin)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/at-protocol.txt DESTINATION .)
+    DESTINATION .)
 
 # Tests: the regress/ scripts, each run by Git Bash through win32-run.sh. pipeline-
 # templates' cmake suite runs them on every PR that changes the code, four at a

@@ -36,5 +36,11 @@ only clicks (mode 1000, as gvoice-tui and the fzt pickers do) keeps its clicks, 
 drag starts tmux's selection as it does over a program that took no mouse. A program
 that asked for drags (1002 or 1003) gets them (TMUX-227; `regress/win32-at-defaults.sh`).
 
+A program's links (OSC 8 hyperlinks, as at-claude draws them) are passed on to
+at-terminal, which never names itself, so the `hyperlinks` feature is asked for with the
+kitty keyboard protocol and synchronized output. The terminal opens a link on Ctrl+click
+and underlines it under the pointer; a plain click, such as one that only focuses a pane,
+goes to tmux and the program and opens nothing (ATC-154; `regress/win32-at-defaults.sh`).
+
 At an upgrade, a binding identical to this build's default becomes that default. Test:
 `regress/win32-at-defaults.sh`, and `win32-upgrade-defaults.sh` for the upgrade.
