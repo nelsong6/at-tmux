@@ -265,8 +265,8 @@ CI comes from pipeline-templates' `cmake` and `release` suites: a pull request
 that changes the code builds the `ci` preset in `CMakePresets.json` and runs
 the `regress/` tests through CTest, and every merge to master that
 changes the build becomes a Forgejo release, `v3.6a.N`, with
-`tmux-windows-<tag>.zip` and `at-protocol.txt`, which home-sync installs on
-every home PC.
+`tmux.exe`, `tmux.pdb`, `tmux-wer.dll`, `conpty.dll`, `OpenConsole.exe`,
+`at-protocol.txt` and `SHA256SUMS`, which home-sync installs on every home PC.
 
 ## Debugging
 
