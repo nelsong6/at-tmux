@@ -7734,6 +7734,11 @@ Start
 .Ar program
 from the server with no shell and no pane, without waiting for it.
 It keeps running if the server ends.
+Its environment is the global environment, and a
+.Ar program
+named without a path is found on that environment's
+.Ev PATH ,
+not on the one the server started with.
 With
 .Fl K ,
 the next non-control client to attach runs

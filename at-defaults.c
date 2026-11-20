@@ -25,9 +25,11 @@ static const struct {
 	/*
 	 * Windows numbered from 1 and closing up, the mouse, a long history, no
 	 * prefix (Ctrl+B is the at menu), and no timer redrawing the status line
-	 * (TMUX-112). at-terminal (Windows Terminal 1.25) speaks the kitty keyboard
-	 * protocol, synchronized output and OSC 8 hyperlinks but never names
-	 * itself, so all three are asked for. With hyperlinks passed on, a
+	 * (TMUX-112). at-terminal, built on Rio, names itself in its XTVERSION
+	 * reply and gets Rio's features from that (tty-keys.c); a terminal that
+	 * is only xterm-256color, as the Windows Terminal-based at-terminal
+	 * before it was, is asked for the kitty keyboard protocol, synchronized
+	 * output and OSC 8 hyperlinks here. With hyperlinks passed on, a
 	 * program's links reach the terminal, which opens one on Ctrl+click, so a
 	 * plain click (one that only focuses a pane) opens nothing (ATC-154).
 	 */

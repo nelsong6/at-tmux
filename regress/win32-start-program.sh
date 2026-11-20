@@ -1,7 +1,9 @@
 #!/bin/sh
 
 # start-program runs a program from the server with no shell: an argument with
-# spaces reaches it whole, and one that can't start fails with its name.
+# spaces reaches it whole, and one that can't start fails with its name. A
+# program named without a path is found on the global environment's PATH, not
+# the PATH the server started with, and runs with the global environment.
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -24,7 +26,16 @@ fail() {
 WTMUX=$(cygpath -w "$(readlink -f "$TEST_TMUX")")
 "$(dirname "$TEST_TMUX")/alt-tab-test.exe" || fail "Alt+Tab hook gate"
 
-$TMUX -fNUL new -d -s p </dev/null || fail "start server"
+# The server starts with old/ on its own PATH; the global environment's PATH
+# is changed below to "global tools" alone, as home-sync changes it on a server
+# that keeps running (TMUX-247).
+mkdir "$OUT/old" "$OUT/global tools" || fail "probe folders"
+cp "$(cygpath -u "$SYSTEMROOT")/System32/where.exe" "$OUT/old/tmux-sp-old.exe" ||
+    fail "old probe"
+cp "$(readlink -f "$TEST_TMUX")" "$OUT/global tools/tmux-sp-probe.exe" ||
+    fail "global probe"
+PATH="$OUT/old:/bin:/usr/bin" $TMUX -fNUL new -d -s p </dev/null ||
+    fail "start server"
 
 $TMUX start-program "$WTMUX" "-L$TEST_SOCKET" set -g @started 'two words' ||
     fail "start-program"
@@ -82,6 +93,21 @@ wait_until attached || fail "second client did not attach"
 [ "$($TMUX show -gqv @launch-key | tr -d '\r')" = consumed ] ||
     fail "key was delivered a second time"
 echo "PASS: launch key waits for attachment, replaces repeats and runs once"
+
+NATIVE=$(cygpath -ma "$OUT")
+$TMUX setenv -g PATH "$NATIVE/global tools;$SYSTEMROOT/System32" ||
+    fail "set global PATH"
+$TMUX setenv -g SP_PROBE from-global || fail "set probe variable"
+$TMUX set -ga update-environment SP_PROBE || fail "update-environment"
+$TMUX start-program tmux-sp-probe.exe "-L$TEST_SOCKET" new -d -s probe ||
+    fail "a program on the global PATH didn't start"
+probed() { $TMUX has-session -t probe 2>/dev/null; }
+wait_until probed || fail "the program found on the global PATH didn't run"
+[ "$($TMUX show-environment -t probe SP_PROBE | tr -d '\r')" = \
+    SP_PROBE=from-global ] || fail "the program didn't get the global environment"
+$TMUX start-program tmux-sp-old.exe >/dev/null 2>&1 &&
+    fail "a program on the server's own PATH started"
+echo "PASS: start-program finds a program on the global PATH, not the server's"
 
 $TMUX bind -T global-no-client 'W-`' start-program x.exe || fail "bind"
 $TMUX list-keys -T global-no-client | grep -q 'start-program' || fail "bound key"

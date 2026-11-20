@@ -43,14 +43,22 @@ const struct cmd_entry cmd_start_program_entry = {
 };
 
 #ifdef _WIN32
-/* The program outlives the server, so it has no console or inherited handles. */
+/*
+ * The program outlives the server, so it has no console or inherited handles.
+ * Its environment is the one job_run gives a program with no session, as on
+ * other platforms: the global environment, so its PATH, not the server
+ * process's (fixed when the server started and carried over by upgrade-server),
+ * finds an unqualified program, and a folder home-sync puts on PATH later is
+ * seen without a new server.
+ */
 static int
 cmd_start_program_spawn(int argc, char **argv)
 {
 	STARTUPINFOW		 si;
 	PROCESS_INFORMATION	 pi;
+	struct environ		*env;
 	wchar_t			*application, *wcmd;
-	char			*cmdline;
+	char			*cmdline, *envblock;
 	int			 n, ok = 0;
 
 	cmdline = win32_argv_to_cmdline(argc, argv);
@@ -59,18 +67,24 @@ cmd_start_program_spawn(int argc, char **argv)
 	MultiByteToWideChar(CP_UTF8, 0, cmdline, -1, wcmd, n);
 	free(cmdline);
 
-	if (win32_child_application(wcmd, NULL, &application)) {
+	env = environ_for_session(NULL, !cfg_finished);
+	envblock = environ_to_win32_block(env);
+	environ_free(env);
+
+	if (win32_child_application(wcmd, envblock, &application)) {
 		memset(&si, 0, sizeof si);
 		si.cb = sizeof si;
 		AllowSetForegroundWindow(ASFW_ANY);
 		ok = CreateProcessW(application, wcmd, NULL, NULL, FALSE,
-		    DETACHED_PROCESS, NULL, NULL, &si, &pi);
+		    DETACHED_PROCESS|CREATE_UNICODE_ENVIRONMENT, envblock, NULL,
+		    &si, &pi);
 		if (ok) {
 			CloseHandle(pi.hThread);
 			CloseHandle(pi.hProcess);
 		}
 		free(application);
 	}
+	free(envblock);
 	free(wcmd);
 	return (ok);
 }
