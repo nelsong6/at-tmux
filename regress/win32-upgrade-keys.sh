@@ -109,9 +109,13 @@ if [ -n "$TEST_FOOTER_TMUX" ]; then
     wait_until whole || { echo "the window is still narrowed for the panel"; exit 1; }
     $TMUX display-panel -C 2>/dev/null &&
         { echo "display-panel is still a command"; exit 1; }
+    # Its default Ctrl+Shift+O ran display-panel, which this build has no
+    # more: the key takes this build's default instead of going unbound.
+    $TMUX list-keys -T root | grep -a 'C-S-o' | grep -q 'panel -session' ||
+        { echo "Ctrl+Shift+O lost its default:"; $TMUX list-keys -T root | grep -a 'C-S-o'; exit 1; }
     $TMUX kill-server
     $OUTER kill-server 2>/dev/null
-    echo 'PASS: an upgrade from the footer and side panel build drops their keys, options and panel and keeps the rest'
+    echo 'PASS: an upgrade from the footer and side panel build drops their keys, options and panel, keeps the rest, and a default whose command went takes the new default'
 fi
 
 $TMUX -f "$OUT/test.conf" new -d -s incompatible || exit 1

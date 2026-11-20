@@ -605,6 +605,24 @@ upgrade_is_default(struct upgrade_key *k)
 }
 
 /*
+ * Bind key to this build's default for it, if it has one.
+ */
+static void
+upgrade_take_default(const char *name, key_code key)
+{
+	struct key_table	*table;
+	struct key_binding	*dd;
+
+	table = key_bindings_get_table(name, 0);
+	if (table == NULL ||
+	    (dd = key_bindings_get_default(table, key)) == NULL)
+		return;
+	dd->cmdlist->references++;
+	key_bindings_add(name, dd->key, dd->note,
+	    dd->flags & KEY_BINDING_REPEAT, dd->cmdlist);
+}
+
+/*
  * Take out every binding of this build's own, then put the old server's in.
  * One still as the old build's default becomes this build's default, or goes
  * if this build has none; so does one the same as this build's default, as a
@@ -647,22 +665,6 @@ upgrade_restore_keys(struct upgrade_reader *r)
 		k = &keys[i];
 		if (k->table == NULL || k->cmd == NULL)
 			continue;
-		/*
-		 * A saved binding is commands the old server had already
-		 * resolved: an alias that has since taken one of their names is
-		 * not what it ran.
-		 */
-		memset(&pi, 0, sizeof pi);
-		pi.flags = CMD_PARSE_NOALIAS;
-		pr = cmd_parse_from_string(k->cmd, &pi);
-		if (pr->status != CMD_PARSE_SUCCESS) {
-			log_debug("%s: %s: %s", __func__, k->table, pr->error);
-			free(pr->error);
-			continue;
-		}
-		key_bindings_add(k->table, k->key, k->note,
-		    k->flags & KEY_BINDING_REPEAT, pr->cmdlist);
-
 		if (defaults) {
 			d = upgrade_find_key(old, nold, k->table, k->key);
 			untouched = (d != NULL &&
@@ -674,6 +676,28 @@ upgrade_restore_keys(struct upgrade_reader *r)
 			untouched = key_bindings_legacy_default(k->table,
 			    k->key, k->cmd);
 		}
+		/*
+		 * A saved binding is commands the old server had already
+		 * resolved: an alias that has since taken one of their names is
+		 * not what it ran.
+		 */
+		memset(&pi, 0, sizeof pi);
+		pi.flags = CMD_PARSE_NOALIAS;
+		pr = cmd_parse_from_string(k->cmd, &pi);
+		if (pr->status != CMD_PARSE_SUCCESS) {
+			/*
+			 * A command this build no longer has (display-panel,
+			 * AGT-49): the old build's default for the key
+			 * becomes this build's, as it would had it parsed.
+			 */
+			log_debug("%s: %s: %s", __func__, k->table, pr->error);
+			free(pr->error);
+			if (untouched)
+				upgrade_take_default(k->table, k->key);
+			continue;
+		}
+		key_bindings_add(k->table, k->key, k->note,
+		    k->flags & KEY_BINDING_REPEAT, pr->cmdlist);
 		if (!untouched)
 			untouched = upgrade_is_default(k);
 		if (untouched)
