@@ -158,7 +158,6 @@ set(TMUX_SOURCES
     layout-custom.c
     layout-set.c
     log.c
-    panel.c
     menu.c
     mode-tree.c
     names.c
@@ -463,7 +462,8 @@ function(tmux_test name script kind)
     set(fixtures staged)
     if(kind STREQUAL "keys")
         list(APPEND environment TEST_LEGACY_TMUX=${dir}/legacy-keys/tmux.exe
-            TEST_DEFAULTS_TMUX=${dir}/other-defaults/tmux.exe)
+            TEST_DEFAULTS_TMUX=${dir}/other-defaults/tmux.exe
+            TEST_FOOTER_TMUX=${dir}/footer-panel/tmux.exe)
         list(APPEND fixtures keys-staged)
     endif()
     set_tests_properties(${name} PROPERTIES ENVIRONMENT "${environment}"
@@ -530,13 +530,14 @@ tmux_test(win32-start-program win32-start-program.sh alt-tab TIMEOUT 300 LOCK gl
 # hands only through conpty.dll.
 foreach(script win32-pty-close win32-pane-clear win32-popup-output win32-sixel
         win32-sixel-cap win32-placed-images win32-option-redraw win32-upgrade
-        win32-move-pane panel panel-fill win32-close win32-pane-footer win32-strip
+        win32-move-pane win32-close
         win32-flight win32-whole-sequences)
     tmux_test(conpty-${script} ${script}.sh conpty)
 endforeach()
 
 # Upgrades between this build and builds with other key numbers and defaults,
-# built from the pre-footer commit and from this one changed
+# built from the pre-footer commit, the last footer and side panel commit and
+# from this one changed
 # (build-upgrade-key-fixtures.ps1). It compiles four files at a time, so it takes
 # all four of CTest's slots while it runs.
 foreach(script win32-upgrade-keys win32-upgrade-defaults)

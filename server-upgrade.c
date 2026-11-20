@@ -51,7 +51,11 @@ static const key_code upgrade_v1_keys[] = {
 #include "upgrade-v1-keys.h"
 };
 #undef UPGRADE_MOUSE
-#define UPGRADE_MOUSE(name) UPGRADE_V1_MOUSE(name) KEYC_ ## name ## _FOOTER,
+/*
+ * The footer layout gave each mouse event a Footer key too. Footer keys are
+ * gone (AGT-49): their places stay, as keys no binding is read for.
+ */
+#define UPGRADE_MOUSE(name) UPGRADE_V1_MOUSE(name) KEYC_UNKNOWN,
 static const key_code upgrade_v1_footer_keys[] = {
 #include "upgrade-v1-keys.h"
 };
@@ -235,6 +239,11 @@ upgrade_legacy_key(key_code key)
 	return ((key & ~KEYC_MASK_KEY)|keys[value]);
 }
 
+/*
+ * A key by its name. One this build has no key for, such as a Footer mouse
+ * key the old build had (AGT-49), is KEYC_UNKNOWN, which the caller drops: a
+ * key gone from this build is no reason to fail the upgrade.
+ */
 key_code
 upr_key(struct upgrade_reader *r)
 {
@@ -245,10 +254,17 @@ upr_key(struct upgrade_reader *r)
 		return (upgrade_legacy_key(upr_u64(r)));
 	name = upr_str(r);
 	flags = upr_u64(r);
-	key = name == NULL ? KEYC_UNKNOWN : key_string_lookup_string(name);
-	free(name);
-	if (key == KEYC_UNKNOWN)
+	if (name == NULL) {
 		r->error = 1;
+		return (KEYC_UNKNOWN);
+	}
+	key = key_string_lookup_string(name);
+	if (key == KEYC_UNKNOWN) {
+		log_debug("%s: no key %s in this build", __func__, name);
+		free(name);
+		return (KEYC_UNKNOWN);
+	}
+	free(name);
 	return (key|flags);
 }
 
@@ -521,6 +537,11 @@ upgrade_read_key_tables(struct upgrade_reader *o, u_int *count)
 			k->note = upr_str(o);
 			k->flags = upr_u32(o);
 			k->cmd = upr_str(o);
+			if ((k->key & KEYC_MASK_KEY) == KEYC_UNKNOWN) {
+				/* A key this build no longer has. */
+				free(k->table);
+				k->table = NULL;
+			}
 		}
 		free(name);
 	}
@@ -1413,10 +1434,43 @@ upgrade_save_client(struct evbuffer *evb, struct client *c,
 	 */
 	upw_u32(o, (uint32_t)(c->tty.fg + 1));
 	upw_u32(o, (uint32_t)(c->tty.bg + 1));
-	panel_upgrade_save(o, c);
 	upw_obj(evb, o);
 	evbuffer_free(o);
 	return (0);
+}
+
+/*
+ * The side panel an older build kept for a client, after the client's own
+ * state: at-tmux has no side panel any more (AGT-49), so it is read past and
+ * dropped. A build from before the panel wrote nothing here.
+ */
+static void
+upgrade_skip_panel(struct upgrade_reader *o, u_int version)
+{
+	u_int	 i, count;
+
+	if (o->left == 0 || !upr_u32(o))
+		return;
+	upr_u32(o);			/* source pane */
+	upr_u32(o);			/* tabs */
+	upr_u32(o);			/* top */
+	upr_u32(o);			/* choice */
+	upr_u32(o);			/* focused */
+	free(upr_str(o));		/* generation */
+	free(upr_str(o));		/* title */
+	count = upr_u32(o);
+	if (count > o->left) {
+		o->error = 1;
+		return;
+	}
+	for (i = 0; i < count && !o->error; i++) {
+		free(upr_str(o));	/* name */
+		if (upr_u32(o))
+			upr_key(o);
+		free(upr_str(o));	/* command */
+		if (version >= 4)
+			free(upr_str(o));	/* command name */
+	}
 }
 
 /*
@@ -1519,7 +1573,7 @@ upgrade_restore_client(struct upgrade_reader *r)
 	}
 	c->tty.fg = (int)upr_u32(&o) - 1;
 	c->tty.bg = (int)upr_u32(&o) - 1;
-	panel_upgrade_restore(&o, c, upgrade_version);
+	upgrade_skip_panel(&o, upgrade_version);
 	if (o.error) {
 		r->error = 1;
 		return;

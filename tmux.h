@@ -208,8 +208,7 @@ struct winlink;
 	KEYC_ ## name ## _SCROLLBAR_UP,	    \
 	KEYC_ ## name ## _SCROLLBAR_SLIDER, \
 	KEYC_ ## name ## _SCROLLBAR_DOWN,   \
-	KEYC_ ## name ## _BORDER,          \
-	KEYC_ ## name ## _FOOTER
+	KEYC_ ## name ## _BORDER
 #define KEYC_MOUSE_STRING(name, s)				      \
 	{ #s "Pane", KEYC_ ## name ## _PANE },			      \
 	{ #s "Status", KEYC_ ## name ## _STATUS },		      \
@@ -219,8 +218,7 @@ struct winlink;
 	{ #s "ScrollbarUp", KEYC_ ## name ## _SCROLLBAR_UP },         \
 	{ #s "ScrollbarSlider", KEYC_ ## name ## _SCROLLBAR_SLIDER }, \
 	{ #s "ScrollbarDown", KEYC_ ## name ## _SCROLLBAR_DOWN },     \
-	{ #s "Border", KEYC_ ## name ## _BORDER },                 \
-	{ #s "Footer", KEYC_ ## name ## _FOOTER }
+	{ #s "Border", KEYC_ ## name ## _BORDER }
 
 /*
  * A single key. This can be ASCII or Unicode or one of the keys between
@@ -1137,7 +1135,6 @@ struct menu_item {
 	const char	*name;
 	key_code	 key;
 	const char	*command;
-	const char	*command_name; /* a side panel row's, for display-palette -P */
 };
 struct menu {
 	const char		*title;
@@ -1332,16 +1329,6 @@ struct window_pane {
 
 	struct screen	 status_screen;
 	size_t		 status_size;
-
-	/* pane-footer: wanted by its condition, and rows taken from the pane. */
-	int		 footer;
-	u_int		 footer_rows;
-	struct screen	 footer_screen;
-	struct grid_cell footer_style;
-	char		*footer_expanded;
-	struct style_ranges footer_ranges;
-	int		 footer_hover;	/* start of the range under the mouse, or -1 */
-	int		 footer_hover_drawn;
 
 	TAILQ_HEAD(, window_mode_entry) modes;
 
@@ -1615,9 +1602,6 @@ struct mouse_event {
 	int		s;
 	int		w;
 	int		wp;
-
-	int		on_pane_footer;
-	u_int		pane_footer_x;
 
 	u_int		sgr_type;
 	u_int		sgr_b;
@@ -2099,7 +2083,6 @@ struct client {
 	struct cmdq_item	*tty_wait_item;
 #endif
 	struct tty		 tty;
-	struct panel_data	*panel;
 
 	size_t			 written;
 	size_t			 discarded;
@@ -3514,10 +3497,6 @@ struct window	*window_create(u_int, u_int, u_int, u_int);
 void		 window_pane_set_event(struct window_pane *);
 struct window_pane *window_get_active_at(struct window *, u_int, u_int);
 struct window_pane *window_find_string(struct window *, const char *);
-void		 window_update_pane_footers(struct window *);
-struct style_range *window_pane_footer_get_range(struct window_pane *, u_int);
-void		 window_set_footer_hover(struct window *, struct window_pane *,
-		     u_int);
 int		 window_has_pane(struct window *, struct window_pane *);
 int		 window_set_active_pane(struct window *, struct window_pane *,
 		     int);
@@ -4165,32 +4144,6 @@ void		 window_set_next_ids(u_int, u_int);
 void		 window_pane_upgrade_event(struct window_pane *);
 void		 window_pane_upgrade_feed(struct window_pane *,
 		     struct evbuffer *);
-#endif
-
-
-/* panel.c */
-u_int panel_width(struct client *);
-void panel_resized(void);
-void panel_clear(struct client *);
-int panel_focus(struct client *);
-void panel_draw(struct client *);
-int panel_key(struct client *, struct key_event *);
-#define PANEL_ACTION_ROW 0
-#define PANEL_ACTION_CLOSE 1
-#define PANEL_ACTION_UNFOCUS 2
-#define PANEL_ACTION_PAGE_UP 3
-#define PANEL_ACTION_PAGE_DOWN 4
-typedef void (*panel_action_cb)(void *, int, const char *, const char *,
-    const char *, const char *, int);
-void panel_actions(struct client *, panel_action_cb, void *);
-void panel_act(struct client *, int, const char *);
-struct screen *panel_mode(struct client *);
-int panel_open(struct client *, struct menu *, struct window_pane *, u_int,
-    const char *, int, const char *);
-
-#ifdef HAVE_SERVER_UPGRADE
-void panel_upgrade_save(struct evbuffer *, struct client *);
-void panel_upgrade_restore(struct upgrade_reader *, struct client *, u_int);
 #endif
 
 #endif /* TMUX_H */

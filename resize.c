@@ -185,7 +185,7 @@ clients_calculate_size(int type, int current, struct client *c,
 			cx = cw->sx;
 			cy = cw->sy;
 		} else {
-			cx = loop->tty.sx - panel_width(loop);
+			cx = loop->tty.sx;
 			cy = loop->tty.sy - status_line_size(loop);
 		}
 

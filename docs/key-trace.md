@@ -12,7 +12,7 @@ which key it was. `tmux key-trace` prints the last 128:
 
 `seen` is when the server's loop heard of the press and `read` when the key arrived from
 the client, both counted from the press itself. `went to` is what took it: a pane, a
-menu or popup, the command prompt, a panel, a message, copy mode, a key binding, or a
+menu or popup, the command prompt, a message, copy mode, a key binding, or a
 pane with input off.
 
 On Windows a press comes from the keyboard hook behind the global key table, so the

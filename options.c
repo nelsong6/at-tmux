@@ -1191,8 +1191,8 @@ options_is_format(struct options *oo, const char *name)
 }
 
 /*
- * Options that only the status line, pane borders and their status lines,
- * pane footers and the terminal title read, directly or through formats:
+ * Options that only the status line, pane borders and their status lines
+ * and the terminal title read, directly or through formats:
  * user options and these. Panes read them only through window-style and
  * window-active-style, and in a mode.
  */
@@ -1256,7 +1256,7 @@ options_redraw_outside_panes(const char *name)
 	}
 
 	/*
-	 * The status line, border status lines and footers are drawn again
+	 * The status line and border status lines are drawn again
 	 * where their text or style changed. Borders are drawn again only for
 	 * a border option, or when their styles are formats.
 	 */
@@ -1309,8 +1309,6 @@ options_push_changes(const char *name)
 		RB_FOREACH(wp, window_pane_tree, &all_window_panes)
 			window_pane_default_cursor(wp);
 	}
-	if (strcmp(name, "panel-width") == 0)
-		panel_resized();
 	if (strcmp(name, "record-output") == 0)
 		tty_record_changed();
 	if (strcmp(name, "fill-character") == 0) {
@@ -1341,7 +1339,6 @@ options_push_changes(const char *name)
 		}
 	}
 	if (strcmp(name, "status") == 0 ||
-	    strcmp(name, "pane-footer") == 0 ||
 	    strcmp(name, "status-interval") == 0)
 		status_timer_start_all();
 	if (strcmp(name, "monitor-silence") == 0)
@@ -1564,6 +1561,32 @@ options_upgrade_table_entry(const char *name)
 }
 
 /*
+ * The user options an older build's built-in settings set for the conversation
+ * strip's row, which at-tmux no longer draws (AGT-49): an upgrade leaves them
+ * out, so nothing is left of the strip's formats.
+ */
+static const char *options_upgrade_removed[] = {
+	"@strip-session", "@strip-agent", "@strip-menu", "@w-who", "@wide", "@w-fu",
+	"@w-ag", "@w-us", "@w-ci", "@w-rest0", "@n-pr", "@w-tmin", "@w-tfull",
+	"@us-on", "@w-rest1", "@ci-on", "@w-rest", "@w-pr0", "@w-pr", "@w-plan",
+	"@w-prtext", "@w-t1", "@w-ticket", "@w-small", "@c-who", "@c-plan",
+	"@c-prtext", "@c-pr", "@c-ticket", "@c-small", "@r-small", "@on-copy-pr",
+	"@r-copy-pr", "@on-copy-t", "@r-copy-t", "@r-big"
+};
+
+static int
+options_upgrade_is_removed(const char *name)
+{
+	u_int	i;
+
+	for (i = 0; i < nitems(options_upgrade_removed); i++) {
+		if (strcmp(name, options_upgrade_removed[i]) == 0)
+			return (1);
+	}
+	return (0);
+}
+
+/*
  * Restore options saved by options_upgrade_save. One the new build no longer
  * has, or no longer of the same kind, is left out and logged.
  */
@@ -1586,9 +1609,12 @@ options_upgrade_restore(struct upgrade_reader *r, struct options *oo)
 		te = NULL;
 		if (name != NULL && *name != '@')
 			te = options_upgrade_table_entry(name);
-		if (name == NULL || (*name != '@' && te == NULL)) {
+		if (name == NULL || (*name != '@' && te == NULL) ||
+		    options_upgrade_is_removed(name)) {
 			log_debug("%s: dropping %s", __func__, name);
 			te = NULL;
+			free(name);
+			name = NULL;
 		}
 		switch (kind) {
 		case 3:
@@ -1637,7 +1663,8 @@ options_upgrade_restore(struct upgrade_reader *r, struct options *oo)
 			break;
 		case 4:
 			number = upr_key(&o);
-			if (te != NULL && te->type == OPTIONS_TABLE_KEY)
+			if (te != NULL && te->type == OPTIONS_TABLE_KEY &&
+			    (number & KEYC_MASK_KEY) != KEYC_UNKNOWN)
 				options_set_number(oo, name, (long long)number);
 			break;
 		default:

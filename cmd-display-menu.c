@@ -50,17 +50,6 @@ const struct cmd_entry cmd_display_menu_entry = {
 	.exec = cmd_display_menu_exec
 };
 
-const struct cmd_entry cmd_display_panel_entry = {
-	.name = "display-panel",
-	.args = { "b:c:CFg:G:Nt:T:u", 0, -1, cmd_display_menu_args_parse },
-	.usage = "[-CFNu] [-b tab-count] [-c target-client] " CMD_TARGET_PANE_USAGE
-	    " [-g generation] [-G expected-generation] [-T title] "
-	    "[name key command [command-name] ...]",
-	.target = { 't', CMD_FIND_PANE, 0 },
-	.flags = CMD_CLIENT_CFLAG,
-	.exec = cmd_display_menu_exec
-};
-
 const struct cmd_entry cmd_display_popup_entry = {
 	.name = "display-popup",
 	.alias = "popup",
@@ -98,13 +87,6 @@ cmd_display_menu_args_parse(struct args *args, u_int idx, __unused char **cause)
 		type = ARGS_PARSE_COMMANDS_OR_STRING;
 		if (i++ == idx)
 			break;
-
-		/* display-panel -N: each item also has a command name. */
-		if (args_has(args, 'N')) {
-			type = ARGS_PARSE_STRING;
-			if (i++ == idx)
-				break;
-		}
 	}
 	return (type);
 }
@@ -314,27 +296,15 @@ cmd_display_menu_exec(struct cmd *self, struct cmdq_item *item)
 	enum box_lines		 lines = BOX_LINES_DEFAULT;
 	char			*title, *cause;
 	int			 flags = 0, starting_choice = 0;
-	int			 panel = strcmp(cmd_get_entry(self)->name, "display-panel") == 0;
-	u_int			 px, py, i, tabs = 0, count = args_count(args);
+	u_int			 px, py, i, count = args_count(args);
 	struct options		*o = target->s->curw->window->options;
 	struct options_entry	*oe;
 
 
-	if (panel && args_has(args, 'C')) {
-		panel_clear(tc);
-		return (CMD_RETURN_NORMAL);
-	}
-	if (panel && args_has(args, 'F')) {
-		if (!panel_focus(tc)) {
-			cmdq_error(item, "no side panel showing");
-			return (CMD_RETURN_ERROR);
-		}
-		return (CMD_RETURN_NORMAL);
-	}
-	if (!panel && tc->overlay_draw != NULL)
+	if (tc->overlay_draw != NULL)
 		return (CMD_RETURN_NORMAL);
 
-	if (!panel && args_has(args, 'C')) {
+	if (args_has(args, 'C')) {
 		if (strcmp(args_get(args, 'C'), "-") == 0)
 			starting_choice = -1;
 		else {
@@ -362,7 +332,7 @@ cmd_display_menu_exec(struct cmd *self, struct cmdq_item *item)
 			continue;
 		}
 
-		if (count - i < (panel && args_has(args, 'N') ? 3 : 2)) {
+		if (count - i < 2) {
 			cmdq_error(item, "not enough arguments");
 			menu_free(menu);
 			return (CMD_RETURN_ERROR);
@@ -373,16 +343,7 @@ cmd_display_menu_exec(struct cmd *self, struct cmdq_item *item)
 		menu_item.key = key_string_lookup_string(key);
 		menu_item.command = args_string(args, i++);
 
-		if (panel) {
-			menu->items = xreallocarray(menu->items, menu->count + 1, sizeof *menu->items);
-			menu->items[menu->count].name = format_single_from_state(item, name, tc, target);
-			menu->items[menu->count].key = menu_item.key;
-			menu->items[menu->count].command = xstrdup(menu_item.command);
-			value = args_has(args, 'N') ? args_string(args, i++) : "";
-			menu->items[menu->count++].command_name =
-			    *value == '\0' ? NULL : xstrdup(value);
-		} else
-			menu_add_item(menu, &menu_item, item, tc, target);
+		menu_add_item(menu, &menu_item, item, tc, target);
 	}
 	if (menu == NULL) {
 		cmdq_error(item, "invalid menu arguments");
@@ -390,24 +351,6 @@ cmd_display_menu_exec(struct cmd *self, struct cmdq_item *item)
 	}
 	if (menu->count == 0) {
 		menu_free(menu);
-		return (CMD_RETURN_NORMAL);
-	}
-	if (panel) {
-		if (args_has(args, 'b')) {
-			tabs = args_strtonum(args, 'b', 0, 8, &cause);
-			if (cause != NULL) {
-				menu_free(menu);
-				cmdq_error(item, "tab count %s", cause);
-				free(cause);
-				return (CMD_RETURN_ERROR);
-			}
-		}
-		if (panel_open(tc, menu, target->wp, tabs,
-		    args_get(args, 'g'), args_has(args, 'u'), args_get(args, 'G')) < 0) {
-			menu_free(menu);
-			cmdq_error(item, "side panel needs at least 50 columns and 6 rows");
-			return (CMD_RETURN_ERROR);
-		}
 		return (CMD_RETURN_NORMAL);
 	}
 	if (!cmd_display_menu_get_pos(tc, item, args, &px, &py, menu->width + 4,

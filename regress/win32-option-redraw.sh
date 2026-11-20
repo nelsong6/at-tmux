@@ -5,8 +5,7 @@
 # then every set-option redrew each client in full, clearing every pane row and
 # sending every sixel image again, and Claude's hooks set @claude on every tool
 # call, so images flashed. Each place a user option can show still updates: the
-# status line, a border's status line, border styles, a pane footer and its
-# condition, the terminal title. A pane is redrawn only when window-style now
+# status line, a border's status line, border styles, the terminal title. A pane is redrawn only when window-style now
 # gives it other colours. The client runs in a pane of a second server, which
 # stands in for Windows Terminal; what it sent its terminal is read from tmux's
 # -vv output log, and what it drew from the outer pane.
@@ -51,8 +50,6 @@ set -g pane-border-status top
 set -g pane-border-format 'B:#{@probe}'
 set -g pane-border-style '#{?#{==:#{@probe},two},fg=red,fg=green}'
 set -g pane-active-border-style '#{?#{==:#{@probe},two},fg=red,fg=green}'
-set -g pane-footer 'F#{pane_index}:#{@probe}'
-set -g pane-footer-condition 1
 set -g window-style '#{?#{==:#{@probe},blue},bg=blue,default}'
 EOF
 
@@ -70,8 +67,6 @@ $TMUX -vv -f test.conf new -d -n redraw -x60 -y16 \
 LEFT=$($TMUX list-panes -F '#{pane_id}' | tr -d '\r')
 RIGHT=$($TMUX split-window -h -d -P -F '#{pane_id}' "Start-Sleep 120" | tr -d '\r')
 [ -n "$RIGHT" ] || { echo "split-window failed"; exit 1; }
-# The right pane's footer comes and goes with a user option, as the strip's does.
-$TMUX set -p -t "$RIGHT" pane-footer-condition '#{@footer-on}' || exit 1
 $OUTER -f outer.conf new -d -x60 -y16 "& '$(cygpath -ma "$TEST_TMUX")' -L$TEST_SOCKET attach" \
     </dev/null || exit 1
 
@@ -148,7 +143,7 @@ pane_kept() {
 # The first draw: the image as a sixel, and every surface with no @probe.
 before=0
 touch "$OUT/go"
-changed "first draw" AFTER-IMAGE 'S::' 'F0:' 'B:'
+changed "first draw" AFTER-IMAGE 'S::' 'B:'
 grep -a -q "${ESC}P0;[0-9]*q" sent.txt || { echo "first draw: no sixel image"; exit 1; }
 # The left pane's rows on the client's screen, below a status line at the top.
 set -- $($TMUX display -p -t "$LEFT" \
@@ -156,18 +151,18 @@ set -- $($TMUX display -p -t "$LEFT" \
 TOP=$(($1 + 1 + $3))
 BOTTOM=$(($2 + 1 + $3))
 
-# A user option: the status line, the border status lines, the footer and the
-# title update; the pane is not touched.
+# A user option: the status line, the border status lines and the title
+# update; the pane is not touched.
 before=$(wc -c <"$LOG")
 $TMUX set -g @probe one || exit 1
-changed "@probe one" 'S:one:' 'B:one' 'F0:one' AFTER-IMAGE
+changed "@probe one" 'S:one:' 'B:one' AFTER-IMAGE
 pane_kept "@probe one"
 wait_until grep -a -q 'T:one' "$LOG" || { echo "@probe one: the title was not set"; exit 1; }
 
 # Border styles that are formats are drawn again with the new value.
 before=$(wc -c <"$LOG")
 $TMUX set -g @probe two || exit 1
-changed "@probe two" 'S:two:' 'B:two' 'F0:two'
+changed "@probe two" 'S:two:' 'B:two'
 grep -a -q "${ESC}\[31m" sent.txt || { echo "@probe two: the borders were not drawn red"; exit 1; }
 pane_kept "@probe two"
 
@@ -196,11 +191,6 @@ changed "@probe blue" 'R:blue:x' AFTER-IMAGE
 wait_until eval 'sent "$before"; grep -a -q "${ESC}P0;[0-9]*q" sent.txt' ||
     { echo "@probe blue: the pane was not drawn again with its image"; exit 1; }
 grep -a -q "${ESC}\[44m" sent.txt || { echo "@probe blue: no blue background"; exit 1; }
-
-# A footer whose condition reads a user option appears.
-$TMUX set -p -t "$RIGHT" @footer-on 1 || exit 1
-before=0
-changed "@footer-on" 'F1:blue'
 
 echo "ALL OPTION REDRAW TESTS PASSED"
 exit 0

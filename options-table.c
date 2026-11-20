@@ -545,16 +545,6 @@ const struct options_table_entry options_table[] = {
 		  "pressed. Zero means disabled."
 	},
 
-	{ .name = "panel-width",
-	  .type = OPTIONS_TABLE_NUMBER,
-	  .scope = OPTIONS_TABLE_SERVER,
-	  .minimum = 0,
-	  .maximum = 10000,
-	  .default_num = 0,
-	  .text = "Width of the side panel; 0 is a third of the terminal up to 56 "
-		  "columns. Dragging the panel's divider sets it."
-	},
-
 	{ .name = "record-output",
 	  .type = OPTIONS_TABLE_FLAG,
 	  .scope = OPTIONS_TABLE_SERVER,
@@ -1402,38 +1392,6 @@ const struct options_table_entry options_table[] = {
 	  .maximum = USHRT_MAX,
 	  .default_num = 0,
 	  .text = "Index of the first pane in each window."
-	},
-
-	{ .name = "pane-footer",
-	  .type = OPTIONS_TABLE_STRING,
-	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
-	  .default_str = "",
-	  .text = "Format of a row at the bottom of a pane, as wide as the pane. "
-		  "Empty disables it."
-	},
-
-	{ .name = "pane-footer-condition",
-	  .type = OPTIONS_TABLE_STRING,
-	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
-	  .default_str = "1",
-	  .text = "Format deciding whether a pane has a footer row."
-	},
-
-	{ .name = "pane-footer-style",
-	  .type = OPTIONS_TABLE_STRING,
-	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
-	  .flags = OPTIONS_TABLE_IS_STYLE,
-	  .default_str = "bg=default,fg=default",
-	  .text = "Style of a pane's footer row."
-	},
-
-	{ .name = "pane-footer-hover-style",
-	  .type = OPTIONS_TABLE_STRING,
-	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
-	  .flags = OPTIONS_TABLE_IS_STYLE,
-	  .default_str = "reverse",
-	  .text = "Style added to the click range in a pane's footer row "
-		  "while the mouse is on it."
 	},
 
 	{ .name = "pane-hidden-text",

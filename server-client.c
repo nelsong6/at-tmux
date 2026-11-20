@@ -586,7 +586,6 @@ server_client_lost(struct client *c)
 	c->flags |= CLIENT_DEAD;
 
 	server_client_clear_overlay(c);
-	panel_clear(c);
 	status_prompt_clear(c);
 	status_message_clear(c);
 
@@ -770,7 +769,7 @@ server_client_check_mouse_in_pane(struct window_pane *wp, u_int px, u_int py,
 	struct options		*wo = w->options;
 	struct window_pane	*fwp;
 	int			 pane_status, sb, sb_pos, sb_w, sb_pad;
-	u_int			 line, sl_top, sl_bottom, bottom;
+	u_int			 line, sl_top, sl_bottom;
 
 	sb = options_get_number(wo, "pane-scrollbars");
 	sb_pos = options_get_number(wo, "pane-scrollbars-position");
@@ -783,20 +782,14 @@ server_client_check_mouse_in_pane(struct window_pane *wp, u_int px, u_int py,
 		sb_w = 0;
 		sb_pad = 0;
 	}
-	/*
-	 * A pane's footer row sits between its content and the border below,
-	 * where a bottom status line goes.
-	 */
-	bottom = wp->yoff + wp->sy + wp->footer_rows;
 	if (pane_status == PANE_STATUS_TOP)
 		line = wp->yoff - 1;
 	else if (pane_status == PANE_STATUS_BOTTOM)
-		line = bottom;
+		line = wp->yoff + wp->sy;
 
 	/* Check if point is within the pane or scrollbar. */
 	if (((pane_status != PANE_STATUS_OFF &&
-	    py != line && py != bottom &&
-	    (wp->footer_rows == 0 || py != wp->yoff + wp->sy)) ||
+	    py != line && py != wp->yoff + wp->sy) ||
 	    (wp->yoff == 0 && py < wp->sy) ||
 	    (py >= wp->yoff && py < wp->yoff + wp->sy)) &&
 	    ((sb_pos == PANE_SCROLLBARS_RIGHT &&
@@ -834,8 +827,8 @@ server_client_check_mouse_in_pane(struct window_pane *wp, u_int px, u_int py,
 			    (sb_pos == PANE_SCROLLBARS_LEFT &&
 			    fwp->xoff + fwp->sx == px)) &&
 			    fwp->yoff <= 1 + py &&
-			    fwp->yoff + fwp->sy + fwp->footer_rows >= py) ||
-			    (fwp->yoff + fwp->sy + fwp->footer_rows == py &&
+			    fwp->yoff + fwp->sy >= py) ||
+			    (fwp->yoff + fwp->sy == py &&
 			    fwp->xoff <= 1 + px &&
 			    fwp->xoff + fwp->sx >= px))
 				break;
@@ -856,7 +849,7 @@ server_client_check_mouse(struct client *c, struct key_event *event)
 	struct winlink		*fwl;
 	struct window_pane	*wp, *fwp;
 	u_int			 x, y, b, sx, sy, px, py, sl_mpos = 0;
-	int			 ignore = 0, footer = 0;
+	int			 ignore = 0;
 	key_code		 key;
 	struct timeval		 tv;
 	struct style_range	*sr;
@@ -945,7 +938,6 @@ have_event:
 	m->s = s->id;
 	m->w = -1;
 	m->wp = -1;
-	m->on_pane_footer = 0;
 	m->ignore = ignore;
 
 	/* Is this on the status line? */
@@ -1032,16 +1024,8 @@ have_event:
 			wp = window_get_active_at(w, px, py);
 			if (wp == NULL)
 				return (KEYC_UNKNOWN);
-			if (wp->footer_rows != 0 &&
-			    py == wp->yoff + wp->sy &&
-			    px >= wp->xoff && px < wp->xoff + wp->sx) {
-				footer = 1;
-				where = STATUS_DEFAULT;
-				m->on_pane_footer = 1;
-				m->pane_footer_x = px - wp->xoff;
-			} else
-				where = server_client_check_mouse_in_pane(wp,
-				    px, py, &sl_mpos);
+			where = server_client_check_mouse_in_pane(wp, px, py,
+			    &sl_mpos);
 
 			if (where == PANE) {
 				log_debug("mouse %u,%u on pane %%%u", x, y,
@@ -1058,8 +1042,6 @@ have_event:
 			m->w = wp->window->id;
 		}
 	}
-	if (type == MOVE)
-		window_set_footer_hover(w, footer ? wp : NULL, m->pane_footer_x);
 
 	/* Reset click type or add a click timer if needed. */
 	if (type == DOWN ||
@@ -2446,8 +2428,6 @@ have_event:
 		return (KEYC_UNKNOWN);
 
 out:
-	if (footer && key >= KEYC_MOUSEMOVE_PANE && key < KEYC_BSPACE)
-		key += KEYC_MOUSEDOWN1_FOOTER - KEYC_MOUSEDOWN1_STATUS_DEFAULT;
 	/* Apply modifiers if any. */
 	if (b & MOUSE_MASK_META)
 		key |= KEYC_META;
@@ -2867,9 +2847,6 @@ server_client_handle_key(struct client *c, struct key_event *event)
 			key_trace_took("the command prompt");
 			if (status_prompt_key(c, event->key) == 0)
 				return (0);
-		} else if (panel_key(c, event)) {
-			key_trace_took("a panel");
-			return (0);
 		}
 	}
 
@@ -3161,11 +3138,9 @@ server_client_reset_state(struct client *c)
 	if (c->overlay_draw != NULL) {
 		if (c->overlay_mode != NULL)
 			s = c->overlay_mode(c, c->overlay_data, &cx, &cy);
-	} else if (c->prompt_string == NULL) {
-		s = panel_mode(c);
-		if (s == NULL)
-			s = wp->screen;
-	} else
+	} else if (c->prompt_string == NULL)
+		s = wp->screen;
+	else
 		s = c->status.active;
 	if (s != NULL)
 		mode = s->mode;
@@ -3221,10 +3196,6 @@ server_client_reset_state(struct client *c)
 			TAILQ_FOREACH(loop, &w->panes, entry) {
 				if (loop->screen->mode & MODE_MOUSE_ALL)
 					mode |= MODE_MOUSE_ALL;
-				/* A footer's ranges show where the mouse is. */
-				if (loop->footer_rows != 0 &&
-				    !TAILQ_EMPTY(&loop->footer_ranges))
-					mode |= MODE_MOUSE_ALL;
 			}
 		}
 		if (options_get_number(oo, "focus-follows-mouse"))
@@ -3232,9 +3203,6 @@ server_client_reset_state(struct client *c)
 		else if (~mode & MODE_MOUSE_ALL)
 			mode |= MODE_MOUSE_BUTTON;
 	}
-
-	if (panel_width(c) != 0)
-		mode |= MODE_MOUSE_ALL|MODE_MOUSE_BUTTON;
 
 	/* Clear bracketed paste mode if at the prompt. */
 	if (c->overlay_draw == NULL && c->prompt_string != NULL)
@@ -3385,8 +3353,6 @@ server_client_check_redraw(struct client *c)
 
 	if (c->flags & (CLIENT_CONTROL|CLIENT_SUSPENDED))
 		return;
-	if (c->session != NULL)
-		window_update_pane_footers(c->session->curw->window);
 	if (c->flags & CLIENT_ALLREDRAWFLAGS) {
 		log_debug("%s: redraw%s%s%s%s%s%s", c->name,
 		    (c->flags & CLIENT_REDRAWWINDOW) ? " window" : "",

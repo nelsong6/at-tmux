@@ -83,15 +83,6 @@ static const struct {
 	  "\xe2\x8f\xb5\xe2\x8f\xb5 bypass permissions on" },
 
 	/*
-	 * A Claude or Codex pane's conversation strip on its bottom row (TMUX-83),
-	 * drawn by the @strip formats below.
-	 */
-	{ "pane-footer",
-	  "#{?#{e|<:#{pane_width},36},#{E:@r-small},#{E:@r-big}}" },
-	{ "pane-footer-condition",
-	  "#{&&:#{@strip-active},#{==:#{@strip-active},#{E:@strip-session}}}" },
-
-	/*
 	 * The primary session opens a shell window when its last one closes.
 	 */
 	{ "session-created[1]",
@@ -163,8 +154,12 @@ static const struct {
 	  "system-session=Make the system session whole: mail, spotify and alerts" },
 	{ "command-alias-tags[112]",
 	  "system-session=system session mail spotify alerts" },
+	/*
+	 * The conversation's side panel is at-claude's own split (AGT-49):
+	 * tmux-strip works out its view and at-claude shows it.
+	 */
 	{ "command-alias[120]",
-	  "links=run-shell -b \"#{E:@strip-menu}\"" },
+	  "links=run-shell -b 'call \"C:/Program Files/at-home/at-home-tools/current/tmux-strip.exe\" menu --session \"#{@claude-session}\" --pane \"#{pane_id}\" --part links'" },
 	{ "command-alias-note[120]",
 	  "links=Show this conversation\xe2\x80\x99s PRs, work packages and history" },
 	{ "command-alias-tags[120]",
@@ -220,7 +215,7 @@ static const char *const at_commands[] = {
 	"bind -n 'C-~' switch-client -p -O index",
 	"bind -n 'C-S-`' switch-client -p -O index",
 	"bind -n -N 'Reopen the window closed last' C-S-t reopen-window",
-	"bind -n -N 'Give the side panel the keyboard' C-S-o display-panel -F",
+	"bind -n -N 'Give the side panel the keyboard' C-S-o run-shell -b 'call \"C:/Program Files/at-home/at-claude/current/at-claude.exe\" panel -session \"#{@claude-session}\" -focus'",
 
 	/*
 	 * What move-window and bring-to-session run.
@@ -238,7 +233,6 @@ static const char *const at_commands[] = {
 	"bind -n C-b run-shell -C '#{E:@at-menu} --open tmux'",
 	"bind -n M-Tab run-shell -C '#{E:@at-menu} --open windows'",
 	"bind -n M-BTab run-shell -C '#{E:@at-menu} --open windows'",
-	"bind -T panel / display-palette -P -b none -w 60% -h 60% 'C:/Program Files/at-home/fzt/current/fzt.exe' -tiered -accept-nth 4 -layout reverse -border -title 'Side panel commands'",
 
 	/*
 	 * Ctrl+T chords (keys pressed while Ctrl stays held): a plain window on
@@ -262,51 +256,9 @@ static const char *const at_commands[] = {
 	"set -g @session-set-resume-codex 'codex.exe --no-daemon resume {id}'",
 
 	/*
-	 * The conversation strip's formats: strip-owner sets @strip-* on the pane
-	 * and these fit them to its width, so nothing runs to draw it (TMUX-133).
-	 * A click on it opens the strip's menu; a follow-up's session starts from
-	 * the @followup folder and guide (AGT-3). The usage part is dropped whole
-	 * before it would cut the PR or the ticket short (ATC-96), and the CI part,
-	 * Forgejo's CI load, is dropped the same way before the usage part is
-	 * (AGT-43).
+	 * A follow-up's session starts from the @followup folder and guide
+	 * (agent-tools' tmux-strip spawn, AGT-3).
 	 */
-	"set -g @strip-session '#{?@codex-session,#{@codex-session},#{@claude-session}}'",
-	"set -g @strip-agent '#{?@codex-session,codex,claude}'",
-	"set -g @strip-menu 'call \"C:/Program Files/at-home/at-home-tools/current/tmux-strip.exe\" menu --session \"#{E:@strip-session}\" --agent \"#{E:@strip-agent}\" --socket \"#{socket_path}\" --client \"#{client_name}\" --width #{client_width} --height #{client_height}'",
-	"set -g @w-who '#{?#{e|>:#{e|/:#{pane_width},6},22},22,#{?#{e|<:#{e|/:#{pane_width},6},6},6,#{e|/:#{pane_width},6}}}'",
-	"set -g @wide '#{e|>=:#{pane_width},70}'",
-	"set -g @w-fu '#{?@strip-followups,#{e|+:#{w:@strip-followups},3},0}'",
-	"set -g @w-ag '#{?@strip-agents,#{e|+:#{w:@strip-agents},3},0}'",
-	"set -g @w-us '#{?@strip-usage,#{e|+:#{w:@strip-usage},3},0}'",
-	"set -g @w-ci '#{?@strip-ci,#{e|+:#{w:@strip-ci},3},0}'",
-	"set -g @w-rest0 '#{e|-:#{e|-:#{e|-:#{e|-:#{e|-:#{pane_width},#{E:@w-who}},#{w:@strip-more}},12},#{E:@w-fu}},#{E:@w-ag}}'",
-	"set -g @n-pr '#{e|+:#{e|+:#{?@strip-plan,#{e|+:#{w:@strip-plan},1},0},#{w:@strip-pr}},#{?#{E:@wide},2,0}}'",
-	"set -g @w-tmin '#{e|+:#{?#{e|<:#{w:@strip-ticket},10},#{w:@strip-ticket},10},#{?#{E:@wide},2,0}}'",
-	"set -g @w-tfull '#{e|+:#{w:@strip-ticket},#{?#{E:@wide},2,0}}'",
-	"set -g @us-on '#{&&:#{@strip-usage},#{e|>=:#{e|-:#{E:@w-rest0},#{E:@w-us}},#{e|+:#{E:@n-pr},#{E:@w-tfull}}}}'",
-	"set -g @w-rest1 '#{?#{E:@us-on},#{e|-:#{E:@w-rest0},#{E:@w-us}},#{E:@w-rest0}}'",
-	"set -g @ci-on '#{&&:#{@strip-ci},#{e|>=:#{e|-:#{E:@w-rest1},#{E:@w-ci}},#{e|+:#{E:@n-pr},#{E:@w-tfull}}}}'",
-	"set -g @w-rest '#{?#{E:@ci-on},#{e|-:#{E:@w-rest1},#{E:@w-ci}},#{E:@w-rest1}}'",
-	"set -g @w-pr0 '#{?#{e|<=:#{E:@n-pr},#{e|-:#{E:@w-rest},#{E:@w-tmin}}},#{E:@n-pr},#{e|-:#{E:@w-rest},#{E:@w-tmin}}}'",
-	"set -g @w-pr '#{?#{E:@wide},#{e|-:#{E:@w-pr0},2},#{E:@w-pr0}}'",
-	"set -g @w-plan '#{?#{e|>:#{w:@strip-plan},#{E:@w-pr}},#{E:@w-pr},#{w:@strip-plan}}'",
-	"set -g @w-prtext '#{e|-:#{e|-:#{E:@w-pr},#{E:@w-plan}},#{?@strip-plan,1,0}}'",
-	"set -g @w-t1 '#{e|-:#{E:@w-rest},#{E:@w-pr0}}'",
-	"set -g @w-ticket '#{?#{E:@wide},#{e|-:#{E:@w-t1},2},#{E:@w-t1}}'",
-	"set -g @w-small '#{e|-:#{pane_width},5}'",
-	"set -g @c-who '#{?#{e|>:#{w:@strip-who},#{E:@w-who}},#{=/#{e|-:#{E:@w-who},1}/\xe2\x80\xa6:@strip-who},#{@strip-who}}'",
-	"set -g @c-plan '#{?#{e|>:#{w:@strip-plan},#{E:@w-plan}},#{=/#{e|-:#{E:@w-plan},1}/\xe2\x80\xa6:@strip-plan},#{@strip-plan}}'",
-	"set -g @c-prtext '#{?#{e|<:#{E:@w-prtext},3},,#{?#{e|>:#{w:@strip-pr},#{E:@w-prtext}},#{=/#{e|-:#{E:@w-prtext},1}/\xe2\x80\xa6:@strip-pr},#{@strip-pr}}}'",
-	"set -g @c-pr '#{?@strip-plan,#{E:@c-plan}#[fg=#{@strip-pr-colour}]#{?#{E:@c-prtext}, #{E:@c-prtext},},#[fg=#{@strip-pr-colour}]#{E:@c-prtext}}'",
-	"set -g @c-ticket '#{?#{e|>:#{w:@strip-ticket},#{E:@w-ticket}},#{=/#{e|-:#{E:@w-ticket},1}/\xe2\x80\xa6:@strip-ticket},#{@strip-ticket}}'",
-	"set -g @c-small '#{?@strip-plan,#{?#{e|>:#{w:@strip-plan},#{E:@w-small}},#{=/#{e|-:#{E:@w-small},1}/\xe2\x80\xa6:@strip-plan},#{@strip-plan}},#[fg=#D2A6FF]#{?#{e|>:#{w:@strip-ticket},#{E:@w-small}},#{=/#{e|-:#{E:@w-small},1}/\xe2\x80\xa6:@strip-ticket},#{@strip-ticket}}}'",
-	"set -g @r-small ' #[range=user|#{?@strip-plan,pr,ticket}]#{E:@c-small}#[norange,fg=default] #[range=user|links,fg=#8A9199]\xe2\x80\xba#[norange,fg=default]'",
-	"set -g @on-copy-pr ' #[range=user|copy-pr,fg=#8A9199]\xee\xaf\x8c#[norange,fg=default]'",
-	"set -g @r-copy-pr '#{?#{&&:#{E:@wide},#{@strip-pr-url}},#{E:@on-copy-pr},}'",
-	"set -g @on-copy-t ' #[range=user|copy-ticket,fg=#8A9199]\xee\xaf\x8c#[norange,fg=default]'",
-	"set -g @r-copy-t '#{?#{&&:#{E:@wide},#{@strip-focus-ticket}},#{E:@on-copy-t},}'",
-	"set -g @r-big ' #[range=user|who,fg=#73D0FF]#{E:@c-who}#[norange,fg=default] \xe2\x94\x82 #[range=user|pr]#{E:@c-pr}#[norange,fg=default]#{E:@r-copy-pr} \xe2\x94\x82 #[range=user|ticket,fg=#D2A6FF]#{E:@c-ticket}#[norange,fg=default]#{E:@r-copy-t}#{?@strip-followups, \xe2\x94\x82 #{@strip-followups},}#{?@strip-agents, \xe2\x94\x82 #{@strip-agents},}#{?#{E:@ci-on}, \xe2\x94\x82 #{@strip-ci},}#{?#{E:@us-on}, \xe2\x94\x82 #{@strip-usage},} \xe2\x94\x82 #[range=user|links,fg=#8A9199]#{@strip-more}#[norange,fg=default]'",
-	"bind -n MouseDown1Footer select-pane -t = \\; run-shell -b '#{E:@strip-menu} --part \"#{mouse_status_range}\"'",
 	"set -g @followup-repos 'D:/repos'",
 	"set -g @followup-guide 'S:/shell-config-profile-home/claude/topics/spawned-session.md'",
 

@@ -28,7 +28,6 @@ bind -n F5 display-palette -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Byp
 bind -N 'Rename the window' n command-prompt -I'#W' { rename-window -- '%%' }
 bind -N 'Go to a window' W command-prompt -T window-target { select-window -t ':%%' }
 bind -n F7 display-palette -b none -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
-bind -T panel / display-palette -P -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
 bind -n M-w display-menu Split s { split-window } '' "#{?#{==:1,0},Never,}" x { kill-server } Last l { last-window }
 set -g @go-menu 'display-menu -T go "#{session_name}" g "select-window -t first"'
 set -s command-alias[100] 'go-to=run-shell -C "#{E:@go-menu}"'
@@ -314,91 +313,6 @@ until srow_is "$here later"; do
 	$TMUX send-keys -K -c "$CLIENT" f 2>/dev/null
 	sleep 0.5
 done
-
-# display-palette -P (ATC-72): the side panel's actions are the rows, each by
-# the command name display-panel -N gave it, described by its text and key once
-# (TMUX-206), or by its text when it has none, with the panel's own actions; /
-# in the panel key table opens it. A pick runs as the panel would run it, and a
-# pick the panel has moved on from runs nothing.
-out=$($TMUX display-palette -P -c "$CLIENT" cmd 2>&1) &&
-    { echo "-P opened with no panel"; exit 1; }
-echo "$out" | grep -q 'no side panel' ||
-    { echo "-P with no panel said: $out"; exit 1; }
-PANE=$($TMUX display -p -c "$CLIENT" '#{pane_id}' | tr -d '\r')
-open_panel() {
-	$TMUX display-panel -c "$CLIENT" -t "$PANE" -T Links -b2 -g "$1" -N -- \
-	    All a 'set -g @tab all' show-all PRs p 'set -g @tab prs' show-prs \
-	    -INFO-ROW '' '' '' \
-	    ' Copy URL  #[dim][c]' c 'set -g @copied yes' copy-url \
-	    Next n 'set -gF @gen "#{panel_action_generation}"' '' || exit 1
-}
-# panel_palette LINE ...: press / in the focused panel with the picker told
-# LINE ..., and wait for the picker to exit.
-panel_palette() {
-	rm -f "$OUT/rows" "$OUT/done" "$OUT/release"
-	printf '%s\n' "$@" >"$OUT/pick"
-	MSYS2_ARG_CONV_EXCL="*" $TMUX send-keys -K -c "$CLIENT" /
-	wait_until picker_done || { echo "panel picker never ran ($*)"; exit 1; }
-}
-option_is() {
-	[ "$($TMUX show -gqv "$1" | tr -d '\r')" = "$2" ]
-}
-focused_is() {
-	[ "$($TMUX display -c "$CLIENT" -p '#{client_panel_focused}' | tr -d '\r')" = "$1" ]
-}
-panel_width_is() {
-	[ "$($TMUX display -c "$CLIENT" -p '#{client_panel_width}' | tr -d '\r')" = "$1" ]
-}
-generation_set() {
-	case "$($TMUX show -gqv @gen | tr -d '\r')" in p*) return 0 ;; esac
-	return 1
-}
-open_panel one
-wait_until focused_is 1 || { echo "the panel never took the keyboard"; exit 1; }
-panel_palette pick=copy-url
-wait_until option_is @copied yes || { echo "copy-url did not run"; exit 1; }
-row '^0	show-all	All  \[a\]		[0-9]*	$' || fail_row "no All tab row" All
-row '^0	copy-url	Copy URL  \[c\]		' ||
-    fail_row "copy-url is not described once by its key" Copy
-row '^0	Next	\[n\]		' || fail_row "an unnamed row is not named by its text" Next
-row '^0	close-panel	Close the panel  \[Escape\]		' || fail_row "no Close row" Close
-row '^0	unfocus-panel	Give the keyboard back to the pane  \[Tab\]		' ||
-    fail_row "no Tab row" keyboard
-row '^0	page-up	' || fail_row "no page-up row" page
-row '^0	page-down	' || fail_row "no page-down row" page
-row 'INFO-ROW' && fail_row "an informational row was offered" INFO-ROW
-row 'kill-pane' && fail_row "-P listed tmux's commands" kill-pane
-panel_palette pick=show-prs
-wait_until option_is @tab prs || { echo "the PRs tab did not run"; exit 1; }
-panel_palette pick=Next
-wait_until generation_set ||
-    { echo "a pick got no panel_action_generation: $($TMUX show -gqv @gen)"; exit 1; }
-# The panel moves to another view while the picker is open: its pick of a row
-# that view lacks runs nothing. Mark, picked next, runs after where it would
-# have.
-$TMUX set -g @copied no
-rm -f "$OUT/rows" "$OUT/done" "$OUT/release"
-printf '%s\n' pick=copy-url hold=1 >"$OUT/pick"
-MSYS2_ARG_CONV_EXCL="*" $TMUX send-keys -K -c "$CLIENT" /
-rows_saved() { [ -e "$OUT/rows" ]; }
-wait_until rows_saved || { echo "the held picker never got its rows"; exit 1; }
-$TMUX display-panel -c "$CLIENT" -t "$PANE" -T Other -g two -- \
-    Mark m 'set -g @mark yes' 'Copy elsewhere' c 'set -g @copied wrong' || exit 1
-: >"$OUT/release"
-wait_until picker_done || { echo "the held picker never finished"; exit 1; }
-panel_palette pick=Mark
-wait_until option_is @mark yes || { echo "Mark did not run"; exit 1; }
-option_is @copied no ||
-    { echo "a pick ran on a view that moved on: @copied $($TMUX show -gqv @copied)"; exit 1; }
-# The panel's own actions: back to the pane, then close.
-open_panel three
-wait_until focused_is 1 || exit 1
-panel_palette pick=unfocus-panel
-wait_until focused_is 0 || { echo "the Tab row kept the keyboard"; exit 1; }
-open_panel four
-wait_until focused_is 1 || exit 1
-panel_palette pick=close-panel
-wait_until panel_width_is 0 || { echo "the Escape row left the panel open"; exit 1; }
 
 $TMUX kill-server 2>/dev/null
 wait $HOST

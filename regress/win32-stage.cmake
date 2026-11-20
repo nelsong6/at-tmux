@@ -67,7 +67,7 @@ foreach(test IN LISTS TESTS)
         file(COPY ${files} DESTINATION "${dir}")
         file(COPY "${POWERSHELL}" DESTINATION "${dir}/shell")
         if(kind STREQUAL "keys")
-            foreach(fixture legacy-keys other-defaults)
+            foreach(fixture legacy-keys other-defaults footer-panel)
                 file(COPY "${FIXTURES}/${fixture}/Debug/tmux.exe"
                     "${CONPTY}/conpty.dll" "${CONPTY}/OpenConsole.exe"
                     DESTINATION "${dir}/${fixture}")

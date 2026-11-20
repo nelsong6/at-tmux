@@ -7,6 +7,8 @@ $repo = Split-Path $PSScriptRoot -Parent
 if (-not $Build) { $Build = "$repo/build" }
 if (-not $Conpty) { $Conpty = "$Build/upgrade" }
 $legacyCommit = '529c862fae20fa4e3c55ad342a4999011ab291cb'
+# The last build with the strip's footer row and native side panel (AGT-49).
+$footerCommit = '8353283d8a78fce81cff6c35cc0e5e86f79f9aec'
 $dependencyCache = Select-String -Path "$Build/CMakeCache.txt" -Pattern '^VCPKG_INSTALLED_DIR:[^=]+=(.+)$'
 if (-not $dependencyCache) { throw 'Current build dependency location missing' }
 $dependencyInstall = $dependencyCache.Matches[0].Groups[1].Value
@@ -67,11 +69,16 @@ if (-not $LegacyExecutable) {
     if ($LASTEXITCODE) { throw 'Fetching pre-footer regression source failed' }
     $LegacyExecutable = Build-Fixture 'legacy-keys' $legacyCommit | Select-Object -Last 1
 }
+git -C $repo fetch --no-tags origin $footerCommit
+if ($LASTEXITCODE) { throw 'Fetching the footer build source failed' }
+$footer = Build-Fixture 'footer-panel' $footerCommit | Select-Object -Last 1
 $defaults = Build-Fixture 'other-defaults' 'HEAD' $true | Select-Object -Last 1
 $env:TEST_LEGACY_TMUX = $LegacyExecutable.Replace('\', '/')
 $env:TEST_DEFAULTS_TMUX = $defaults.Replace('\', '/')
+$env:TEST_FOOTER_TMUX = $footer.Replace('\', '/')
 $env:TEST_TMUX = "$Conpty/tmux.exe".Replace('\', '/')
 if ($env:GITHUB_ENV) {
     "TEST_LEGACY_TMUX=$env:TEST_LEGACY_TMUX" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
     "TEST_DEFAULTS_TMUX=$env:TEST_DEFAULTS_TMUX" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+    "TEST_FOOTER_TMUX=$env:TEST_FOOTER_TMUX" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 }

@@ -7,7 +7,7 @@ esac
 cd "$(dirname "$0")/.."
 [ -f Makefile ] || { sh autogen.sh; ./configure --enable-utf8proc; }
 make -j4
-for t in conf-crlf.sh palette.sh panel.sh panel-fill.sh hold.sh upgrade.sh flight.sh play-sound.sh claude-attention.sh at-protocol.sh; do
+for t in conf-crlf.sh palette.sh hold.sh upgrade.sh flight.sh play-sound.sh claude-attention.sh at-protocol.sh; do
 	echo "== $t"
 	TEST_TMUX="$PWD/tmux" sh "regress/$t"
 done

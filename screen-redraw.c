@@ -123,7 +123,7 @@ screen_redraw_pane_border(struct screen_redraw_ctx *ctx, struct window_pane *wp,
 {
 	struct options	*oo = wp->window->options;
 	u_int		 ex = wp->xoff + wp->sx;
-	u_int		 ey = wp->yoff + wp->sy + wp->footer_rows;
+	u_int		 ey = wp->yoff + wp->sy;
 	int		 hsplit = 0, vsplit = 0, pane_status = ctx->pane_status;
 	int		 pane_scrollbars = ctx->pane_scrollbars, sb_w = 0;
 	int		 sb_pos;
@@ -386,18 +386,16 @@ screen_redraw_check_cell(struct screen_redraw_ctx *ctx, u_int px, u_int py,
 			if (pane_status == PANE_STATUS_TOP)
 				line = wp->yoff - 1;
 			else
-				line = wp->yoff + wp->sy + wp->footer_rows;
+				line = wp->yoff + wp->sy;
 
 			/*
 			 * Check if py could lie within a scrollbar. If the
 			 * pane is at the top then py == 0 to sy; if the pane
-			 * is not at the top, then yoff to yoff + sy. The
-			 * scrollbar is sy rows high, so not on a footer row.
+			 * is not at the top, then yoff to yoff + sy.
 			 */
 			sb_w = wp->scrollbar_style.width +
 			    wp->scrollbar_style.pad;
-			if ((pane_status && py != line &&
-			    (wp->footer_rows == 0 || py != wp->yoff + wp->sy)) ||
+			if ((pane_status && py != line) ||
 			    (wp->yoff == 0 && py < wp->sy) ||
 			     (py >= wp->yoff && py < wp->yoff + wp->sy)) {
 				/* Check if px lies within a scrollbar. */
@@ -489,7 +487,7 @@ screen_redraw_make_pane_status(struct client *c, struct window_pane *wp,
 		if (pane_status == PANE_STATUS_TOP)
 			py = wp->yoff - 1;
 		else
-			py = wp->yoff + wp->sy + wp->footer_rows;
+			py = wp->yoff + wp->sy;
 		cell_type = screen_redraw_type_of_cell(rctx, px, py);
 		screen_redraw_border_set(w, wp, pane_lines, cell_type, &gc);
 		screen_write_cell(&ctx, &gc);
@@ -570,101 +568,9 @@ screen_redraw_draw_pane_status(struct screen_redraw_ctx *ctx)
 		if (ctx->pane_status == PANE_STATUS_TOP)
 			yoff = wp->yoff - 1;
 		else
-			yoff = wp->yoff + wp->sy + wp->footer_rows;
+			yoff = wp->yoff + wp->sy;
 		screen_redraw_draw_pane_row(ctx, &wp->status_screen,
 		    wp->status_size, wp->xoff + 2, yoff);
-	}
-	tty_cursor(&c->tty, 0, 0);
-}
-
-/* Add the hover style to the footer range the mouse is on, if it still has one. */
-static void
-screen_redraw_hover_pane_footer(struct window_pane *wp)
-{
-	struct grid		*gd = wp->footer_screen.grid;
-	struct style_range	*sr;
-	struct grid_cell	 hover, cell;
-	u_int			 x;
-
-	wp->footer_hover_drawn = wp->footer_hover;
-	if (wp->footer_hover < 0)
-		return;
-	TAILQ_FOREACH(sr, &wp->footer_ranges, entry) {
-		if (sr->start == (u_int)wp->footer_hover)
-			break;
-	}
-	if (sr == NULL) {
-		wp->footer_hover = wp->footer_hover_drawn = -1;
-		return;
-	}
-	style_apply(&hover, wp->options, "pane-footer-hover-style", NULL);
-	for (x = sr->start; x < sr->end && x < gd->sx; x++) {
-		grid_get_cell(gd, x, 0, &cell);
-		cell.attr |= hover.attr;
-		if (hover.fg != 8)
-			cell.fg = hover.fg;
-		if (hover.bg != 8)
-			cell.bg = hover.bg;
-		grid_set_cell(gd, x, 0, &cell);
-	}
-}
-
-/* Update a pane's footer row. */
-static int
-screen_redraw_make_pane_footer(struct client *c, struct window_pane *wp)
-{
-	struct screen_write_ctx	 ctx;
-	struct grid_cell	 gc;
-	struct format_tree	*ft;
-	char			*expanded;
-	u_int			 n, width = wp->sx;
-	int			 flags = FORMAT_STATUS|FORMAT_JOBEVENT, force;
-
-	if (c->flags & CLIENT_STATUSFORCE)
-		flags |= FORMAT_FORCE;
-	ft = format_create(c, NULL, FORMAT_PANE|wp->id, flags);
-	format_defaults(ft, c, c->session, c->session->curw, wp);
-	style_apply(&gc, wp->options, "pane-footer-style", ft);
-	expanded = format_expand_time(ft,
-	    options_get_string(wp->options, "pane-footer"));
-	format_free(ft);
-	force = screen_size_x(&wp->footer_screen) != width ||
-	    !grid_cells_equal(&gc, &wp->footer_style) ||
-	    wp->footer_hover != wp->footer_hover_drawn;
-	if (!force && wp->footer_expanded != NULL &&
-	    strcmp(expanded, wp->footer_expanded) == 0) {
-		free(expanded);
-		return (0);
-	}
-	screen_resize(&wp->footer_screen, width, 1, 0);
-	memcpy(&wp->footer_style, &gc, sizeof gc);
-	screen_write_start(&ctx, &wp->footer_screen);
-	screen_write_cursormove(&ctx, 0, 0, 0);
-	for (n = 0; n < width; n++)
-		screen_write_putc(&ctx, &gc, ' ');
-	screen_write_cursormove(&ctx, 0, 0, 0);
-	status_free_ranges(&wp->footer_ranges);
-	format_draw(&ctx, &gc, width, expanded, &wp->footer_ranges, 0);
-	screen_write_stop(&ctx);
-	screen_redraw_hover_pane_footer(wp);
-	free(wp->footer_expanded);
-	wp->footer_expanded = expanded;
-	return (1);
-}
-
-/* Draw pane footers, over the row of each pane the borders treat as inside it. */
-static void
-screen_redraw_draw_pane_footers(struct screen_redraw_ctx *ctx)
-{
-	struct client		*c = ctx->c;
-	struct window		*w = c->session->curw->window;
-	struct window_pane	*wp;
-
-	TAILQ_FOREACH(wp, &w->panes, entry) {
-		if (wp->footer_rows == 0 || !window_pane_visible(wp))
-			continue;
-		screen_redraw_draw_pane_row(ctx, &wp->footer_screen, wp->sx,
-		    wp->xoff, wp->yoff + wp->sy);
 	}
 	tty_cursor(&c->tty, 0, 0);
 }
@@ -701,15 +607,6 @@ screen_redraw_update(struct screen_redraw_ctx *ctx, uint64_t flags)
 		if (redraw)
 			flags |= CLIENT_REDRAWBORDERS;
 	}
-
-	redraw = 0;
-	TAILQ_FOREACH(wp, &w->panes, entry) {
-		if (wp->footer_rows != 0 &&
-		    screen_redraw_make_pane_footer(c, wp))
-			redraw = 1;
-	}
-	if (redraw)
-		flags |= CLIENT_REDRAWBORDERS;
 
 	return (flags);
 }
@@ -772,7 +669,6 @@ screen_redraw_screen(struct client *c)
 		screen_redraw_draw_borders(&ctx);
 		if (ctx.pane_status != PANE_STATUS_OFF)
 			screen_redraw_draw_pane_status(&ctx);
-		screen_redraw_draw_pane_footers(&ctx);
 		screen_redraw_draw_pane_scrollbars(&ctx);
 	}
 	if (flags & CLIENT_REDRAWWINDOW) {
@@ -785,7 +681,6 @@ screen_redraw_screen(struct client *c)
 		log_debug("%s: redrawing status", c->name);
 		screen_redraw_draw_status(&ctx);
 	}
-	panel_draw(c);
 	if (c->overlay_draw != NULL && (flags & CLIENT_REDRAWOVERLAY)) {
 		log_debug("%s: redrawing overlay", c->name);
 		c->overlay_draw(c, c->overlay_data, &ctx);
@@ -997,17 +892,15 @@ screen_redraw_draw_borders(struct screen_redraw_ctx *ctx)
 	struct session		*s = c->session;
 	struct window		*w = s->curw->window;
 	struct window_pane	*wp;
-	u_int			 i, j, width;
+	u_int			 i, j;
 
 	log_debug("%s: %s @%u", __func__, c->name, w->id);
 
 	TAILQ_FOREACH(wp, &w->panes, entry)
 		wp->border_gc_set = 0;
 
-	/* The side panel's columns are the panel's: never paint under it. */
-	width = c->tty.sx - panel_width(c);
 	for (j = 0; j < c->tty.sy - ctx->statuslines; j++) {
-		for (i = 0; i < width; i++)
+		for (i = 0; i < c->tty.sx; i++)
 			screen_redraw_draw_borders_cell(ctx, i, j);
 	}
 }

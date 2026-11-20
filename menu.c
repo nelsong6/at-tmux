@@ -164,7 +164,6 @@ menu_free(struct menu *menu)
 	for (i = 0; i < menu->count; i++) {
 		free((void *)menu->items[i].name);
 		free((void *)menu->items[i].command);
-		free((void *)menu->items[i].command_name);
 	}
 	free(menu->items);
 

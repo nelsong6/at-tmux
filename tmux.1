@@ -4920,13 +4920,6 @@ Once reached, the sequence will be discarded.
 .It Ic message-limit Ar number
 Set the number of error or information messages to save in the message log for
 each client.
-.It Ic panel-width Ar number
-The width of the side panel opened by
-.Ic display-panel .
-Zero, the default, is one third of the terminal up to 56 columns.
-Dragging the panel's divider sets this option, and every panel takes the new
-width.
-The panel keeps at least 24 columns and leaves the window at least 30.
 .It Xo Ic record-output
 .Op Ic on | off
 .Xc
@@ -5842,28 +5835,6 @@ Attributes are ignored.
 Like
 .Ic base-index ,
 but set the starting index for pane numbers.
-.Pp
-.It Ic pane-footer Ar format
-Set the text of a row at the bottom of the pane, as wide as the pane and taken from its
-height.
-An empty format, the default, leaves the pane its full height.
-Formats are expanded for the pane, may contain
-.Ic #()
-commands and
-.Ic range=user
-regions, and clicks on them use the
-.Ic MouseDown1Footer
-family of key names with the clicked pane as the mouse target.
-.Pp
-.It Ic pane-footer-condition Ar format
-A format deciding whether the pane has its footer row.
-An empty or 0 result gives the row back to the pane.
-This format does not run
-.Ic #()
-commands.
-.Pp
-.It Ic pane-footer-style Ar style
-Set the style of the pane's footer row.
 .Pp
 .It Ic pane-hidden-text[] Ar text
 Text drawn as blanks where a row of the pane starts with it, after any spaces.
@@ -7771,7 +7742,7 @@ through the root key table once.
 The request is recorded only if the program starts, and repeated launches
 replace a pending request rather than opening several menus.
 .It Xo Ic display-palette
-.Op Fl PR
+.Op Fl R
 .Op Fl b Ar border-lines
 .Op Fl c Ar target-client
 .Op Fl h Ar height
@@ -7848,120 +7819,7 @@ For example, with fzt:
 bind -n C-b display-palette -w 90% -h 80% fzt -tiered \e
     -accept-nth 4 -input-col 3 -layout reverse
 .Ed
-.Pp
-With
-.Fl P ,
-the rows are instead the actions of the side panel showing on
-.Ar target-client
-(see
-.Ic display-panel ) ,
-each at depth zero: every item that runs a command, then the panel's own
-actions
-.Ql ( close-panel ,
-.Ql unfocus-panel ,
-.Ql page-up
-and
-.Ql page-down ) .
-A row is named by its command name, with its text without styles and its key
-as the description; an item given no command name is named by its text and
-described by its key, a tab named as one.
-A pick runs as choosing it in the panel would, if the panel still offers it
-when the popup closes; otherwise nothing runs.
-It is an error if no panel is showing.
 .Tg menu
-.It Xo Ic display-panel
-.Op Fl CFNu
-.Op Fl b Ar tab-count
-.Op Fl c Ar target-client
-.Op Fl g Ar generation
-.Op Fl G Ar expected-generation
-.Op Fl t Ar target-pane
-.Op Fl T Ar title
-.Op Ar name key command Oo Ar command-name Oc ...
-.Xc
-Display a persistent, native side panel beside the conversation on
-.Ar target-client .
-The panel reserves one third of the terminal width, up to 56 columns, without
-creating a pane or starting a program.
-Drag the divider at its left edge to change its width, or set
-.Ic panel-width .
-At least 50 columns and six available rows are needed; resizing below this hides
-the panel until sufficient space returns.
-The panel is associated with the source pane's window and is hidden in other
-windows. Closing the source pane hides its panel.
-.Pp
-Each item has a name, shortcut key and tmux command, as for
-.Ic display-menu .
-With
-.Fl N
-each item also has a
-.Ar command-name ,
-which names it in
-.Ic display-palette
-.Fl P ;
-an empty one leaves it unnamed.
-A name beginning with a hyphen is an informational row.
-Long rows wrap and reflow when the client is resized.
-.Fl b
-keeps the first
-.Ar tab-count
-items in a fixed, clickable tab row (at most eight).
-The panel uses the existing menu styles.
-.Pp
-Click an action or select it with the arrow keys and Enter.
-Page Up, Page Down and the mouse wheel scroll.
-Tab returns keyboard input to the conversation while keeping the panel visible;
-click the panel to focus it again, or use
-.Fl F ,
-which gives a showing panel the keyboard from a command (bound to C-S-o by
-default; the unfocused panel's footer names the key bound to it).
-It is an error if no panel is showing.
-Escape closes the focused panel and
-.Fl C
-closes it from a command.
-Actions keep the panel open.
-Any other key the focused panel does not use runs its binding in the
-.Ql panel
-key table, if it has one, with the source pane as the target; while
-.Ql /
-is bound there the panel's footer names it, as the panel's prompt.
-For example:
-.Bd -literal -offset indent
-bind -T panel / display-palette -P -w 60% -h 60% fzt -tiered \e
-    -accept-nth 4 -layout reverse
-.Ed
-Dragging over the panel's rows selects their text, past the top or bottom
-scrolling a line at each move, and letting go copies it to a paste buffer and
-the terminal's clipboard; a row wrapped onto several lines is copied as one,
-and the indentation the copied rows share is left out.
-A double click on a row with no action selects and copies a word, a triple
-click the whole row.
-A click with no drag still runs an action.
-Other popups and prompts may be used above it.
-.Pp
-.Fl g
-assigns a generation token to the view.
-With
-.Fl u ,
-the contents are replaced only if that generation is still present, so a delayed
-refresh cannot reopen a closed panel or overwrite a newer view.
-An update preserves keyboard focus and scroll position.
-.Fl G
-replaces the view only if its current generation matches
-.Ar expected-generation ,
-then assigns the new
-.Fl g
-value. This guards queued navigation as well as refreshes, while retaining
-keyboard focus if the user returned to the conversation in the meantime.
-A command containing
-.Ql #{panel_action_generation}
-assigns a fresh generation at the time it is chosen and supplies that format
-in its command queue. Asynchronous navigation may use it with
-.Fl G
-so the most recent choice wins, even if an earlier command starts later.
-Panels, their focus and scroll positions survive
-.Ic upgrade-server ;
-they are client UI and do not add anything to saved session layouts.
 .It Xo Ic display-menu
 .Op Fl OM
 .Op Fl b Ar border-lines
