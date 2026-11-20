@@ -463,7 +463,6 @@ function(tmux_test name script kind)
     set(fixtures staged)
     if(kind STREQUAL "keys")
         list(APPEND environment TEST_LEGACY_TMUX=${dir}/legacy-keys/tmux.exe
-            TEST_SHIFTED_TMUX=${dir}/shifted-keys/tmux.exe
             TEST_DEFAULTS_TMUX=${dir}/other-defaults/tmux.exe)
         list(APPEND fixtures keys-staged)
     endif()

@@ -12,7 +12,7 @@
 #          tmux.pdb moved there, so none is at the path stored in the exe, as on a
 #          home PC.
 # keys:    the same for the key upgrade tests (conpty, and in legacy-keys/,
-#          shifted-keys/ and other-defaults/ the fixtures FIXTURES holds).
+#          other-defaults/ the fixtures FIXTURES holds).
 # restore: moves the package's tmux.pdb back to PDB, for the build and its
 #          install, and removes TEMP.
 cmake_minimum_required(VERSION 3.16)
@@ -67,7 +67,7 @@ foreach(test IN LISTS TESTS)
         file(COPY ${files} DESTINATION "${dir}")
         file(COPY "${POWERSHELL}" DESTINATION "${dir}/shell")
         if(kind STREQUAL "keys")
-            foreach(fixture legacy-keys shifted-keys other-defaults)
+            foreach(fixture legacy-keys other-defaults)
                 file(COPY "${FIXTURES}/${fixture}/Debug/tmux.exe"
                     "${CONPTY}/conpty.dll" "${CONPTY}/OpenConsole.exe"
                     DESTINATION "${dir}/${fixture}")

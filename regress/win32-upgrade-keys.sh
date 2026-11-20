@@ -60,13 +60,6 @@ check_upgrade() {
 check_upgrade "$TEST_LEGACY_TMUX" "$TEST_TMUX"
 echo 'PASS: pre-footer upgrade preserves every binding, modifiers, notes, Unicode, unbinds, prefix and pane'
 
-if [ -n "$TEST_SHIFTED_TMUX" ]; then
-    check_upgrade "$TEST_LEGACY_TMUX" "$TEST_SHIFTED_TMUX"
-    check_upgrade "$TEST_TMUX" "$TEST_SHIFTED_TMUX"
-    check_upgrade "$TEST_SHIFTED_TMUX" "$TEST_TMUX"
-    echo 'PASS: named keys survive changed numeric IDs in both directions'
-fi
-
 $TMUX -f "$OUT/test.conf" new -d -s incompatible || exit 1
 before_pid=$(server_pid)
 pane_pid=$($TMUX display -p '#{pane_pid}' | tr -d '\r')

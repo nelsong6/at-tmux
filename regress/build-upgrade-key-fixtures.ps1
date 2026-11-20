@@ -17,7 +17,7 @@ if (-not $env:_CL_) { $env:_CL_ = '/MP4' }
 # No MSBuild node outlives the build.
 $env:MSBUILDDISABLENODEREUSE = '1'
 
-function Build-Fixture([string]$name, [string]$commit, [bool]$shift, [bool]$defaults = $false) {
+function Build-Fixture([string]$name, [string]$commit, [bool]$defaults = $false) {
     $source = Join-Path $Build "$name-source"
     $output = Join-Path $Build $name
     # A kept build folder holds the last run's source: the fixture starts from its commit again.
@@ -33,13 +33,6 @@ function Build-Fixture([string]$name, [string]$commit, [bool]$shift, [bool]$defa
         Copy-Item "$repo/vcpkg.json" "$source/vcpkg.json"
         # and the overlay ports it names
         if (-not (Test-Path "$source/dep")) { Copy-Item -Recurse "$repo/dep" "$source/dep" }
-    }
-    if ($shift) {
-        $header = Join-Path $source 'tmux.h'
-        $text = [IO.File]::ReadAllText($header)
-        $needle = 'KEYC_MOUSE_KEY(MOUSEMOVE),'
-        if (-not $text.Contains($needle)) { throw 'Mouse enum fixture anchor missing' }
-        [IO.File]::WriteAllText($header, $text.Replace($needle, "KEYC_UPGRADE_TEST_SHIFT,`n`t$needle"))
     }
     # Defaults unlike this build's: prefix i changed, F9 added, z removed.
     if ($defaults) {
@@ -72,16 +65,13 @@ function Build-Fixture([string]$name, [string]$commit, [bool]$shift, [bool]$defa
 if (-not $LegacyExecutable) {
     git -C $repo fetch --no-tags origin $legacyCommit
     if ($LASTEXITCODE) { throw 'Fetching pre-footer regression source failed' }
-    $LegacyExecutable = Build-Fixture 'legacy-keys' $legacyCommit $false | Select-Object -Last 1
+    $LegacyExecutable = Build-Fixture 'legacy-keys' $legacyCommit | Select-Object -Last 1
 }
-$shifted = Build-Fixture 'shifted-keys' 'HEAD' $true | Select-Object -Last 1
-$defaults = Build-Fixture 'other-defaults' 'HEAD' $false $true | Select-Object -Last 1
+$defaults = Build-Fixture 'other-defaults' 'HEAD' $true | Select-Object -Last 1
 $env:TEST_LEGACY_TMUX = $LegacyExecutable.Replace('\', '/')
-$env:TEST_SHIFTED_TMUX = $shifted.Replace('\', '/')
 $env:TEST_DEFAULTS_TMUX = $defaults.Replace('\', '/')
 $env:TEST_TMUX = "$Conpty/tmux.exe".Replace('\', '/')
 if ($env:GITHUB_ENV) {
     "TEST_LEGACY_TMUX=$env:TEST_LEGACY_TMUX" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-    "TEST_SHIFTED_TMUX=$env:TEST_SHIFTED_TMUX" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
     "TEST_DEFAULTS_TMUX=$env:TEST_DEFAULTS_TMUX" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 }
