@@ -56,6 +56,21 @@ $TMUX show -g pane-hidden-text | grep -q 'bypass permissions on' ||
     fail "the bypass label is not hidden again"
 echo 'PASS: set -u returns to the built-in settings'
 
+# toggle-agent-sounds holds play-sound back and keeps bells from the terminal,
+# the switch the looper turns too (GLC-49): a missing file is an error only
+# while sounds play.
+$TMUX play-sound -t defaults: /no-such-sound.wav 2>/dev/null &&
+    fail "play-sound played a missing file"
+$TMUX toggle-agent-sounds || fail "toggle-agent-sounds"
+$TMUX play-sound -t defaults: /no-such-sound.wav ||
+    fail "play-sound was not held back while muted"
+[ "$(value bell-action)" = none ] || fail "bell-action is $(value bell-action) while muted"
+$TMUX toggle-agent-sounds || fail "toggle-agent-sounds again"
+$TMUX play-sound -t defaults: /no-such-sound.wav 2>/dev/null &&
+    fail "play-sound is still held back"
+[ "$(value bell-action)" = any ] || fail "bell-action is $(value bell-action) after unmuting"
+echo 'PASS: toggle-agent-sounds mutes and unmutes sounds and bells'
+
 [ -z "$($TMUX list-keys -T global 2>/dev/null)" ] ||
     fail "a test server has the at server's global keys"
 [ -z "$(value @session-set-dir)" ] ||
