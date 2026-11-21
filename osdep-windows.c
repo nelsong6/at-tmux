@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include "win32/alt-tab.h"
+#include "win32/win-tap.h"
 
 /*
  * A pane's fd is a socket bridged from ConPTY and names no process; format.c
@@ -261,7 +262,8 @@ desktop_modifiers_held(key_code modifiers)
  * global key table. A low-level keyboard hook sees them before Windows hands
  * out hotkeys and passes Win keys on, so a key another program registered
  * (Windows Terminal's summon) still reaches it. Bound Alt+Tab keys are taken
- * from Windows. The hook's thread writes each
+ * from Windows, and with Win+` bound a lone Win tap is Win+`. The hook's
+ * thread writes each
  * key to a socket that the event loop reads. Every other key goes the same way
  * with no key_code, for the key trace: only that one went down, and when.
  */
@@ -270,6 +272,8 @@ static struct event	global_keys_event;
 static DWORD		global_keys_down; /* held key, to skip auto-repeat */
 static volatile LONG	global_alt_tab;
 static int		global_alt_tab_down;
+static volatile LONG	global_win_tap; /* Win+` is bound */
+static struct win32_win_tap global_win_tap_gate;
 
 /*
  * What the hook sends for each key: the key, and the process owning the
@@ -334,6 +338,52 @@ win32_global_keys_send(key_code key)
 	return (send(global_keys[1], (char *)&gk, sizeof gk, 0) == sizeof gk);
 }
 
+/* One key of a tap's Win+`, marked as the tap's. */
+static void
+win32_global_win_tap_key(INPUT *in, WORD vk, WORD scan, DWORD flags)
+{
+	memset(in, 0, sizeof *in);
+	in->type = INPUT_KEYBOARD;
+	in->ki.wVk = vk;
+	in->ki.wScan = scan;
+	in->ki.dwFlags = flags;
+	in->ki.dwExtraInfo = WIN32_WIN_TAP_TAG;
+}
+
+/*
+ * The Win key tapped on its own is Win+`, as at-terminal's hook makes it, so a
+ * tap summons at-terminal when none is running to catch it (TMUX-248). The
+ * tap's release is held back and sent again behind a press and release of `,
+ * so this hook and anything else answering Win+` (at-terminal's hotkey) see
+ * one, and Windows, seeing a key between Win's press and release, keeps Start
+ * shut. With at-terminal running too, whichever hook sees the release first
+ * sends the keys and the other passes them by their tag. True if the release
+ * was taken.
+ */
+static int
+win32_global_win_tap(KBDLLHOOKSTRUCT *k, int down)
+{
+	INPUT	in[3];
+	int	modifier;
+
+	modifier = !!((GetAsyncKeyState(VK_CONTROL) |
+	    GetAsyncKeyState(VK_MENU) | GetAsyncKeyState(VK_SHIFT)) & 0x8000);
+	if (!win32_win_tap(&global_win_tap_gate, k->vkCode, down,
+	    !!(GetAsyncKeyState(k->vkCode) & 0x8000), modifier))
+		return (0);
+
+	win32_global_win_tap_key(&in[0], VK_OEM_3, 0x29, 0);
+	win32_global_win_tap_key(&in[1], VK_OEM_3, 0x29, KEYEVENTF_KEYUP);
+	win32_global_win_tap_key(&in[2], (WORD)k->vkCode, (WORD)k->scanCode,
+	    KEYEVENTF_KEYUP|KEYEVENTF_EXTENDEDKEY);
+	if (SendInput(3, in, sizeof in[0]) == 3)
+		return (1);
+
+	/* Refused: the release goes on (Start opens too) and Win+` runs. */
+	win32_global_keys_send('`'|KEYC_SUPER);
+	return (0);
+}
+
 static LRESULT CALLBACK
 win32_global_keys_hook(int code, WPARAM wp, LPARAM lp)
 {
@@ -342,6 +392,10 @@ win32_global_keys_hook(int code, WPARAM wp, LPARAM lp)
 
 	if (code != HC_ACTION)
 		return (CallNextHookEx(NULL, code, wp, lp));
+	if (InterlockedCompareExchange(&global_win_tap, 0, 0) &&
+	    k->dwExtraInfo != WIN32_WIN_TAP_TAG &&
+	    win32_global_win_tap(k, wp == WM_KEYDOWN || wp == WM_SYSKEYDOWN))
+		return (1);
 	if (k->vkCode == VK_TAB) {
 		int shifted = !!(GetAsyncKeyState(VK_SHIFT) & 0x8000);
 		int take = win32_alt_tab_take(&global_alt_tab_down,
@@ -420,6 +474,8 @@ desktop_global_key_add(key_code key)
 		InterlockedOr(&global_alt_tab, 1);
 	else if (key == (KEYC_BTAB | KEYC_META))
 		InterlockedOr(&global_alt_tab, 2);
+	else if (key == ('`' | KEYC_SUPER))
+		InterlockedExchange(&global_win_tap, 1);
 
 	if (global_keys[0] != INVALID_SOCKET)
 		return;
@@ -436,7 +492,7 @@ desktop_global_key_add(key_code key)
 		CloseHandle(thread);
 }
 
-/* Stop taking Alt+Tab as soon as its global binding is removed. */
+/* Stop taking Alt+Tab or the Win tap as soon as its global binding goes. */
 void
 desktop_global_key_remove(key_code key)
 {
@@ -444,6 +500,8 @@ desktop_global_key_remove(key_code key)
 		InterlockedAnd(&global_alt_tab, ~1L);
 	else if (key == (KEYC_BTAB | KEYC_META))
 		InterlockedAnd(&global_alt_tab, ~2L);
+	else if (key == ('`' | KEYC_SUPER))
+		InterlockedExchange(&global_win_tap, 0);
 }
 
 #endif /* _WIN32 */

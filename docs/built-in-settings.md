@@ -34,6 +34,11 @@ so whichever hook sees the press first opens one menu. With the menu already
 open, Alt+Tab brings at-terminal forward and opens a fresh windows menu in its
 place, and Win+` a fresh menu (`display-palette -R` in `@at-menu`, TMUX-225).
 
+The Win key tapped on its own is Win+`, so it launches at-terminal after a boot, when
+no terminal is open to catch it, and Start stays shut (TMUX-248). at-terminal's hook
+does the same while it runs; both mark the keys they send, so whichever sees the tap
+first turns it into Win+` and the other lets those keys pass.
+
 A plain drag selects text over any program that didn't ask for drags: one that takes
 only clicks (mode 1000, as gvoice-tui and the fzt pickers do) keeps its clicks, and a
 drag starts tmux's selection as it does over a program that took no mouse. A program

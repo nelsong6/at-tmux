@@ -4267,6 +4267,12 @@ and
 .Ql M-BTab .
 While bound in the global table, these keys are taken from Windows;
 Ctrl+Alt+Tab is left alone.
+While
+.Ql W-\(ga
+is bound in the global table, the Windows key pressed and released on its
+own, with no other key, is sent on as Win+\(ga, so Start stays shut; Win with
+any other key, or with Ctrl, Alt or Shift held, is left alone, and Ctrl+Esc
+still opens Start.
 A key bound in the
 .Em global
 table does nothing on a server with no client unless it is also bound in the

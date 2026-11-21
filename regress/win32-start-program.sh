@@ -24,7 +24,7 @@ fail() {
 }
 
 WTMUX=$(cygpath -w "$(readlink -f "$TEST_TMUX")")
-"$(dirname "$TEST_TMUX")/alt-tab-test.exe" || fail "Alt+Tab hook gate"
+"$(dirname "$TEST_TMUX")/alt-tab-test.exe" || fail "Alt+Tab and Win tap hook gates"
 
 # The server starts with old/ on its own PATH; the global environment's PATH
 # is changed below to "global tools" alone, as home-sync changes it on a server
