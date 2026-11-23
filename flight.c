@@ -60,7 +60,13 @@
 #define FLIGHT_ENDED "ended:        "
 #define FLIGHT_CRASHED "crashed: "
 #define FLIGHT_WINDOWS "with Windows: "
+#ifdef _WIN32
 #define FLIGHT_SIGNED_IN "before this Windows sign-in: "
+#define FLIGHT_NO_WORD "no word from Windows: a power cut, Windows failing, or a kill"
+#else
+#define FLIGHT_SIGNED_IN "before this sign-in: "
+#define FLIGHT_NO_WORD "a reboot, a sign-out, a power cut, or a kill"
+#endif
 
 struct flight_event {
 	int64_t	 at;
@@ -207,7 +213,10 @@ flight_lost_at(const char *path, int64_t started)
 	return (first);
 }
 
-/* When this Windows sign-in began, or 0 if that can't be told. */
+/*
+ * When this sign-in began, or 0 if that can't be told: Windows' logon time, or
+ * elsewhere the systemd-logind session's start, else the boot.
+ */
 int64_t
 flight_signed_in(void)
 {
@@ -216,6 +225,11 @@ flight_signed_in(void)
 	LPWSTR		 buffer;
 	DWORD		 size;
 	long long	 ticks;
+#else
+	FILE		*f;
+	char		 line[128], *path;
+	unsigned int	 id;
+	long long	 at = 0;
 #endif
 
 	if ((signin = getenv("TMUX_FLIGHT_SIGNIN")) != NULL && *signin != '\0')
@@ -228,6 +242,35 @@ flight_signed_in(void)
 	WTSFreeMemory(buffer);
 	if (ticks > 0)
 		return (ticks / 10000000 - 11644473600LL);
+#else
+	if ((f = fopen("/proc/self/sessionid", "r")) != NULL) {
+		if (fscanf(f, "%u", &id) != 1)
+			id = UINT_MAX;
+		fclose(f);
+		if (id != UINT_MAX) {
+			xasprintf(&path, "/run/systemd/sessions/%u", id);
+			if ((f = fopen(path, "r")) != NULL) {
+				while (fgets(line, sizeof line, f) != NULL) {
+					if (sscanf(line, "REALTIME=%lld",
+					    &at) == 1)
+						break;
+				}
+				fclose(f);
+			}
+			free(path);
+			if (at > 0)
+				return (at / 1000000);
+		}
+	}
+	if ((f = fopen("/proc/stat", "r")) != NULL) {
+		while (fgets(line, sizeof line, f) != NULL) {
+			if (sscanf(line, "btime %lld", &at) == 1)
+				break;
+		}
+		fclose(f);
+		if (at > 0)
+			return (at);
+	}
 #endif
 	return (0);
 }
@@ -297,8 +340,7 @@ flight_report_one(const char *dir, const char *path, const char *lost)
 		    "session at %s\n", at);
 	} else if (r->worked < flight_signed_in()) {
 		how = FLIGHT_HOW_SIGNED_IN;
-		fprintf(f, FLIGHT_ENDED FLIGHT_SIGNED_IN "no word from "
-		    "Windows: a power cut, Windows failing, or a kill\n");
+		fprintf(f, FLIGHT_ENDED FLIGHT_SIGNED_IN FLIGHT_NO_WORD "\n");
 	} else {
 		how = FLIGHT_HOW_KILLED;
 		fprintf(f, FLIGHT_ENDED "with no record of why: killed from "
