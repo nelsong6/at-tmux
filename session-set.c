@@ -2492,8 +2492,13 @@ ss_ended(struct ss_snap *snap, struct ss_ended *ended)
 		ended->logged = "after Windows ended the session";
 		break;
 	case FLIGHT_HOW_SIGNED_IN:
+#ifdef _WIN32
 		ended->line = xstrdup("-The tmux server ended before this "
 		    "Windows sign-in, with no word from Windows");
+#else
+		ended->line = xstrdup("-The tmux server ended before this "
+		    "sign-in");
+#endif
 		ended->title = " Previous session set ";
 		ended->logged = "after an end before this sign-in";
 		break;
@@ -2603,7 +2608,7 @@ ss_offer_menu(struct ss_snap *snap, struct client *c, struct ss_ended *ended)
 	return (menu);
 }
 
-/* When this Windows sign-in began, or 0 if that can't be told. */
+/* When this sign-in began, or 0 if that can't be told. */
 static long long
 ss_signed_in(void)
 {
