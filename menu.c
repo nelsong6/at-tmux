@@ -329,7 +329,8 @@ menu_key_cb(struct client *c, void *data, struct key_event *event)
 		    m->y < md->py + 1 ||
 		    m->y > md->py + 1 + count - 1) {
 			if (~md->flags & MENU_STAYOPEN) {
-				if (MOUSE_RELEASE(m->b))
+				/* A move with no button held is not a release. */
+				if (MOUSE_RELEASE(m->b) && !MOUSE_DRAG(m->b))
 					return (1);
 			} else {
 				if (!MOUSE_RELEASE(m->b) &&
@@ -344,7 +345,7 @@ menu_key_cb(struct client *c, void *data, struct key_event *event)
 			return (0);
 		}
 		if (~md->flags & MENU_STAYOPEN) {
-			if (MOUSE_RELEASE(m->b))
+			if (MOUSE_RELEASE(m->b) && !MOUSE_DRAG(m->b))
 				goto chosen;
 		} else {
 			if (!MOUSE_WHEEL(m->b) && !MOUSE_DRAG(m->b))
