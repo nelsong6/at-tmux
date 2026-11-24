@@ -209,6 +209,20 @@ extern int yydebug;
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
+/* Token kinds.  */
+#define YYEMPTY -2
+#define YYEOF 0
+#define YYerror 256
+#define YYUNDEF 257
+#define ERROR 258
+#define HIDDEN 259
+#define IF 260
+#define ELSE 261
+#define ELIF 262
+#define ENDIF 263
+#define FORMAT 264
+#define TOKEN 265
+#define EQUALS 266
 
 /* Value type.  */
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
@@ -227,7 +241,7 @@ union YYSTYPE
 	struct cmd_parse_commands		 *commands;
 	struct cmd_parse_command		 *command;
 
-#line 231 "cmd-parse.c"
+#line 245 "cmd-parse.c"
 
 };
 typedef union YYSTYPE YYSTYPE;
@@ -1296,7 +1310,7 @@ yyreduce:
 
 			ps->commands = (yyvsp[0].commands);
 		}
-#line 1300 "cmd-parse.c"
+#line 1314 "cmd-parse.c"
     break;
 
   case 4: /* statements: statement '\n'  */
@@ -1304,7 +1318,7 @@ yyreduce:
                 {
 			(yyval.commands) = (yyvsp[-1].commands);
 		}
-#line 1308 "cmd-parse.c"
+#line 1322 "cmd-parse.c"
     break;
 
   case 5: /* statements: statements statement '\n'  */
@@ -1314,7 +1328,7 @@ yyreduce:
 			TAILQ_CONCAT((yyval.commands), (yyvsp[-1].commands), entry);
 			free((yyvsp[-1].commands));
 		}
-#line 1318 "cmd-parse.c"
+#line 1332 "cmd-parse.c"
     break;
 
   case 6: /* statement: %empty  */
@@ -1323,7 +1337,7 @@ yyreduce:
 			(yyval.commands) = xmalloc (sizeof *(yyval.commands));
 			TAILQ_INIT((yyval.commands));
 		}
-#line 1327 "cmd-parse.c"
+#line 1341 "cmd-parse.c"
     break;
 
   case 7: /* statement: hidden_assignment  */
@@ -1332,7 +1346,7 @@ yyreduce:
 			(yyval.commands) = xmalloc (sizeof *(yyval.commands));
 			TAILQ_INIT((yyval.commands));
 		}
-#line 1336 "cmd-parse.c"
+#line 1350 "cmd-parse.c"
     break;
 
   case 8: /* statement: condition  */
@@ -1347,7 +1361,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[0].commands));
 			}
 		}
-#line 1351 "cmd-parse.c"
+#line 1365 "cmd-parse.c"
     break;
 
   case 9: /* statement: commands  */
@@ -1362,7 +1376,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[0].commands));
 			}
 		}
-#line 1366 "cmd-parse.c"
+#line 1380 "cmd-parse.c"
     break;
 
   case 10: /* format: FORMAT  */
@@ -1370,7 +1384,7 @@ yyreduce:
                 {
 			(yyval.token) = (yyvsp[0].token);
 		}
-#line 1374 "cmd-parse.c"
+#line 1388 "cmd-parse.c"
     break;
 
   case 11: /* format: TOKEN  */
@@ -1378,7 +1392,7 @@ yyreduce:
                 {
 			(yyval.token) = (yyvsp[0].token);
 		}
-#line 1382 "cmd-parse.c"
+#line 1396 "cmd-parse.c"
     break;
 
   case 12: /* expanded: format  */
@@ -1405,7 +1419,7 @@ yyreduce:
 			format_free(ft);
 			free((yyvsp[0].token));
 		}
-#line 1409 "cmd-parse.c"
+#line 1423 "cmd-parse.c"
     break;
 
   case 15: /* assignment: EQUALS  */
@@ -1426,7 +1440,7 @@ yyreduce:
 				environ_put(global_environ, (yyvsp[0].token), 0);
 			free((yyvsp[0].token));
 		}
-#line 1430 "cmd-parse.c"
+#line 1444 "cmd-parse.c"
     break;
 
   case 16: /* hidden_assignment: HIDDEN EQUALS  */
@@ -1447,7 +1461,7 @@ yyreduce:
 				environ_put(global_environ, (yyvsp[0].token), ENVIRON_HIDDEN);
 			free((yyvsp[0].token));
 		}
-#line 1451 "cmd-parse.c"
+#line 1465 "cmd-parse.c"
     break;
 
   case 17: /* if_open: IF expanded  */
@@ -1464,7 +1478,7 @@ yyreduce:
 				TAILQ_INSERT_HEAD(&ps->stack, ps->scope, entry);
 			ps->scope = scope;
 		}
-#line 1468 "cmd-parse.c"
+#line 1482 "cmd-parse.c"
     break;
 
   case 18: /* if_else: ELSE  */
@@ -1479,7 +1493,7 @@ yyreduce:
 			free(ps->scope);
 			ps->scope = scope;
 		}
-#line 1483 "cmd-parse.c"
+#line 1497 "cmd-parse.c"
     break;
 
   case 19: /* if_elif: ELIF expanded  */
@@ -1495,7 +1509,7 @@ yyreduce:
 			free(ps->scope);
 			ps->scope = scope;
 		}
-#line 1499 "cmd-parse.c"
+#line 1513 "cmd-parse.c"
     break;
 
   case 20: /* if_close: ENDIF  */
@@ -1508,7 +1522,7 @@ yyreduce:
 			if (ps->scope != NULL)
 				TAILQ_REMOVE(&ps->stack, ps->scope, entry);
 		}
-#line 1512 "cmd-parse.c"
+#line 1526 "cmd-parse.c"
     break;
 
   case 21: /* condition: if_open '\n' statements if_close  */
@@ -1521,7 +1535,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[-1].commands));
 			}
 		}
-#line 1525 "cmd-parse.c"
+#line 1539 "cmd-parse.c"
     break;
 
   case 22: /* condition: if_open '\n' statements if_else '\n' statements if_close  */
@@ -1535,7 +1549,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[-4].commands));
 			}
 		}
-#line 1539 "cmd-parse.c"
+#line 1553 "cmd-parse.c"
     break;
 
   case 23: /* condition: if_open '\n' statements elif if_close  */
@@ -1553,7 +1567,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[-1].elif).commands);
 			}
 		}
-#line 1557 "cmd-parse.c"
+#line 1571 "cmd-parse.c"
     break;
 
   case 24: /* condition: if_open '\n' statements elif if_else '\n' statements if_close  */
@@ -1573,7 +1587,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[-4].elif).commands);
 			}
 		}
-#line 1577 "cmd-parse.c"
+#line 1591 "cmd-parse.c"
     break;
 
   case 25: /* elif: if_elif '\n' statements  */
@@ -1588,7 +1602,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[0].commands));
 			}
 		}
-#line 1592 "cmd-parse.c"
+#line 1606 "cmd-parse.c"
     break;
 
   case 26: /* elif: if_elif '\n' statements elif  */
@@ -1609,7 +1623,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[0].elif).commands);
 			}
 		}
-#line 1613 "cmd-parse.c"
+#line 1627 "cmd-parse.c"
     break;
 
   case 27: /* commands: command  */
@@ -1624,7 +1638,7 @@ yyreduce:
 			else
 				cmd_parse_free_command((yyvsp[0].command));
 		}
-#line 1628 "cmd-parse.c"
+#line 1642 "cmd-parse.c"
     break;
 
   case 28: /* commands: commands ';'  */
@@ -1632,7 +1646,7 @@ yyreduce:
                 {
 			(yyval.commands) = (yyvsp[-1].commands);
 		}
-#line 1636 "cmd-parse.c"
+#line 1650 "cmd-parse.c"
     break;
 
   case 29: /* commands: commands ';' condition1  */
@@ -1642,7 +1656,7 @@ yyreduce:
 			TAILQ_CONCAT((yyval.commands), (yyvsp[0].commands), entry);
 			free((yyvsp[0].commands));
 		}
-#line 1646 "cmd-parse.c"
+#line 1660 "cmd-parse.c"
     break;
 
   case 30: /* commands: commands ';' command  */
@@ -1660,7 +1674,7 @@ yyreduce:
 				cmd_parse_free_command((yyvsp[0].command));
 			}
 		}
-#line 1664 "cmd-parse.c"
+#line 1678 "cmd-parse.c"
     break;
 
   case 31: /* commands: condition1  */
@@ -1668,7 +1682,7 @@ yyreduce:
                 {
 			(yyval.commands) = (yyvsp[0].commands);
 		}
-#line 1672 "cmd-parse.c"
+#line 1686 "cmd-parse.c"
     break;
 
   case 32: /* command: assignment  */
@@ -1680,7 +1694,7 @@ yyreduce:
 			(yyval.command)->line = ps->input->line;
 			TAILQ_INIT(&(yyval.command)->arguments);
 		}
-#line 1684 "cmd-parse.c"
+#line 1698 "cmd-parse.c"
     break;
 
   case 33: /* command: optional_assignment TOKEN  */
@@ -1698,7 +1712,7 @@ yyreduce:
 			arg->string = (yyvsp[0].token);
 			TAILQ_INSERT_HEAD(&(yyval.command)->arguments, arg, entry);
 		}
-#line 1702 "cmd-parse.c"
+#line 1716 "cmd-parse.c"
     break;
 
   case 34: /* command: optional_assignment TOKEN arguments  */
@@ -1719,7 +1733,7 @@ yyreduce:
 			arg->string = (yyvsp[-1].token);
 			TAILQ_INSERT_HEAD(&(yyval.command)->arguments, arg, entry);
 		}
-#line 1723 "cmd-parse.c"
+#line 1737 "cmd-parse.c"
     break;
 
   case 35: /* condition1: if_open commands if_close  */
@@ -1732,7 +1746,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[-1].commands));
 			}
 		}
-#line 1736 "cmd-parse.c"
+#line 1750 "cmd-parse.c"
     break;
 
   case 36: /* condition1: if_open commands if_else commands if_close  */
@@ -1746,7 +1760,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[-3].commands));
 			}
 		}
-#line 1750 "cmd-parse.c"
+#line 1764 "cmd-parse.c"
     break;
 
   case 37: /* condition1: if_open commands elif1 if_close  */
@@ -1764,7 +1778,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[-1].elif).commands);
 			}
 		}
-#line 1768 "cmd-parse.c"
+#line 1782 "cmd-parse.c"
     break;
 
   case 38: /* condition1: if_open commands elif1 if_else commands if_close  */
@@ -1784,7 +1798,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[-3].elif).commands);
 			}
 		}
-#line 1788 "cmd-parse.c"
+#line 1802 "cmd-parse.c"
     break;
 
   case 39: /* elif1: if_elif commands  */
@@ -1799,7 +1813,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[0].commands));
 			}
 		}
-#line 1803 "cmd-parse.c"
+#line 1817 "cmd-parse.c"
     break;
 
   case 40: /* elif1: if_elif commands elif1  */
@@ -1820,7 +1834,7 @@ yyreduce:
 				cmd_parse_free_commands((yyvsp[0].elif).commands);
 			}
 		}
-#line 1824 "cmd-parse.c"
+#line 1838 "cmd-parse.c"
     break;
 
   case 41: /* arguments: argument  */
@@ -1831,7 +1845,7 @@ yyreduce:
 
 			TAILQ_INSERT_HEAD((yyval.arguments), (yyvsp[0].argument), entry);
 		}
-#line 1835 "cmd-parse.c"
+#line 1849 "cmd-parse.c"
     break;
 
   case 42: /* arguments: argument arguments  */
@@ -1840,7 +1854,7 @@ yyreduce:
 			TAILQ_INSERT_HEAD((yyvsp[0].arguments), (yyvsp[-1].argument), entry);
 			(yyval.arguments) = (yyvsp[0].arguments);
 		}
-#line 1844 "cmd-parse.c"
+#line 1858 "cmd-parse.c"
     break;
 
   case 43: /* argument: TOKEN  */
@@ -1850,7 +1864,7 @@ yyreduce:
 			(yyval.argument)->type = CMD_PARSE_STRING;
 			(yyval.argument)->string = (yyvsp[0].token);
 		}
-#line 1854 "cmd-parse.c"
+#line 1868 "cmd-parse.c"
     break;
 
   case 44: /* argument: EQUALS  */
@@ -1860,7 +1874,7 @@ yyreduce:
 			(yyval.argument)->type = CMD_PARSE_STRING;
 			(yyval.argument)->string = (yyvsp[0].token);
 		}
-#line 1864 "cmd-parse.c"
+#line 1878 "cmd-parse.c"
     break;
 
   case 45: /* argument: '{' argument_statements  */
@@ -1870,7 +1884,7 @@ yyreduce:
 			(yyval.argument)->type = CMD_PARSE_COMMANDS;
 			(yyval.argument)->commands = (yyvsp[0].commands);
 		}
-#line 1874 "cmd-parse.c"
+#line 1888 "cmd-parse.c"
     break;
 
   case 46: /* argument_statements: statement '}'  */
@@ -1878,7 +1892,7 @@ yyreduce:
                         {
 				(yyval.commands) = (yyvsp[-1].commands);
 			}
-#line 1882 "cmd-parse.c"
+#line 1896 "cmd-parse.c"
     break;
 
   case 47: /* argument_statements: statements statement '}'  */
@@ -1888,11 +1902,11 @@ yyreduce:
 				TAILQ_CONCAT((yyval.commands), (yyvsp[-1].commands), entry);
 				free((yyvsp[-1].commands));
 			}
-#line 1892 "cmd-parse.c"
+#line 1906 "cmd-parse.c"
     break;
 
 
-#line 1896 "cmd-parse.c"
+#line 1910 "cmd-parse.c"
 
       default: break;
     }
