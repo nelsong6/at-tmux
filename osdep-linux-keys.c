@@ -356,7 +356,7 @@ desktop_super_tap(u_short code, int value)
 
 /*
  * A keyboard has events: a key pressed with the Super key held goes to the
- * global table, a Super tap as Super+`, and Alt+Tab and Alt+Shift+Tab as M-Tab
+ * global table, a Super tap as Win (ATT-32), and Alt+Tab and Alt+Shift+Tab as M-Tab
  * and M-BTab. Reading does not take the key from the desktop, so the focused
  * program sees it too. Repeats (value 2) are skipped.
  */
@@ -387,7 +387,7 @@ desktop_keyboard_read(int fd, __unused short events, __unused void *arg)
 			continue;
 		code = ev[i].code;
 		if (desktop_super_tap(code, ev[i].value))
-			key_bindings_global('`'|KEYC_SUPER, -1);
+			key_bindings_global(KEYC_WIN, -1);
 		for (j = 0; j < nitems(desktop_modifier_codes); j++) {
 			if (desktop_modifier_codes[j] == code)
 				break;
