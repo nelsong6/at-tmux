@@ -22,6 +22,8 @@ PICK="$(cd "$(dirname "$0")" && pwd)/palette-pick.sh"
 
 cat >"$OUT/test.conf" <<EOF
 set -g status off
+# The rows below number windows from 0, not the at system's 1.
+set -g base-index 0
 bind -n F5 display-palette -w 100% -h 100% /bin/sh "$PICK" "$OUT"
 bind -N 'Rename the window' n command-prompt -I'#W' { rename-window -- '%%' }
 bind -n M-w display-menu Split s { split-window } '' "#{?#{==:1,0},Never,}" x { kill-server } Last l { last-window }

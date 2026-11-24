@@ -298,9 +298,7 @@ options_default(struct options *oo, const struct options_table_entry *oe)
 		break;
 	}
 out:
-#ifdef _WIN32
 	at_defaults_option(oo, o);
-#endif
 	return (o);
 }
 
