@@ -68,6 +68,14 @@ static const u_short	desktop_modifier_codes[] = {
 static u_long		desktop_global_held[
 			    KEY_MAX / (8 * sizeof (u_long)) + 1];
 
+/*
+ * A Super key pressed and released on its own: armed while it is the only key
+ * pressed since, so the release is Super+` (as the Win tap is on Windows,
+ * TMUX-248).
+ */
+static u_short		desktop_tap_held;
+static int		desktop_tap_armed;
+
 static void	desktop_keyboard_read(int, short, void *);
 
 /*
@@ -314,9 +322,43 @@ static const struct {
 };
 
 /*
+ * Is this key event the end of a Super tap: a Super key released with no other
+ * key pressed since it went down, and no Ctrl, Alt or Shift held then.
+ */
+static int
+desktop_super_tap(u_short code, int value)
+{
+	int	tap;
+
+	if (value == 2)
+		return (0);
+	if (code != KEY_LEFTMETA && code != KEY_RIGHTMETA) {
+		if (value == 1)
+			desktop_tap_armed = 0;
+		return (0);
+	}
+	if (value == 1) {
+		if (desktop_tap_held != 0 && desktop_tap_held != code) {
+			/* The other Super key while one is held: a chord. */
+			desktop_tap_armed = 0;
+			return (0);
+		}
+		desktop_tap_held = code;
+		desktop_tap_armed = (desktop_modifiers(desktop_global_held) &
+		    (KEYC_CTRL|KEYC_META|KEYC_SHIFT)) == 0;
+		return (0);
+	}
+	tap = desktop_tap_armed && code == desktop_tap_held;
+	desktop_tap_armed = 0;
+	desktop_tap_held = 0;
+	return (tap);
+}
+
+/*
  * A keyboard has events: a key pressed with the Super key held goes to the
- * global table. Reading does not take the key from the desktop, so the
- * focused program sees it too. Repeats (value 2) are skipped.
+ * global table, a Super tap as Super+`, and Alt+Tab and Alt+Shift+Tab as M-Tab
+ * and M-BTab. Reading does not take the key from the desktop, so the focused
+ * program sees it too. Repeats (value 2) are skipped.
  */
 static void
 desktop_keyboard_read(int fd, __unused short events, __unused void *arg)
@@ -344,6 +386,8 @@ desktop_keyboard_read(int fd, __unused short events, __unused void *arg)
 		if (ev[i].type != EV_KEY || ev[i].code > KEY_MAX)
 			continue;
 		code = ev[i].code;
+		if (desktop_super_tap(code, ev[i].value))
+			key_bindings_global('`'|KEYC_SUPER, -1);
 		for (j = 0; j < nitems(desktop_modifier_codes); j++) {
 			if (desktop_modifier_codes[j] == code)
 				break;
@@ -359,6 +403,15 @@ desktop_keyboard_read(int fd, __unused short events, __unused void *arg)
 		}
 		if (ev[i].value != 1)
 			continue;
+		if (code == KEY_TAB) {
+			modifiers = desktop_modifiers(desktop_global_held);
+			if ((modifiers & (KEYC_CTRL|KEYC_META|KEYC_SUPER)) !=
+			    KEYC_META)
+				continue;
+			key = (modifiers & KEYC_SHIFT) ? KEYC_BTAB : '\t';
+			key_bindings_global(key|KEYC_META, -1);
+			continue;
+		}
 		for (j = 0; j < nitems(desktop_key_chars); j++) {
 			if (desktop_key_chars[j].code == ev[i].code)
 				break;
