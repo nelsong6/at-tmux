@@ -793,6 +793,9 @@ key_bindings_init(void)
 	at_defaults_init();
 #endif
 	cmdq_append(NULL, cmdq_get_callback(key_bindings_init_done, NULL));
+#ifdef _WIN32
+	at_defaults_late();
+#endif
 }
 
 static enum cmd_retval

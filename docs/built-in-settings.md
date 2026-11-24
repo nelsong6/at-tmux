@@ -9,7 +9,7 @@ outside it is a way for instances to drift. A setting is changed by changing
 They hold what the home configuration (`windows.conf` and shell-config's shared
 `tmux.conf`) used to: windows numbered from 1, the mouse, no prefix, Ctrl+B and Alt+Tab
 opening the at menu, the Windows-style keys, the Ctrl+T chords, the command aliases in the
-at menu, the hidden bypass label and the system session. The conversation strip and its
+at menu and the hidden bypass label. The conversation strip and its
 side panel are at-claude's own, drawn in its window and a split beside it (AGT-49);
 the at menu's `links` opens the panel through tmux-strip, and Ctrl+Shift+O gives it the
 keyboard (`at-claude panel -focus`), as a click on it does.
@@ -22,8 +22,18 @@ The shell is pwsh unless whoever starts the server names one in `SHELL`.
   what was set later (TMUX-207) is taken after them, user options included, so a changed
   setting reaches a running server at its next upgrade.
 - **The at server alone**, the one at-terminal shows (its socket name ends in `-at`), gets
-  its session set, the Win key, desktop Alt+Tab, the alerts listener and strip-owner. A test or throwaway server
+  its session set, the Win key, desktop Alt+Tab, and the programs it starts. A test or throwaway server
   has none of them.
+
+The programs at keeps running (the system session's spotify, mail and alerts windows, the
+alerts listener and strip-owner) are the one exception to settings living here: how each
+starts is declared once in home-sync, which restarts a running copy from that declaration
+when it changes (AHT-193). Kept here too, spt's NAS flag outlived its removal in both
+places. Each home-sync run writes `%LOCALAPPDATA%\at-home\programs.conf`, which sets the
+`system-session` alias and `@at-programs-start`, and sources it into the at server; every
+server reads it as it starts (`source-file -q`, so a PC home-sync hasn't run on starts
+without it), and the at server alone runs `@at-programs-start` then. Sourcing it again
+starts nothing.
 
 Alt+Tab and Alt+Shift+Tab anywhere summon at-terminal and open the at menu's
 windows folder. With no client, `start-program -K M-Tab at-terminal.exe` launches

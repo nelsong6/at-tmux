@@ -4,7 +4,8 @@
 # configuration file of its own, starts with them, returns to them on set -u,
 # leaves what only the at server does (Win+`) to the at server, and lets a
 # plain drag select over a program that asked only for clicks (TMUX-227), and
-# passes a program's links on to the terminal (ATC-154).
+# passes a program's links on to the terminal (ATC-154). The programs at keeps
+# running start from home-sync's programs.conf (AHT-193).
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -13,7 +14,8 @@ TERM=screen
 TMUX="$TEST_TMUX -L$TEST_SOCKET"
 OUTER="$TEST_TMUX -L$TEST_SOCKET-outer"
 HOMEDIR=$(mktemp -d)
-trap "$TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null; rm -rf $HOMEDIR" 0 1 15
+PROGRAMS="$TEST_TMUX -L$TEST_SOCKET-programs"
+trap "$TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null; $PROGRAMS kill-server 2>/dev/null; rm -rf $HOMEDIR" 0 1 15
 
 fail() {
 	echo "FAIL: $1"
@@ -27,8 +29,8 @@ binding() {
 
 # A ~/.tmux.conf is there, and is not read.
 printf 'set -g @from-file yes\nset -g base-index 7\n' >"$HOMEDIR/.tmux.conf"
-USERPROFILE=$(cygpath -w "$HOMEDIR") $TMUX new -d -s defaults </dev/null ||
-    fail "start"
+USERPROFILE=$(cygpath -w "$HOMEDIR") \
+    $TMUX new -d -s defaults </dev/null || fail "start"
 [ -z "$($TMUX display -p '#{config_files}' | tr -d '\r')" ] ||
     fail "a configuration file was loaded"
 [ -z "$(value @from-file)" ] || fail "~/.tmux.conf was read"
@@ -147,6 +149,28 @@ linked() {
 wait_until linked ||
     fail "the link never reached the terminal: $($OUTER capture-pane -ep | grep 'LINK TEXT' | od -c | head -5)"
 echo "PASS: a program's link reaches the terminal as a hyperlink"
+
+# home-sync's programs.conf gives every server the system-session alias, and
+# its starts are the at server's alone, run as it starts (AHT-193).
+mkdir "$HOMEDIR/at-home"
+cat >"$HOMEDIR/at-home/programs.conf" <<EOF
+set -s command-alias[112] 'system-session=display-message from-programs-conf'
+set -g @at-programs-start "run-shell -b 'echo started >$(cygpath -m "$HOMEDIR")/started'"
+EOF
+LOCALAPPDATA=$(cygpath -w "$HOMEDIR") $PROGRAMS new -d -s programs </dev/null ||
+    fail "start with programs.conf"
+$PROGRAMS show -s command-alias | grep -q 'system-session=display-message from-programs-conf' ||
+    fail "programs.conf's system-session is missing"
+[ -n "$($PROGRAMS show -gv @at-programs-start)" ] ||
+    fail "programs.conf's starts are missing"
+$PROGRAMS run-shell 'echo ran' >/dev/null || fail "the server stopped answering"
+[ ! -e "$HOMEDIR/started" ] || fail "a test server ran the at server's starts"
+# What the at server runs as it starts starts them.
+$PROGRAMS run-shell -C '#{@at-programs-start}' || fail "run the starts"
+started() { [ -e "$HOMEDIR/started" ]; }
+wait_until started || fail "@at-programs-start started nothing"
+$PROGRAMS kill-server
+echo "PASS: every server reads programs.conf, and only the at server starts its programs"
 
 echo 'ALL AT DEFAULTS TESTS PASSED'
 exit 0

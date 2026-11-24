@@ -3044,6 +3044,7 @@ void	 key_bindings_init(void);
 #ifdef _WIN32
 void	 at_defaults_option(struct options *, struct options_entry *);
 void	 at_defaults_init(void);
+void	 at_defaults_late(void);
 #endif
 void	 key_bindings_global(key_code, pid_t);
 void	 key_bindings_client_attached(struct client *);

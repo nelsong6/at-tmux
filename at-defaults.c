@@ -150,12 +150,11 @@ static const struct {
 	  "toggle-agent-sounds=Mute or unmute Claude and Codex sounds and terminal bells until toggled again" },
 	{ "command-alias-tags[117]",
 	  "toggle-agent-sounds=sound sounds mute unmute audio quiet notification claude codex agent bell beep looper" },
-	{ "command-alias[112]",
-	  "system-session=if -F '#{S:#{?#{==:#{session_name},system},1,}}' {} { new-session -d -s system -n mail tuimail.exe '' ; set -w -t system:mail @mail-window 1 ; set -w -t system:mail remain-on-exit relaunch ; new-window -d -b -M spotify -t system:^ -o remain-on-exit=relaunch spotify_player.exe ; new-window -d -M alerts -t system: -o remain-on-exit=relaunch alerts.exe view ; set -t system bell-action none }" },
-	{ "command-alias-note[112]",
-	  "system-session=Make the system session whole: mail, spotify and alerts" },
-	{ "command-alias-tags[112]",
-	  "system-session=system session mail spotify alerts" },
+	/*
+	 * command-alias[112], system-session, is home-sync's: it writes it into
+	 * programs.conf from the declaration it also restarts each program from
+	 * (AHT-193), and the server reads that file as it starts (at_commands).
+	 */
 	/*
 	 * The conversation's side panel is at-claude's own split (AGT-49):
 	 * tmux-strip works out its view and at-claude shows it.
@@ -266,10 +265,27 @@ static const char *const at_commands[] = {
 	"set -g @followup-guide \"$LOCALAPPDATA/shell-config-profile-home/claude/topics/spawned-session.md\"",
 
 	/*
-	 * Only the at server, the one at-terminal shows: its session set, Win,
-	 * desktop Alt+Tab, alerts and strip-owner. A throwaway server has none.
+	 * Only the at server, the one at-terminal shows: its session set, Win
+	 * and desktop Alt+Tab. A throwaway server has none. The programs it
+	 * starts are at_late_commands'.
 	 */
-	"if -F '#{m:*-at,#{socket_path}}' { set -g @session-set-dir \"$USERPROFILE/.tmux-session-set\" ; bind -T global Win if -F '#{global_key_terminal_foreground}' { run-shell -C '#{E:@at-menu}' ; run-shell -C 'system-session' } { start-program at-terminal.exe } ; bind -T global-no-client Win start-program at-terminal.exe ; bind -T global M-Tab { start-program at-terminal.exe ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global M-BTab { start-program at-terminal.exe ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global-no-client M-Tab start-program -K M-Tab at-terminal.exe ; bind -T global-no-client M-BTab start-program -K M-BTab at-terminal.exe ; run-shell -b \"alerts.exe listen -socket #{socket_path}\" ; run-shell -b \"strip-owner.exe start\" }",
+	"if -F '#{m:*-at,#{socket_path}}' { set -g @session-set-dir \"$USERPROFILE/.tmux-session-set\" ; bind -T global Win if -F '#{global_key_terminal_foreground}' { run-shell -C '#{E:@at-menu}' ; run-shell -C 'system-session' } { start-program at-terminal.exe } ; bind -T global-no-client Win start-program at-terminal.exe ; bind -T global M-Tab { start-program at-terminal.exe ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global M-BTab { start-program at-terminal.exe ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global-no-client M-Tab start-program -K M-Tab at-terminal.exe ; bind -T global-no-client M-BTab start-program -K M-BTab at-terminal.exe }",
+};
+
+/*
+ * How the programs at keeps running start is home-sync's, declared once there
+ * (AHT-193): spt's NAS flag lived both here and in home-sync, and the running
+ * copy kept it after both changed. Every run writes them into programs.conf,
+ * the system-session alias and @at-programs-start, and sources it into the at
+ * server; a server starting before any run reads the last one's. Only the at
+ * server runs the starts, once as it starts, so a run sourcing the file again
+ * starts nothing. These run after this build's default key bindings are
+ * recorded: source-file waits for its file, and queued before that record it
+ * left an upgraded server with no defaults to compare against.
+ */
+static const char *const at_late_commands[] = {
+	"source-file -q \"$LOCALAPPDATA/at-home/programs.conf\"",
+	"if -F '#{m:*-at,#{socket_path}}' { if -F '#{@at-programs-start}' { run-shell -C '#{@at-programs-start}' } }",
 };
 
 /* Give a new option the at system's default, where it has one. */
@@ -297,22 +313,35 @@ at_defaults_option(struct options *oo, struct options_entry *o)
 	}
 }
 
-/* Queue the user options and key bindings, after tmux's own bindings. */
-void
-at_defaults_init(void)
+static void
+at_defaults_queue(const char *const *commands, u_int n)
 {
 	struct cmd_parse_result	*pr;
 	u_int			 i;
 
-	for (i = 0; i < nitems(at_commands); i++) {
-		pr = cmd_parse_from_string(at_commands[i], NULL);
+	for (i = 0; i < n; i++) {
+		pr = cmd_parse_from_string(commands[i], NULL);
 		if (pr->status != CMD_PARSE_SUCCESS) {
 			log_debug("%s", pr->error);
-			fatalx("bad at default: %s", at_commands[i]);
+			fatalx("bad at default: %s", commands[i]);
 		}
 		cmdq_append(NULL, cmdq_get_command(pr->cmdlist, NULL));
 		cmd_list_free(pr->cmdlist);
 	}
+}
+
+/* Queue the user options and key bindings, after tmux's own bindings. */
+void
+at_defaults_init(void)
+{
+	at_defaults_queue(at_commands, nitems(at_commands));
+}
+
+/* Queue what comes after the defaults are recorded: programs.conf. */
+void
+at_defaults_late(void)
+{
+	at_defaults_queue(at_late_commands, nitems(at_late_commands));
 }
 
 #endif /* _WIN32 */
