@@ -151,7 +151,7 @@ static const struct {
 	{ "command-alias-tags[117]",
 	  "toggle-agent-sounds=sound sounds mute unmute audio quiet notification claude codex agent bell beep looper" },
 	{ "command-alias[112]",
-	  "system-session=if -F '#{S:#{?#{==:#{session_name},system},1,}}' {} { new-session -d -s system -n mail tuimail.exe '' ; set -w -t system:mail @mail-window 1 ; set -w -t system:mail remain-on-exit relaunch ; new-window -d -b -M spotify -t system:^ -o remain-on-exit=relaunch spotify_player.exe -c //NelsonNAS/spt-config ; new-window -d -M alerts -t system: -o remain-on-exit=relaunch alerts.exe view ; set -t system bell-action none }" },
+	  "system-session=if -F '#{S:#{?#{==:#{session_name},system},1,}}' {} { new-session -d -s system -n mail tuimail.exe '' ; set -w -t system:mail @mail-window 1 ; set -w -t system:mail remain-on-exit relaunch ; new-window -d -b -M spotify -t system:^ -o remain-on-exit=relaunch spotify_player.exe ; new-window -d -M alerts -t system: -o remain-on-exit=relaunch alerts.exe view ; set -t system bell-action none }" },
 	{ "command-alias-note[112]",
 	  "system-session=Make the system session whole: mail, spotify and alerts" },
 	{ "command-alias-tags[112]",
@@ -259,10 +259,11 @@ static const char *const at_commands[] = {
 
 	/*
 	 * A follow-up's session starts from the @followup folder and guide
-	 * (agent-tools' tmux-strip spawn, AGT-3).
+	 * (agent-tools' tmux-strip spawn, AGT-3). The guide is home-sync's local copy
+	 * of the home profile, not the NAS (SES-227).
 	 */
 	"set -g @followup-repos 'D:/repos'",
-	"set -g @followup-guide 'S:/shell-config-profile-home/claude/topics/spawned-session.md'",
+	"set -g @followup-guide \"$LOCALAPPDATA/shell-config-profile-home/claude/topics/spawned-session.md\"",
 
 	/*
 	 * Only the at server, the one at-terminal shows: its session set, Win,
