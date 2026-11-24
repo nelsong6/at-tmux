@@ -174,7 +174,7 @@ tty_at_answered(struct tty *tty, const char *version)
 		    at_proto_version());
 		return;
 	}
-	status_message_set(c, 0, 1, 0, 0, "The terminal speaks at-protocol "
+	status_message_set(c, 0, 1, 0, 1, "The terminal speaks at-protocol "
 	    "%.12s and this server %.12s: avatars go as sixel until both are "
 	    "built from the same at-protocol", version, at_proto_version());
 }

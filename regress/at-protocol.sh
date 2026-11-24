@@ -50,6 +50,9 @@ EOF
 P=$(printf '\364\216\273\256')
 cat >image.sh <<EOF
 printf '\033_Ga=T,U=1,i=5,f=32,s=2,v=2,c=2,r=1,q=2;/////////////////////w==\033\\\\'
+# Apart from its placeholders, so they are drawn as the pane writes them, not only in
+# a redraw: the other version's message is still up, and froze the screen before.
+sleep 0.3
 printf '\033[38;5;5m$P\314\205\314\205$P\314\205\314\215\033[m image-done\n'
 exec sleep 100
 EOF
