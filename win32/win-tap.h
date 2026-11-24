@@ -1,10 +1,9 @@
 /*
- * The Win key pressed and released on its own is Win+` (TMUX-248), as
- * at-terminal's own hook makes it (ATT-16), so a tap summons at-terminal even
- * when none is running. Fed every key the hook sees except the keys a tap sends
- * (WIN32_WIN_TAP_TAG, at-terminal's tag too); true for the release that ends a
- * tap. was_down: the key was already held (a held key's repeat). modifier:
- * Ctrl, Alt or Shift is down.
+ * The Win key pressed and released on its own is the global key Win (TMUX-248,
+ * ATT-32): at-terminal's summon, and its start when none is running. Fed every
+ * key the hook sees except the keys a tap sends (WIN32_WIN_TAP_TAG); true for
+ * the release that ends a tap. was_down: the key was already held (a held
+ * key's repeat). modifier: Ctrl, Alt or Shift is down.
  */
 #ifndef TMUX_WIN_TAP_H
 #define TMUX_WIN_TAP_H
@@ -12,6 +11,7 @@
 #define WIN32_WIN_TAP_TAG 0x41545754 /* "ATWT" */
 #define WIN32_WIN_TAP_LWIN 0x5b
 #define WIN32_WIN_TAP_RWIN 0x5c
+#define WIN32_WIN_TAP_MASK 0xe8 /* unassigned: keeps Start shut, read by none */
 
 struct win32_win_tap {
 	unsigned int	held;

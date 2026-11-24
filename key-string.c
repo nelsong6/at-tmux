@@ -58,6 +58,7 @@ static const struct {
 	{ "PageUp",	KEYC_PPAGE|KEYC_IMPLIED_META },
 	{ "PgUp",	KEYC_PPAGE|KEYC_IMPLIED_META },
 	{ "BTab",	KEYC_BTAB },
+	{ "Win",	KEYC_WIN },
 	{ "Space",	' ' },
 	{ "BSpace",	KEYC_BSPACE },
 

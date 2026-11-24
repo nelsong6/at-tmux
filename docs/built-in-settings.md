@@ -22,7 +22,7 @@ The shell is pwsh unless whoever starts the server names one in `SHELL`.
   what was set later (TMUX-207) is taken after them, user options included, so a changed
   setting reaches a running server at its next upgrade.
 - **The at server alone**, the one at-terminal shows (its socket name ends in `-at`), gets
-  its session set, Win+`, desktop Alt+Tab, the alerts listener and strip-owner. A test or throwaway server
+  its session set, the Win key, desktop Alt+Tab, the alerts listener and strip-owner. A test or throwaway server
   has none of them.
 
 Alt+Tab and Alt+Shift+Tab anywhere summon at-terminal and open the at menu's
@@ -32,12 +32,14 @@ is consumed once; Ctrl+Alt+Tab stays with Windows.
 at-terminal's own foreground interception still delivers the same root binding,
 so whichever hook sees the press first opens one menu. With the menu already
 open, Alt+Tab brings at-terminal forward and opens a fresh windows menu in its
-place, and Win+` a fresh menu (`display-palette -R` in `@at-menu`, TMUX-225).
+place, and Win a fresh menu (`display-palette -R` in `@at-menu`, TMUX-225).
 
-The Win key tapped on its own is Win+`, so it launches at-terminal after a boot, when
-no terminal is open to catch it, and Start stays shut (TMUX-248). at-terminal's hook
-does the same while it runs; both mark the keys they send, so whichever sees the tap
-first turns it into Win+` and the other lets those keys pass.
+The Win key tapped on its own is the global key `Win`, and Start stays shut (TMUX-248,
+ATT-32). With at-terminal in front it opens the at menu; otherwise `start-program
+at-terminal.exe` brings the running terminal forward through its single instance, or
+starts one when none is open. Win with any other key stays Windows'. There is no
+Win+` binding: the tap is its own key, so nothing has to be registered for it, and no
+program holding Win+` at logon can take it.
 
 A plain drag selects text over any program that didn't ask for drags: one that takes
 only clicks (mode 1000, as gvoice-tui and the fzt pickers do) keeps its clicks, and a

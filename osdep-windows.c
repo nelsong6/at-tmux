@@ -262,7 +262,7 @@ desktop_modifiers_held(key_code modifiers)
  * global key table. A low-level keyboard hook sees them before Windows hands
  * out hotkeys and passes Win keys on, so a key another program registered
  * (Windows Terminal's summon) still reaches it. Bound Alt+Tab keys are taken
- * from Windows, and with Win+` bound a lone Win tap is Win+`. The hook's
+ * from Windows, and with Win bound a lone Win tap is that key. The hook's
  * thread writes each
  * key to a socket that the event loop reads. Every other key goes the same way
  * with no key_code, for the key trace: only that one went down, and when.
@@ -272,7 +272,7 @@ static struct event	global_keys_event;
 static DWORD		global_keys_down; /* held key, to skip auto-repeat */
 static volatile LONG	global_alt_tab;
 static int		global_alt_tab_down;
-static volatile LONG	global_win_tap; /* Win+` is bound */
+static volatile LONG	global_win_tap; /* Win is bound */
 static struct win32_win_tap global_win_tap_gate;
 
 /*
@@ -338,7 +338,7 @@ win32_global_keys_send(key_code key)
 	return (send(global_keys[1], (char *)&gk, sizeof gk, 0) == sizeof gk);
 }
 
-/* One key of a tap's Win+`, marked as the tap's. */
+/* One key the tap sends, marked as the tap's. */
 static void
 win32_global_win_tap_key(INPUT *in, WORD vk, WORD scan, DWORD flags)
 {
@@ -351,14 +351,12 @@ win32_global_win_tap_key(INPUT *in, WORD vk, WORD scan, DWORD flags)
 }
 
 /*
- * The Win key tapped on its own is Win+`, as at-terminal's hook makes it, so a
- * tap summons at-terminal when none is running to catch it (TMUX-248). The
- * tap's release is held back and sent again behind a press and release of `,
- * so this hook and anything else answering Win+` (at-terminal's hotkey) see
- * one, and Windows, seeing a key between Win's press and release, keeps Start
- * shut. With at-terminal running too, whichever hook sees the release first
- * sends the keys and the other passes them by their tag. True if the release
- * was taken.
+ * The Win key tapped on its own is the global key Win: at-terminal's summon,
+ * its start when none is running, and the at menu with it in front (TMUX-248,
+ * ATT-32). The tap's release is held back and sent again behind a press and
+ * release of 0xE8, a virtual key Windows leaves unassigned, so nothing reads
+ * it, and Windows, seeing a key between Win's press and release, keeps Start
+ * shut. True if the release was taken.
  */
 static int
 win32_global_win_tap(KBDLLHOOKSTRUCT *k, int down)
@@ -372,15 +370,15 @@ win32_global_win_tap(KBDLLHOOKSTRUCT *k, int down)
 	    !!(GetAsyncKeyState(k->vkCode) & 0x8000), modifier))
 		return (0);
 
-	win32_global_win_tap_key(&in[0], VK_OEM_3, 0x29, 0);
-	win32_global_win_tap_key(&in[1], VK_OEM_3, 0x29, KEYEVENTF_KEYUP);
+	win32_global_keys_send(KEYC_WIN);
+	win32_global_win_tap_key(&in[0], WIN32_WIN_TAP_MASK, 0, 0);
+	win32_global_win_tap_key(&in[1], WIN32_WIN_TAP_MASK, 0, KEYEVENTF_KEYUP);
 	win32_global_win_tap_key(&in[2], (WORD)k->vkCode, (WORD)k->scanCode,
 	    KEYEVENTF_KEYUP|KEYEVENTF_EXTENDEDKEY);
 	if (SendInput(3, in, sizeof in[0]) == 3)
 		return (1);
 
-	/* Refused: the release goes on (Start opens too) and Win+` runs. */
-	win32_global_keys_send('`'|KEYC_SUPER);
+	/* Refused: the release goes on, and Start opens too. */
 	return (0);
 }
 
@@ -474,7 +472,7 @@ desktop_global_key_add(key_code key)
 		InterlockedOr(&global_alt_tab, 1);
 	else if (key == (KEYC_BTAB | KEYC_META))
 		InterlockedOr(&global_alt_tab, 2);
-	else if (key == ('`' | KEYC_SUPER))
+	else if (key == KEYC_WIN)
 		InterlockedExchange(&global_win_tap, 1);
 
 	if (global_keys[0] != INVALID_SOCKET)
@@ -500,7 +498,7 @@ desktop_global_key_remove(key_code key)
 		InterlockedAnd(&global_alt_tab, ~1L);
 	else if (key == (KEYC_BTAB | KEYC_META))
 		InterlockedAnd(&global_alt_tab, ~2L);
-	else if (key == ('`' | KEYC_SUPER))
+	else if (key == KEYC_WIN)
 		InterlockedExchange(&global_win_tap, 0);
 }
 

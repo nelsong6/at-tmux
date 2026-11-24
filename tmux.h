@@ -398,6 +398,9 @@ enum {
 	KEYC_REPORT_DARK_THEME,
 	KEYC_REPORT_LIGHT_THEME,
 
+	/* The Windows key pressed and released on its own (ATT-32). */
+	KEYC_WIN,
+
 	/* End of special keys. */
 	KEYC_BASE_END
 };
