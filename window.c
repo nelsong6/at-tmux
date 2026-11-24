@@ -2146,9 +2146,20 @@ window_pane_upgrade_event(struct window_pane *wp)
 void
 window_pane_upgrade_feed(struct window_pane *wp, struct evbuffer *evb)
 {
+	struct evbuffer	*input = wp->event->input;
+
 	if (EVBUFFER_LENGTH(evb) == 0)
 		return;
-	evbuffer_add_buffer(wp->event->input, evb);
+	/*
+	 * libevent freezes the end of a bufferevent's input to everyone but its
+	 * own reads, so adding there fails unless thawed first: the bytes were
+	 * lost and the pane's offsets left past the end of its now shorter
+	 * input, and the next parse read from before the buffer and crashed.
+	 */
+	evbuffer_unfreeze(input, 0);
+	if (evbuffer_add_buffer(input, evb) != 0)
+		log_debug("%%%u: %zu bytes not fed", wp->id, EVBUFFER_LENGTH(evb));
+	evbuffer_freeze(input, 0);
 	window_pane_read_callback(wp->event, wp);
 }
 #endif

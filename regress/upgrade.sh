@@ -182,6 +182,22 @@ $TMUX upgrade-server /no/such/tmux 2>$OUT && fail "missing build accepted"
 grep -q "no such file" $OUT || fail "missing build: $(cat $OUT)"
 echo "PASS 5: missing build refused"
 
+# --- Test 6: a pane still writing, on the client's screen, is handed over ---
+# Its output not yet drawn is put back to be parsed; it was lost, and the pane's
+# read offset left past the end of its input crashed the server.
+$TMUX new-window -tup: -n busy 'yes busy-pane-output'
+PID6=$(server_pid)
+for i in 1 2 3 4 5; do
+	$TMUX upgrade-server "$EXE"
+	wait_until pid_changed_from "$PID6" || { fail "upgrade $i with a busy pane didn't finish"; break; }
+	PID6=$(server_pid)
+done
+[ -n "$(server_pid)" ] || fail "the server went during an upgrade with a busy pane"
+$TMUX list-windows -tup: -F '#{window_name}' | grep -q '^busy$' ||
+	fail "the busy pane didn't survive the upgrades"
+$TMUX kill-window -tup:busy
+echo "PASS 6: a pane still writing is handed over"
+
 $TMUX kill-server 2>/dev/null
 $OUTER kill-server 2>/dev/null
 
