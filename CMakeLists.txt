@@ -466,10 +466,18 @@ function(tmux_test name script kind)
             TEST_FOOTER_TMUX=${dir}/footer-panel/tmux.exe)
         list(APPEND fixtures keys-staged)
     endif()
+    # TIMEOUT is win32-run.sh's: it stops the test then and ends what the test
+    # left running. CTest's own limit comes a minute later so that cleanup runs;
+    # at the same limit CTest stopped win32-run.sh first, and what the test left
+    # held the job open (TMUX-250).
+    if(T_TIMEOUT)
+        list(APPEND environment TEST_TIMEOUT=${T_TIMEOUT})
+    endif()
     set_tests_properties(${name} PROPERTIES ENVIRONMENT "${environment}"
         FIXTURES_REQUIRED "${fixtures}")
     if(T_TIMEOUT)
-        set_tests_properties(${name} PROPERTIES TIMEOUT ${T_TIMEOUT})
+        math(EXPR limit "${T_TIMEOUT} + 60")
+        set_tests_properties(${name} PROPERTIES TIMEOUT ${limit})
     endif()
     if(T_LOCK)
         set_tests_properties(${name} PROPERTIES RESOURCE_LOCK ${T_LOCK})

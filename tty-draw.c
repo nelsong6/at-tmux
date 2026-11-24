@@ -144,6 +144,19 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 	    atx, aty);
 
 	/*
+	 * Nothing is drawn past the end of the terminal. A caller drawing a
+	 * whole line passes UINT_MAX, which only the cellsize clamp below
+	 * reduced: a status line shorter than the screen kept it, and the server
+	 * drew four billion cells (TMUX-250, as upstream tmux does).
+	 */
+	if (atx >= tty->sx)
+		return;
+	if (nx > tty->sx - atx)
+		nx = tty->sx - atx;
+	if (nx == 0)
+		return;
+
+	/*
 	 * A line drawn across the whole row gives the row its size (double
 	 * width or height, or normal). Anything else drawn on a row needs it
 	 * normal size, so a row shared with another pane or a popup is drawn

@@ -20,7 +20,15 @@ DIR=$(mktemp -d)
 WDIR=$(cygpath -m "$DIR")
 CFG=$(mktemp)
 printf "set -g default-shell '%s'\n" "$COMSPEC" >$CFG
-trap "$TMUX kill-server 2>/dev/null; rm -rf $DIR $CFG" 0 1 15
+# end_jobs: ends the clients this script left running in the background, each
+# with what it started (a pseudo-console client's harness takes its tmux).
+end_jobs() {
+	for job in $(jobs -p); do
+		[ -f /proc/$job/winpid ] || continue
+		"$(cygpath -u "$SYSTEMROOT")/System32/taskkill.exe" //F //T 		    //PID "$(cat /proc/$job/winpid)" >/dev/null 2>&1
+	done
+}
+trap "end_jobs; $TMUX kill-server 2>/dev/null; rm -rf $DIR $CFG" 0 1 15
 
 fail() {
 	echo "FAIL: $1"
@@ -59,6 +67,15 @@ restored() { [ -z "$($TMUX display -p '#{server_restore}' | tr -d '\r')" ]; }
 slow_restore() { $TMUX set-hook -g after-new-window 'run-shell -d 1'; }
 quick_restore() { $TMUX set-hook -gu after-new-window; }
 snap_has() { grep -q -- "$1" "$SNAP" 2>/dev/null; }
+# wait_job PID WHAT: the background client PID ends within 60 s (a paced
+# restore of the set takes a few) and its exit status is returned; one that
+# doesn't fails the test naming WHAT, where a bare wait held it until CI's
+# limit (TMUX-250).
+job_done() { ! kill -0 "$1" 2>/dev/null; }
+wait_job() {
+	WAIT_TIMEOUT=60 wait_until job_done "$1" || fail "$2 never ended"
+	wait "$1"
+}
 
 start_server
 
@@ -138,8 +155,8 @@ $TMUX new-window -d -t =main -n beside ||
 HELD=$!
 sleep 0.2
 [ ! -f "$DIR/made" ] || fail "a window was made during the restore"
-wait "$RESTORE" || fail "restore-set failed"
-wait "$HELD"
+wait_job "$RESTORE" restore-set || fail "restore-set failed"
+wait_job "$HELD" "the held new-window"
 [ -f "$DIR/made" ] || fail "the held command never ran"
 [ -f "$DIR/after-restore" ] || fail "the held command ran before the end"
 $TMUX lsw -t =main-2 -F '#{window_name}' | tr -d '\r' | grep -qx held ||
@@ -161,7 +178,7 @@ wait_until $TMUX has-session -t =main-2 || fail "no session yet"
 wait_until sh -c "[ \$($TMUX lsw -t =main-2 | wc -l) -ge 2 ]" ||
     fail "no second window"
 $TMUX select-window -t "=main-2:^" || fail "select the first window"
-wait "$RESTORE" || fail "restore-set failed"
+wait_job "$RESTORE" restore-set || fail "restore-set failed"
 # A name the program gives (automatic-rename) can come from a title it has
 # not set again yet, so those windows are compared by place alone.
 IDS='#{?automatic-rename,-,#{window_name}}'
@@ -209,7 +226,7 @@ upgrade_waits() {
 	    grep -q 'a restore is running'
 }
 wait_until upgrade_waits || fail "the upgrade doesn't say it waits for the restore"
-wait "$RESTORE" || fail "restore-set failed"
+wait_job "$RESTORE" restore-set || fail "restore-set failed"
 $TMUX kill-session -t =main-2 2>/dev/null
 quick_restore
 
@@ -223,7 +240,7 @@ RESTORE=$!
 wait_until restoring || fail "no restore for the client to die in"
 "$(cygpath -u "$SYSTEMROOT")/System32/taskkill.exe" //F //PID \
     "$(cat /proc/$RESTORE/winpid)" >/dev/null
-wait "$RESTORE"
+wait_job "$RESTORE" "the killed restore-set client"
 wait_until restored || fail "the restore never ended"
 $TMUX has-session -t =main 2>/dev/null ||
     fail "a dead client's failed restore ended the server"
@@ -270,7 +287,7 @@ $TMUX kill-session -t =main-2 || fail "clean up"
 # 11. kill-server during a restore ends the server and the waiting client, and
 #     leaves the source.
 $TMUX kill-server
-wait_gone
+wait_gone || fail "kill-server left the server running"
 start_server
 slow_restore
 cp "$DIR/saved" "$DIR/eight.set"
@@ -278,8 +295,8 @@ $TMUX restore-set -d eight.set >/dev/null 2>&1 &
 RESTORE=$!
 wait_until restoring || fail "no restore to kill"
 $TMUX kill-server
-wait_gone
-wait "$RESTORE"
+wait_gone || fail "kill-server during a restore left the server running"
+wait_job "$RESTORE" "restore-set after kill-server"
 [ -f "$DIR/eight.set" ] || fail "kill-server lost the source"
 
 # A client in a pseudo-console: a server that showed nobody leaves nothing to
@@ -294,12 +311,12 @@ die() {
 	PID=$($TMUX display -p '#{pid}' | tr -d '')
 	PANES=$($TMUX list-panes -a -F '#{pane_pid}' | tr -d '')
 	"$(cygpath -u "$SYSTEMROOT")/System32/taskkill.exe" //F //PID "$PID" >/dev/null
-	wait_gone
+	wait_gone || fail "the killed server still answers"
 	for pane in $PANES; do
 		"$(cygpath -u "$SYSTEMROOT")/System32/taskkill.exe" //F //T //PID "$pane" >/dev/null 2>&1
 	done
-	wait "$RESTORE"
-	wait "$CLIENT"
+	wait_job "$RESTORE" "restore-set after its server died"
+	wait_job "$CLIENT" "the attached client after its server died"
 }
 
 # 12. A server that dies restoring the set it was offered leaves that set where
