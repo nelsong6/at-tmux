@@ -4261,7 +4261,7 @@ for any other modifiers held.
 .Nm
 watches the keyboard only once the table has a key, and passes every key on,
 so other programs still receive it.
-On Windows, Alt+Tab and Alt+Shift+Tab are also available as
+On Windows and Linux, Alt+Tab and Alt+Shift+Tab are also available as
 .Ql M-Tab
 and
 .Ql M-BTab .
@@ -4273,6 +4273,10 @@ is bound in the global table, the Windows key pressed and released on its
 own, with no other key, is sent on as Win+\(ga, so Start stays shut; Win with
 any other key, or with Ctrl, Alt or Shift held, is left alone, and Ctrl+Esc
 still opens Start.
+On Linux the Super key pressed and released on its own, with no other key and
+no Ctrl, Alt or Shift held, is
+.Ql W-\(ga
+too.
 A key bound in the
 .Em global
 table does nothing on a server with no client unless it is also bound in the
@@ -4295,7 +4299,9 @@ that started
 .Nm ) ,
 otherwise 0.
 A client in a console window of its own (conhost) always gets 0.
-It is empty on macOS and Linux.
+On Linux it is 1 if the client's terminal last reported having the focus (see
+.Ic focus-events ) .
+It is empty on macOS.
 For example, to show a window only when the terminal already had the focus:
 .Bd -literal -offset indent
 bind -T global W-\(ga if -F \(aq#{global_key_terminal_foreground}\(aq \(aqselect-window -t at\(aq

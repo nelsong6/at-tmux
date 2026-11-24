@@ -850,7 +850,8 @@ key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
  * foreground is the process owning the window that was in the foreground when
  * the key was pressed (0 for none), or -1 where the platform doesn't say. On
  * Windows the binding gets global_key_terminal_foreground: 1 if the client
- * runs under that process, so its terminal had the focus.
+ * runs under that process, so its terminal had the focus. On Linux it is 1 if
+ * the client's terminal last reported the focus (focus-events).
  *
  * The key isn't typed into the client, so while the client shows a menu or
  * popup, which may hold its queue until it closes, the binding runs from the
@@ -882,6 +883,11 @@ key_bindings_global(key_code key, pid_t foreground)
 		format_add(ft, "global_key_terminal_foreground", "%d",
 		    win32_pid_descends(c->pid, foreground));
 	}
+#elif defined(__linux__)
+	(void)foreground;
+	ft = format_create(NULL, NULL, FORMAT_NONE, 0);
+	format_add(ft, "global_key_terminal_foreground", "%d",
+	    (c->flags & CLIENT_FOCUSED) != 0);
 #else
 	(void)foreground;
 #endif
