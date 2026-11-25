@@ -30,6 +30,7 @@
 #define AT_USER "$USERPROFILE"
 #define AT_REPOS "D:/repos"
 #define AT_SHELL "pwsh"
+#define AT_SERVER "#{m:*-at,#{socket_path}}"
 #else
 #define AT_HOME_TOOL(dir, name) name
 #define AT_RUN(path) "\"" path "\""
@@ -38,6 +39,8 @@
 #define AT_USER "$HOME"
 #define AT_REPOS "/d/repos"
 #define AT_SHELL "zsh"
+/* -L at, as at-terminal starts it on Windows, is <dir>/at here. */
+#define AT_SERVER "#{||:#{m:*-at,#{socket_path}},#{m:*/at,#{socket_path}}}"
 #endif
 
 static const struct {
@@ -291,7 +294,7 @@ static const char *const at_commands[] = {
 	 * and desktop Alt+Tab. A throwaway server has none. The programs it
 	 * starts are at_late_commands'.
 	 */
-	"if -F '#{m:*-at,#{socket_path}}' { set -g @session-set-dir \"" AT_USER "/.tmux-session-set\" ; bind -T global Win if -F '#{global_key_terminal_foreground}' { run-shell -C '#{E:@at-menu}' ; run-shell -C 'system-session' } { start-program " AT_PROGRAM("at-terminal") " } ; bind -T global-no-client Win start-program " AT_PROGRAM("at-terminal") " ; bind -T global M-Tab { start-program " AT_PROGRAM("at-terminal") " ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global M-BTab { start-program " AT_PROGRAM("at-terminal") " ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global-no-client M-Tab start-program -K M-Tab " AT_PROGRAM("at-terminal") " ; bind -T global-no-client M-BTab start-program -K M-BTab " AT_PROGRAM("at-terminal") " }",
+	"if -F '" AT_SERVER "' { set -g @session-set-dir \"" AT_USER "/.tmux-session-set\" ; bind -T global Win if -F '#{global_key_terminal_foreground}' { run-shell -C '#{E:@at-menu}' ; run-shell -C 'system-session' } { start-program " AT_PROGRAM("at-terminal") " } ; bind -T global-no-client Win start-program " AT_PROGRAM("at-terminal") " ; bind -T global M-Tab { start-program " AT_PROGRAM("at-terminal") " ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global M-BTab { start-program " AT_PROGRAM("at-terminal") " ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global-no-client M-Tab start-program -K M-Tab " AT_PROGRAM("at-terminal") " ; bind -T global-no-client M-BTab start-program -K M-BTab " AT_PROGRAM("at-terminal") " }",
 };
 
 /*
@@ -307,7 +310,7 @@ static const char *const at_commands[] = {
  */
 static const char *const at_late_commands[] = {
 	"source-file -q \"" AT_LOCAL "/at-home/programs.conf\"",
-	"if -F '#{m:*-at,#{socket_path}}' { if -F '#{@at-programs-start}' { run-shell -C '#{@at-programs-start}' } }",
+	"if -F '" AT_SERVER "' { if -F '#{@at-programs-start}' { run-shell -C '#{@at-programs-start}' } }",
 };
 
 /* Give a new option the at system's default, where it has one. */
