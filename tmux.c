@@ -474,6 +474,7 @@ main(int argc, char **argv)
 	_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
 	_CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
 	win32_crash_init();
+	win32_full_speed();
 	win32_init_environ();
 	win32_wsa_init();
 	win32_tty_init_utf8();

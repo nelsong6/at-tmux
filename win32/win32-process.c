@@ -779,3 +779,27 @@ win32_launch_server(const char *label)
 	CloseHandle(pi.hThread);
 	CloseHandle(pi.hProcess);
 }
+
+#ifndef PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
+#define PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION 0x4
+#endif
+
+/*
+ * Windows power-throttles a process with no window of its own (EcoQoS): on a
+ * hybrid CPU it runs on the efficiency cores and its timers are coalesced. Every
+ * key goes through the server's one thread, so tmux opts out and runs at full
+ * speed (TMUX-251: a pane listing took 560-960 ms throttled, ~150 ms not).
+ */
+void
+win32_full_speed(void)
+{
+	PROCESS_POWER_THROTTLING_STATE	state;
+
+	memset(&state, 0, sizeof state);
+	state.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+	state.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
+	    PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+	state.StateMask = 0;
+	SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling,
+	    &state, sizeof state);
+}
