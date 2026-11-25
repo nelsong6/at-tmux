@@ -23,7 +23,8 @@ The shell is pwsh unless whoever starts the server names one in `SHELL`.
   before any client. The snapshot `upgrade-server` uses to tell this build's defaults from
   what was set later (TMUX-207) is taken after them, user options included, so a changed
   setting reaches a running server at its next upgrade.
-- **The at server alone**, the one at-terminal shows (its socket name ends in `-at`), gets
+- **The at server alone**, the one at-terminal shows (`-L at`: its socket name ends in `-at`
+  on Windows, is `at` elsewhere), gets
   its session set, the Win key, desktop Alt+Tab, and the programs it starts. A test or throwaway server
   has none of them.
 

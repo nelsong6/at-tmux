@@ -38,5 +38,17 @@ $TMUX list-keys -T ctrl-t C-c 2>/dev/null | grep -q 'launch-claude' ||
 [ "$($TMUX show -gv @fzt-automate)" = fzt-automate ] ||
 	fail "fzt-automate isn't found on the PATH: $($TMUX show -gv @fzt-automate)"
 
+# The at server, -L at as at-terminal starts it, gets the Win key and its session set;
+# a server of another name, as above, gets neither. Its HOME is the test's, so the
+# session set is the test's too.
+$TMUX list-keys -T global 2>/dev/null | grep -q . && fail "a server not named at has global keys"
+AT_DIR=$(mktemp -d)
+AT="$TEST_TMUX -S $AT_DIR/at"
+trap '$TMUX kill-server 2>/dev/null; $AT kill-server 2>/dev/null; rm -rf "$AT_DIR"' 0 1 15
+HOME=$AT_DIR $AT -f /dev/null new -d -x80 -y24 </dev/null || exit 1
+$AT list-keys -T global Win 2>/dev/null | grep -q at-terminal || fail "the at server has no Win key"
+[ "$($AT show -gv @session-set-dir)" = "$AT_DIR/.tmux-session-set" ] ||
+	fail "the at server's session set is $($AT show -gv @session-set-dir)"
+
 [ $FAIL -eq 0 ] && echo "PASS: at-defaults" && exit 0
 exit 1
