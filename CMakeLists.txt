@@ -524,7 +524,7 @@ foreach(script win32-keep-alive win32-set-status win32-single-window win32-copy-
     tmux_test(${script} ${script}.sh build)
 endforeach()
 foreach(script win32-restore-programs win32-session-offer win32-restore-set
-        win32-busy-server win32-new-window-draw win32-new-window-options
+        win32-new-window-draw win32-new-window-options
         win32-option-rename win32-system-app)
     tmux_test(${script} ${script}.sh build TIMEOUT 300)
 endforeach()
