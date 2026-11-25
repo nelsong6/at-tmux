@@ -1,7 +1,9 @@
 # Built-in settings
 
-Every Windows build carries the at system's settings in `at-defaults.c`, and the server
-reads no configuration file of its own, so every server starts the same (TMUX-210).
+Every build, on every platform, carries the at system's settings in `at-defaults.c`, so
+every server starts the same (TMUX-210). Only where a program is installed differs: under
+`C:/Program Files/at-home` on Windows, on the PATH elsewhere. The Windows server reads no
+configuration file of its own; on Linux and macOS a config file still loads after them.
 Nelson's rule: every instance of the app behaves the same, and a setting kept in a file
 outside it is a way for instances to drift. A setting is changed by changing
 `at-defaults.c`; `-f` and `source-file` still load a file when asked (the tests use them).

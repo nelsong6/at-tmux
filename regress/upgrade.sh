@@ -17,7 +17,7 @@ $OUTER kill-server 2>/dev/null
 wait_gone
 
 CFG=$(mktemp)
-printf "set -g default-shell /bin/sh\n" >$CFG
+printf "set -g default-shell /bin/sh\nset -g base-index 0\n" >$CFG
 OUT=$(mktemp)
 trap "rm -f $CFG $OUT $OUT.keys; $TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null" 0 1 15
 FAIL=0
