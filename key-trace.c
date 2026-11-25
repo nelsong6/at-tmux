@@ -35,13 +35,27 @@
 #define KEY_TRACE_WAIT 1000
 #define KEY_TRACE_TOLD 2
 
+/*
+ * A key its pane hasn't answered this long after it went down has left the
+ * typing budget (at-home-tools docs/typing-latency.md): 0-3 ms from the keyboard
+ * hook to tmux and up to 18 ms through the pane and back, measured when nothing
+ * was in the way (TMUX-252).
+ */
+#define KEY_TRACE_SLOW 25
+
 struct key_trace_entry {
 	uint64_t	 pressed;
 	uint64_t	 arrived;
 	uint64_t	 read;
+	uint64_t	 answered;	/* when its pane next wrote, or 0 */
 	const char	*where;
 	int		 pane;
 };
+
+/* Keys sent to panes and not yet answered, oldest first, and whether a slow one
+ * has been told since the last key that came back in time. */
+static u_int			 key_trace_unanswered;
+static int			 key_trace_slow;
 
 static struct key_trace_entry	 key_trace_entries[KEY_TRACE_ENTRIES];
 static u_int			 key_trace_next;
@@ -202,6 +216,51 @@ key_trace_sent(struct window_pane *wp)
 	key_trace_arm();
 }
 
+/*
+ * Pane wp wrote: every key sent to it and not yet answered is answered now. A
+ * key slower than KEY_TRACE_SLOW from going down to this is told, with where its
+ * time went, once until a key comes back in time.
+ */
+void
+key_trace_answered(struct window_pane *wp)
+{
+	struct key_trace_entry	*e;
+	uint64_t		 now, total;
+	u_int			 n;
+
+	if (key_trace_unanswered == key_trace_unread)
+		return;
+	if (key_trace_unread - key_trace_unanswered > KEY_TRACE_ENTRIES)
+		key_trace_unanswered = key_trace_unread - KEY_TRACE_ENTRIES;
+	now = get_timer();
+	for (n = key_trace_unanswered; n != key_trace_unread; n++) {
+		e = key_trace_entry(n);
+		if (e->pane != (int)wp->id || e->answered != 0)
+			continue;
+		e->answered = now;
+		total = now - e->pressed;
+		if (total < KEY_TRACE_SLOW)
+			key_trace_slow = 0;
+		else if (!key_trace_slow) {
+			key_trace_slow = 1;
+			key_trace_report("a key took %llu ms to be answered by "
+			    "pane %%%u (%s): seen +%llu ms, read +%llu ms, "
+			    "pane +%llu ms",
+			    (unsigned long long)total, wp->id, wp->window->name,
+			    (unsigned long long)(e->arrived - e->pressed),
+			    (unsigned long long)(e->read - e->pressed),
+			    (unsigned long long)(now - e->read));
+		}
+	}
+	/* Move past the keys that need nothing more. */
+	while (key_trace_unanswered != key_trace_unread) {
+		e = key_trace_entry(key_trace_unanswered);
+		if (e->pane != -1 && e->answered == 0)
+			break;
+		key_trace_unanswered++;
+	}
+}
+
 static void
 key_trace_check_pane(uint64_t now)
 {
@@ -287,7 +346,15 @@ key_trace_print(struct cmdq_item *item)
 			xsnprintf(taken, sizeof taken, "%s", e->where);
 		else
 			xsnprintf(taken, sizeof taken, "-");
-		if (e->read != 0) {
+		if (e->read != 0 && e->answered != 0) {
+			cmdq_print(item, "%llu.%llus ago: seen +%llums, read "
+			    "+%llums, went to %s, answered +%llums",
+			    (unsigned long long)((now - e->pressed) / 1000),
+			    (unsigned long long)((now - e->pressed) % 1000 / 100),
+			    (unsigned long long)(e->arrived - e->pressed),
+			    (unsigned long long)(e->read - e->pressed), taken,
+			    (unsigned long long)(e->answered - e->pressed));
+		} else if (e->read != 0) {
 			cmdq_print(item, "%llu.%llus ago: seen +%llums, read "
 			    "+%llums, went to %s",
 			    (unsigned long long)((now - e->pressed) / 1000),

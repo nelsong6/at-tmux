@@ -3775,6 +3775,7 @@ void	 key_trace_pressed(uint64_t, pid_t);
 void	 key_trace_read(key_code);
 void	 key_trace_took(const char *);
 void	 key_trace_sent(struct window_pane *);
+void	 key_trace_answered(struct window_pane *);
 void	 key_trace_print(struct cmdq_item *);
 
 /* flight.c */

@@ -1092,6 +1092,7 @@ window_pane_read_callback(__unused struct bufferevent *bufev, void *data)
 	}
 
 	log_debug("%%%u has %zu bytes", wp->id, size);
+	key_trace_answered(wp);
 	session_set_output();
 	TAILQ_FOREACH(c, &clients, entry) {
 		if (c->session != NULL && (c->flags & CLIENT_CONTROL))

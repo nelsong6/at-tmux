@@ -48,6 +48,20 @@ $OUTER send-keys a
 sent_to_pane() { trace_has 'went to pane %0'; }
 wait_until sent_to_pane || { echo "key not traced to its pane"; $TMUX key-trace; exit 1; }
 
+# The pane's shell echoes it, which answers it (TMUX-252).
+answered() { trace_has 'went to pane %0, answered +'; }
+wait_until answered || { echo "pane's echo not traced"; $TMUX key-trace; exit 1; }
+
+# A key answered more than 25 ms after it went down is told, with its steps. The
+# press is recorded early, as a key held up before reaching tmux would be.
+$TMUX key-trace -p
+sleep 0.3
+$OUTER send-keys c
+slow() { message_has 'a key took [0-9]* ms to be answered by pane %0'; }
+wait_until slow || { echo "slow key not told"; $TMUX key-trace; $TMUX show-messages; exit 1; }
+message_has 'seen +[0-9]* ms, read +[0-9]* ms, pane +[0-9]* ms' ||
+    { echo "slow key's steps not told"; $TMUX show-messages; exit 1; }
+
 # Pressed and never read: told once two have gone unanswered, then cleared.
 $TMUX key-trace -p
 $TMUX key-trace -p
