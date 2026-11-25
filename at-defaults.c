@@ -1,7 +1,8 @@
 /*
- * The at system's own settings, part of every Windows build: tmux as
- * at-terminal, the at menu and the home tools expect it. The server reads no
- * configuration file, so every server starts the same (TMUX-210).
+ * The at system's own settings, part of every build on every platform: tmux as
+ * at-terminal, the at menu and the home tools expect it, so every server starts
+ * the same (TMUX-210). Only where a program is installed differs by platform.
+ * The Windows server reads no configuration file.
  *
  * Options take these values as their defaults, so set -u returns to them. User
  * options and key bindings are commands run with tmux's own default bindings,
@@ -16,7 +17,31 @@
 
 #include "tmux.h"
 
+/*
+ * Where the at system's programs are. On Windows home-sync installs them under
+ * at-home and runs commands through cmd; elsewhere they are on the PATH and
+ * commands run through sh.
+ */
 #ifdef _WIN32
+#define AT_HOME_TOOL(dir, name) "C:/Program Files/at-home/" dir "/current/" name ".exe"
+#define AT_RUN(path) "call \"" path "\""
+#define AT_PROGRAM(name) name ".exe"
+#define AT_LOCAL "$LOCALAPPDATA"
+#define AT_USER "$USERPROFILE"
+#define AT_REPOS "D:/repos"
+#define AT_SHELL "pwsh"
+#define AT_SERVER "#{m:*-at,#{socket_path}}"
+#else
+#define AT_HOME_TOOL(dir, name) name
+#define AT_RUN(path) "\"" path "\""
+#define AT_PROGRAM(name) name
+#define AT_LOCAL "$HOME/.local/share"
+#define AT_USER "$HOME"
+#define AT_REPOS "/d/repos"
+#define AT_SHELL "zsh"
+/* -L at, as at-terminal starts it on Windows, is <dir>/at here. */
+#define AT_SERVER "#{||:#{m:*-at,#{socket_path}},#{m:*/at,#{socket_path}}}"
+#endif
 
 static const struct {
 	const char	*name;
@@ -66,13 +91,13 @@ static const struct {
 
 	/*
 	 * A window is named by the title its program sets, else by the program;
-	 * pwsh, its folder-name title and the hostname count as no title. A Codex
+	 * the shell (pwsh, zsh elsewhere), its folder-name title and the hostname count as no title. A Codex
 	 * window takes the short name its hooks set (HOMECFG-129). at-claude names
 	 * its window itself with rename-window, so this format never names it once
 	 * it has (TMUX-232).
 	 */
 	{ "automatic-rename-format",
-	  "#{?#{@codex-title},#{@codex-title},#{?#{||:#{==:#{pane_current_command},pwsh},#{||:#{==:#{pane_title},#{b:pane_current_path}},#{==:#{pane_title},#{host_short}}}},#{pane_current_command},#{pane_title}}}" },
+	  "#{?#{@codex-title},#{@codex-title},#{?#{||:#{==:#{pane_current_command}," AT_SHELL "},#{||:#{==:#{pane_title},#{b:pane_current_path}},#{==:#{pane_title},#{host_short}}}},#{pane_current_command},#{pane_title}}}" },
 
 	/*
 	 * Claude Code's bypass permissions label is hidden (TMUX-183).
@@ -160,7 +185,7 @@ static const struct {
 	 * tmux-strip works out its view and at-claude shows it.
 	 */
 	{ "command-alias[120]",
-	  "links=run-shell -b 'call \"C:/Program Files/at-home/at-home-tools/current/tmux-strip.exe\" menu --session \"#{@claude-session}\" --pane \"#{pane_id}\" --part links'" },
+	  "links=run-shell -b '" AT_RUN(AT_HOME_TOOL("at-home-tools", "tmux-strip")) " menu --session \"#{@claude-session}\" --pane \"#{pane_id}\" --part links'" },
 	{ "command-alias-note[120]",
 	  "links=Show this conversation\xe2\x80\x99s PRs, work packages and history" },
 	{ "command-alias-tags[120]",
@@ -216,7 +241,7 @@ static const char *const at_commands[] = {
 	"bind -n 'C-~' switch-client -p -O index",
 	"bind -n 'C-S-`' switch-client -p -O index",
 	"bind -n -N 'Reopen the window closed last' C-S-t reopen-window",
-	"bind -n -N 'Give the side panel the keyboard' C-S-o run-shell -b 'call \"C:/Program Files/at-home/at-claude/current/at-claude.exe\" panel -session \"#{@claude-session}\" -focus'",
+	"bind -n -N 'Give the side panel the keyboard' C-S-o run-shell -b '" AT_RUN(AT_HOME_TOOL("at-claude", "at-claude")) " panel -session \"#{@claude-session}\" -focus'",
 
 	/*
 	 * What move-window and bring-to-session run.
@@ -229,7 +254,7 @@ static const char *const at_commands[] = {
 	 * Alt+Shift+Tab at its open windows (TMUX-209), which at-terminal hands to
 	 * tmux while it is in front.
 	 */
-	"set -g @fzt-automate 'C:/Program Files/at-home/fzt-automate/current/fzt-automate.exe'",
+	"set -g @fzt-automate '" AT_HOME_TOOL("fzt-automate", "fzt-automate") "'",
 	"set -g @at-menu 'display-palette -R -b none -w 90% -h 80% \"#{@fzt-automate}\" --popup --window \"#{window_id}\" --client \"#{client_name}\"'",
 	"bind -n C-b run-shell -C '#{E:@at-menu} --open tmux'",
 	"bind -n M-Tab run-shell -C '#{E:@at-menu} --open windows'",
@@ -253,23 +278,23 @@ static const char *const at_commands[] = {
 	/*
 	 * What a restore, reopen-window and reload-app run for an agent's pane.
 	 */
-	"set -g @session-set-resume '\"C:/Program Files/at-home/fzt-automate/current/fzt-automate.exe\" resume-claude {id}'",
-	"set -g @session-set-resume-codex 'codex.exe --no-daemon resume {id}'",
+	"set -g @session-set-resume '\"" AT_HOME_TOOL("fzt-automate", "fzt-automate") "\" resume-claude {id}'",
+	"set -g @session-set-resume-codex '" AT_PROGRAM("codex") " --no-daemon resume {id}'",
 
 	/*
 	 * A follow-up's session starts from the @followup folder and guide
 	 * (agent-tools' tmux-strip spawn, AGT-3). The guide is home-sync's local copy
 	 * of the home profile, not the NAS (SES-227).
 	 */
-	"set -g @followup-repos 'D:/repos'",
-	"set -g @followup-guide \"$LOCALAPPDATA/shell-config-profile-home/claude/topics/spawned-session.md\"",
+	"set -g @followup-repos '" AT_REPOS "'",
+	"set -g @followup-guide \"" AT_LOCAL "/shell-config-profile-home/claude/topics/spawned-session.md\"",
 
 	/*
 	 * Only the at server, the one at-terminal shows: its session set, Win
 	 * and desktop Alt+Tab. A throwaway server has none. The programs it
 	 * starts are at_late_commands'.
 	 */
-	"if -F '#{m:*-at,#{socket_path}}' { set -g @session-set-dir \"$USERPROFILE/.tmux-session-set\" ; bind -T global Win if -F '#{global_key_terminal_foreground}' { run-shell -C '#{E:@at-menu}' ; run-shell -C 'system-session' } { start-program at-terminal.exe } ; bind -T global-no-client Win start-program at-terminal.exe ; bind -T global M-Tab { start-program at-terminal.exe ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global M-BTab { start-program at-terminal.exe ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global-no-client M-Tab start-program -K M-Tab at-terminal.exe ; bind -T global-no-client M-BTab start-program -K M-BTab at-terminal.exe }",
+	"if -F '" AT_SERVER "' { set -g @session-set-dir \"" AT_USER "/.tmux-session-set\" ; bind -T global Win if -F '#{global_key_terminal_foreground}' { run-shell -C '#{E:@at-menu}' ; run-shell -C 'system-session' } { start-program " AT_PROGRAM("at-terminal") " } ; bind -T global-no-client Win start-program " AT_PROGRAM("at-terminal") " ; bind -T global M-Tab { start-program " AT_PROGRAM("at-terminal") " ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global M-BTab { start-program " AT_PROGRAM("at-terminal") " ; run-shell -C '#{E:@at-menu} --open windows' } ; bind -T global-no-client M-Tab start-program -K M-Tab " AT_PROGRAM("at-terminal") " ; bind -T global-no-client M-BTab start-program -K M-BTab " AT_PROGRAM("at-terminal") " }",
 };
 
 /*
@@ -284,8 +309,8 @@ static const char *const at_commands[] = {
  * left an upgraded server with no defaults to compare against.
  */
 static const char *const at_late_commands[] = {
-	"source-file -q \"$LOCALAPPDATA/at-home/programs.conf\"",
-	"if -F '#{m:*-at,#{socket_path}}' { if -F '#{@at-programs-start}' { run-shell -C '#{@at-programs-start}' } }",
+	"source-file -q \"" AT_LOCAL "/at-home/programs.conf\"",
+	"if -F '" AT_SERVER "' { if -F '#{@at-programs-start}' { run-shell -C '#{@at-programs-start}' } }",
 };
 
 /* Give a new option the at system's default, where it has one. */
@@ -344,4 +369,3 @@ at_defaults_late(void)
 	at_defaults_queue(at_late_commands, nitems(at_late_commands));
 }
 
-#endif /* _WIN32 */

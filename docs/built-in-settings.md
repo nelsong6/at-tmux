@@ -1,7 +1,9 @@
 # Built-in settings
 
-Every Windows build carries the at system's settings in `at-defaults.c`, and the server
-reads no configuration file of its own, so every server starts the same (TMUX-210).
+Every build, on every platform, carries the at system's settings in `at-defaults.c`, so
+every server starts the same (TMUX-210). Only where a program is installed differs: under
+`C:/Program Files/at-home` on Windows, on the PATH elsewhere. The Windows server reads no
+configuration file of its own; on Linux and macOS a config file still loads after them.
 Nelson's rule: every instance of the app behaves the same, and a setting kept in a file
 outside it is a way for instances to drift. A setting is changed by changing
 `at-defaults.c`; `-f` and `source-file` still load a file when asked (the tests use them).
@@ -21,7 +23,8 @@ The shell is pwsh unless whoever starts the server names one in `SHELL`.
   before any client. The snapshot `upgrade-server` uses to tell this build's defaults from
   what was set later (TMUX-207) is taken after them, user options included, so a changed
   setting reaches a running server at its next upgrade.
-- **The at server alone**, the one at-terminal shows (its socket name ends in `-at`), gets
+- **The at server alone**, the one at-terminal shows (`-L at`: its socket name ends in `-at`
+  on Windows, is `at` elsewhere), gets
   its session set, the Win key, desktop Alt+Tab, and the programs it starts. A test or throwaway server
   has none of them.
 
