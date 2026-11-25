@@ -18,6 +18,9 @@
 #include "win32/alt-tab.h"
 #include "win32/win-tap.h"
 
+static char	*win32_pane_command_scan(pid_t);
+static void	 win32_pane_commands_scan(pid_t *, u_int, char **);
+
 /*
  * A pane's fd is a socket bridged from ConPTY and names no process; format.c
  * calls win32_pane_command() with the pane's pid instead.
@@ -47,6 +50,303 @@ win32_process_start(DWORD pid)
 }
 
 /*
+ * Each pane's program runs in a Windows job of its own, which every process it
+ * starts joins, so naming what a pane runs asks the job for its few processes
+ * instead of walking every process on the machine. A snapshot of the whole
+ * process table took ~8 ms unthrottled and ~40 ms throttled per pane, on the
+ * server's one thread, every time a title or a pane listing named a pane's
+ * program (TMUX-132). The job is named for the program's pid and start time so
+ * a server that upgrade-server hands the pane to finds the same one, and it
+ * lets a process break away if it asks, so nothing that runs fails for it.
+ */
+struct pane_job {
+	DWORD		 pid;
+	ULONGLONG	 start;
+	HANDLE		 process;
+	HANDLE		 job;
+};
+static struct pane_job	*pane_jobs;
+static u_int		 pane_njobs;
+
+typedef LONG (NTAPI *nt_query_process_fn)(HANDLE, ULONG, PVOID, ULONG,
+    PULONG);
+struct process_basic {
+	LONG_PTR	 exit_status;
+	PVOID		 peb;
+	ULONG_PTR	 affinity;
+	LONG_PTR	 priority;
+	ULONG_PTR	 pid;
+	ULONG_PTR	 parent;
+};
+
+/* The pid of the process that started h's, or 0. */
+static DWORD
+win32_process_parent(HANDLE h)
+{
+	static nt_query_process_fn	 query;
+	struct process_basic		 info;
+
+	if (query == NULL) {
+		query = (nt_query_process_fn)(void *)GetProcAddress(
+		    GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
+		if (query == NULL)
+			return (0);
+	}
+	if (query(h, 0 /* ProcessBasicInformation */, &info, sizeof info,
+	    NULL) != 0)
+		return (0);
+	return ((DWORD)info.parent);
+}
+
+static ULONGLONG
+win32_handle_start(HANDLE h)
+{
+	FILETIME	created, exited, kernel, user;
+
+	if (!GetProcessTimes(h, &created, &exited, &kernel, &user))
+		return (0);
+	return (((ULONGLONG)created.dwHighDateTime << 32) |
+	    created.dwLowDateTime);
+}
+
+/* Put pid in job, if it is still the process that started at start. */
+static void
+win32_job_assign(HANDLE job, DWORD pid, ULONGLONG start)
+{
+	HANDLE	h;
+
+	h = OpenProcess(PROCESS_SET_QUOTA|PROCESS_TERMINATE|
+	    PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+	if (h == NULL)
+		return;
+	if (start == 0 || win32_handle_start(h) == start)
+		AssignProcessToJobObject(job, h);
+	CloseHandle(h);
+}
+
+/*
+ * Put a pane's program that was running before it had a job, and everything
+ * under it, in its job: from one look at the process table, the only one the
+ * pane ever needs. A child counts only if it started after its parent, or its
+ * parent pid was reused.
+ */
+static void
+win32_job_adopt(HANDLE job, DWORD pid, ULONGLONG start)
+{
+	HANDLE		 snap;
+	PROCESSENTRY32W	 pe;
+	DWORD		*tree, *all, *parents;
+	ULONGLONG	*starts, *tree_starts;
+	u_int		 n = 0, size = 256, ntree = 0, i, j;
+
+	snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snap == INVALID_HANDLE_VALUE)
+		return;
+	all = xcalloc(size, sizeof *all);
+	parents = xcalloc(size, sizeof *parents);
+	pe.dwSize = sizeof pe;
+	for (BOOL ok = Process32FirstW(snap, &pe); ok;
+	    ok = Process32NextW(snap, &pe)) {
+		if (n == size) {
+			size *= 2;
+			all = xreallocarray(all, size, sizeof *all);
+			parents = xreallocarray(parents, size, sizeof *parents);
+		}
+		all[n] = pe.th32ProcessID;
+		parents[n++] = pe.th32ParentProcessID;
+	}
+	CloseHandle(snap);
+
+	starts = xcalloc(n, sizeof *starts);
+	tree = xcalloc(n + 1, sizeof *tree);
+	tree_starts = xcalloc(n + 1, sizeof *tree_starts);
+	tree[ntree] = pid;
+	tree_starts[ntree++] = start;
+	for (i = 0; i < ntree; i++) {
+		for (j = 0; j < n; j++) {
+			if (parents[j] != tree[i] || all[j] == tree[i])
+				continue;
+			if (starts[j] == 0)
+				starts[j] = win32_process_start(all[j]);
+			if (starts[j] == 0 || starts[j] < tree_starts[i])
+				continue;
+			parents[j] = 0;	/* Not again. */
+			tree[ntree] = all[j];
+			tree_starts[ntree++] = starts[j];
+		}
+	}
+	for (i = 0; i < ntree; i++)
+		win32_job_assign(job, tree[i], tree_starts[i]);
+	free(tree_starts);
+	free(tree);
+	free(starts);
+	free(parents);
+	free(all);
+}
+
+/* Forget the jobs of programs that have ended. */
+static void
+win32_pane_jobs_prune(void)
+{
+	u_int	i = 0;
+
+	while (i < pane_njobs) {
+		if (WaitForSingleObject(pane_jobs[i].process, 0) !=
+		    WAIT_OBJECT_0) {
+			i++;
+			continue;
+		}
+		CloseHandle(pane_jobs[i].process);
+		CloseHandle(pane_jobs[i].job);
+		pane_jobs[i] = pane_jobs[--pane_njobs];
+	}
+}
+
+/*
+ * The job of the pane whose program is pid, made if it has none. A program
+ * still suspended has started nothing, so it goes in alone; otherwise what it
+ * has already started is adopted.
+ */
+static struct pane_job *
+win32_pane_job(DWORD pid, int suspended)
+{
+	struct pane_job				*pj;
+	JOBOBJECT_EXTENDED_LIMIT_INFORMATION	 limits;
+	HANDLE					 process, job;
+	ULONGLONG				 start;
+	WCHAR					 name[96];
+	u_int					 i;
+
+	process = OpenProcess(SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION,
+	    FALSE, pid);
+	if (process == NULL)
+		return (NULL);
+	start = win32_handle_start(process);
+	for (i = 0; i < pane_njobs; i++) {
+		pj = &pane_jobs[i];
+		if (pj->pid == pid && pj->start == start) {
+			CloseHandle(process);
+			return (pj);
+		}
+	}
+	win32_pane_jobs_prune();
+
+	swprintf(name, sizeof name / sizeof name[0],
+	    L"Local\\tmux-pane-%lu-%llu", (u_long)pid, start);
+	job = CreateJobObjectW(NULL, name);
+	if (job == NULL) {
+		CloseHandle(process);
+		return (NULL);
+	}
+	if (GetLastError() != ERROR_ALREADY_EXISTS) {
+		memset(&limits, 0, sizeof limits);
+		limits.BasicLimitInformation.LimitFlags =
+		    JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+		SetInformationJobObject(job, JobObjectExtendedLimitInformation,
+		    &limits, sizeof limits);
+		if (suspended)
+			win32_job_assign(job, pid, start);
+		else
+			win32_job_adopt(job, pid, start);
+	}
+
+	pane_jobs = xreallocarray(pane_jobs, pane_njobs + 1, sizeof *pane_jobs);
+	pj = &pane_jobs[pane_njobs++];
+	pj->pid = pid;
+	pj->start = start;
+	pj->process = process;
+	pj->job = job;
+	return (pj);
+}
+
+/* Give a pane's program, made suspended, its job before it starts anything. */
+void
+win32_pane_job_start(pid_t pid)
+{
+	win32_pane_job((DWORD)pid, 1);
+}
+
+/* The base name of h's program without .exe, or NULL. */
+static char *
+win32_process_name(HANDLE h)
+{
+	WCHAR	 path[MAX_PATH], *base;
+	DWORD	 size = MAX_PATH;
+	char	 name[MAX_PATH * 3], *dot;
+
+	if (!QueryFullProcessImageNameW(h, 0, path, &size))
+		return (NULL);
+	base = wcsrchr(path, L'\\');
+	base = (base == NULL) ? path : base + 1;
+	if (_wcsicmp(base, L"conhost.exe") == 0)
+		return (xstrdup("conhost"));
+	WideCharToMultiByte(CP_UTF8, 0, base, -1, name, sizeof name, NULL,
+	    NULL);
+	if ((dot = strrchr(name, '.')) != NULL && _stricmp(dot, ".exe") == 0)
+		*dot = '\0';
+	return (xstrdup(name));
+}
+
+/* win32_pane_command from the pane's job, or NULL if it has none. */
+static char *
+win32_pane_command_job(pid_t pid)
+{
+	struct pane_job				*pj;
+	JOBOBJECT_BASIC_PROCESS_ID_LIST		*list;
+	DWORD					 size;
+	HANDLE					 h, best_h = NULL;
+	ULONGLONG				 start, best_start = 0;
+	char					*name;
+	u_int					 i, room = 64;
+
+	if (pid <= 0 || (pj = win32_pane_job((DWORD)pid, 0)) == NULL)
+		return (NULL);
+	for (;;) {
+		size = sizeof *list + room * sizeof list->ProcessIdList[0];
+		list = xmalloc(size);
+		if (QueryInformationJobObject(pj->job,
+		    JobObjectBasicProcessIdList, list, size, NULL) ||
+		    GetLastError() != ERROR_MORE_DATA)
+			break;
+		free(list);
+		room *= 4;
+	}
+	for (i = 0; i < list->NumberOfProcessIdsInList; i++) {
+		if ((DWORD)list->ProcessIdList[i] == pj->pid)
+			continue;
+		h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+		    (DWORD)list->ProcessIdList[i]);
+		if (h == NULL)
+			continue;
+		start = win32_handle_start(h);
+		if (win32_process_parent(h) != pj->pid || start < pj->start ||
+		    start <= best_start) {
+			CloseHandle(h);
+			continue;
+		}
+		name = win32_process_name(h);
+		if (name == NULL || strcmp(name, "conhost") == 0) {
+			free(name);
+			CloseHandle(h);
+			continue;
+		}
+		free(name);
+		if (best_h != NULL)
+			CloseHandle(best_h);
+		best_h = h;
+		best_start = start;
+	}
+	free(list);
+	if (best_h != NULL) {
+		name = win32_process_name(best_h);
+		CloseHandle(best_h);
+		if (name != NULL)
+			return (name);
+	}
+	return (win32_process_name(pj->process));
+}
+
+/*
  * The name of what a pane is running. On Unix tmux names the terminal's
  * foreground process group; a job the shell starts leads its own group, and
  * that job's children stay in it. The equivalent here is the shell's newest
@@ -56,6 +356,17 @@ win32_process_start(DWORD pid)
  */
 char *
 win32_pane_command(pid_t pid)
+{
+	char	*name;
+
+	if ((name = win32_pane_command_job(pid)) != NULL)
+		return (name);
+	return (win32_pane_command_scan(pid));
+}
+
+/* win32_pane_command from the whole process table, for a pane with no job. */
+static char *
+win32_pane_command_scan(pid_t pid)
 {
 	HANDLE		 snap;
 	PROCESSENTRY32W	 pe;
@@ -99,12 +410,40 @@ win32_pane_command(pid_t pid)
 }
 
 /*
- * win32_pane_command for many panes from one look at the process table, so a
- * session-set snapshot costs one snapshot however many panes there are.
- * names[i] is NULL where pids[i] has no name.
+ * win32_pane_command for many panes, each from its job; those with none share
+ * one look at the process table. names[i] is NULL where pids[i] has no name.
  */
 void
 win32_pane_commands(pid_t *pids, u_int n, char **names)
+{
+	pid_t	*rest;
+	char	**found;
+	u_int	*at, nrest = 0, i;
+
+	if (n == 0)
+		return;
+	rest = xcalloc(n, sizeof *rest);
+	at = xcalloc(n, sizeof *at);
+	for (i = 0; i < n; i++) {
+		if ((names[i] = win32_pane_command_job(pids[i])) != NULL)
+			continue;
+		rest[nrest] = pids[i];
+		at[nrest++] = i;
+	}
+	if (nrest != 0) {
+		found = xcalloc(nrest, sizeof *found);
+		win32_pane_commands_scan(rest, nrest, found);
+		for (i = 0; i < nrest; i++)
+			names[at[i]] = found[i];
+		free(found);
+	}
+	free(at);
+	free(rest);
+}
+
+/* win32_pane_commands from one look at the whole process table. */
+static void
+win32_pane_commands_scan(pid_t *pids, u_int n, char **names)
 {
 	HANDLE		 snap;
 	PROCESSENTRY32W	 pe;

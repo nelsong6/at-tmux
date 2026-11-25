@@ -253,7 +253,8 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	/* Create the child process. */
 	memset(&pi, 0, sizeof pi);
 	{
-		DWORD flags = EXTENDED_STARTUPINFO_PRESENT;
+		/* Suspended until it is in its job (TMUX-132). */
+		DWORD flags = EXTENDED_STARTUPINFO_PRESENT|CREATE_SUSPENDED;
 		if (env != NULL)
 			flags |= CREATE_UNICODE_ENVIRONMENT;
 		if (!win32_child_application(wcmd, env, &application))
@@ -263,6 +264,8 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 		    (cwd != NULL && *cwd != '\0') ? wcwd : NULL,
 		    &si.StartupInfo, &pi))
 			goto fail;
+		win32_pane_job_start((pid_t)pi.dwProcessId);
+		ResumeThread(pi.hThread);
 	}
 	free(application);
 	application = NULL;
