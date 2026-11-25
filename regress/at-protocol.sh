@@ -14,8 +14,9 @@ TERM=screen
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 TEST_TMUX=$(cd "$(dirname "$TEST_TMUX")" && pwd)/$(basename "$TEST_TMUX")
 PORT=$(cd "$(dirname "$0")/.." && pwd)/dep/vcpkg-overlay-ports/at-protocol/portfile.cmake
-TMUX="$TEST_TMUX -Ltest-at"
-OUTER="$TEST_TMUX -Ltest-at-outer"
+# Not a name ending in -at: that is the at server, which reads the real session set.
+TMUX="$TEST_TMUX -Ltest-atp"
+OUTER="$TEST_TMUX -Ltest-atp-outer"
 . "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
 $OUTER kill-server 2>/dev/null
