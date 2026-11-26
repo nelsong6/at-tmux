@@ -157,7 +157,7 @@ cat >"$HOMEDIR/at-home/programs.conf" <<EOF
 set -s command-alias[112] 'system-session=display-message from-programs-conf'
 set -g @at-programs-start "run-shell -b 'echo started >$(cygpath -m "$HOMEDIR")/started'"
 EOF
-LOCALAPPDATA=$(cygpath -w "$HOMEDIR") $PROGRAMS new -d -s programs </dev/null ||
+TMUX_PROGRAMS_CONF= LOCALAPPDATA=$(cygpath -w "$HOMEDIR") $PROGRAMS new -d -s programs </dev/null ||
     fail "start with programs.conf"
 $PROGRAMS show -s command-alias | grep -q 'system-session=display-message from-programs-conf' ||
     fail "programs.conf's system-session is missing"

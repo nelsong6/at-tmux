@@ -43,6 +43,12 @@ run source-file $OUT/good.conf || fail "source-file"
 printf 'set -g @three 3\nno-such-command\n' >$OUT/bad.conf
 run source-file $OUT/bad.conf >/dev/null 2>&1 && fail "bad file exited 0"
 run source-file $OUT/missing.conf 2>/dev/null && fail "missing file exited 0"
+# -q: a missing file, or one in a missing folder, is no error (TMUX-254).
+run source-file -q $OUT/quiet-missing.conf 2>$OUT/err || fail "-q: missing file failed"
+run source-file -q $OUT/no-dir/quiet-missing.conf 2>>$OUT/err ||
+    fail "-q: file in a missing folder failed"
+[ -s $OUT/err ] && fail "-q: a missing file printed: $(cat $OUT/err)"
+$TMUX show-messages | grep -q "No such file.*quiet-missing" && fail "-q: a missing file was logged"
 
 printf 'a\r\nb\000c' >$OUT/in.bin
 run load-buffer -b in $OUT/in.bin || fail "load-buffer"

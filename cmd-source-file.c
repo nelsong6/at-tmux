@@ -115,7 +115,14 @@ cmd_source_file_done(struct client *c, const char *path, int error,
 	if (!closed)
 		return;
 
-	if (error != 0)
+	/*
+	 * -q: a file that isn't there is no error. Elsewhere glob drops it before
+	 * the read; on Windows, with no glob, the read is what finds it missing
+	 * (TMUX-254: every server without home-sync's programs.conf showed one).
+	 */
+	if (error == ENOENT && (cdata->flags & CMD_PARSE_QUIET))
+		;
+	else if (error != 0)
 		cmdq_error(item, "%s: %s", strerror(error), path);
 	else if (bsize != 0) {
 		if (load_cfg_from_buffer(bdata, bsize, path, c, cdata->after,

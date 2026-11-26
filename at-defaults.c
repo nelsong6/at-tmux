@@ -366,11 +366,27 @@ at_defaults_init(void)
 	at_defaults_queue(at_commands, nitems(at_commands));
 }
 
-/* Queue what comes after the defaults are recorded: programs.conf. */
+/*
+ * Queue what comes after the defaults are recorded: programs.conf, or the file
+ * TMUX_PROGRAMS_CONF names instead. The tests name one of their own, so a test
+ * server never reads the PC's (TMUX-254: on upstairspc's runner, with no S: in
+ * session 0, its @session-set-ready-file held every test server).
+ */
 void
 at_defaults_late(void)
 {
-	at_defaults_queue(at_late_commands, nitems(at_late_commands));
+	const char	*conf = getenv("TMUX_PROGRAMS_CONF");
+	char		*command;
+
+	if (conf != NULL && *conf != '\0' && strpbrk(conf, "\"\\$") == NULL) {
+		xasprintf(&command, "source-file -q \"%s\"", conf);
+		at_defaults_queue((const char *const *)&command, 1);
+		free(command);
+	} else {
+		if (conf != NULL && *conf != '\0')
+			log_debug("TMUX_PROGRAMS_CONF ignored: %s", conf);
+		at_defaults_queue(at_late_commands, nitems(at_late_commands));
+	}
 	cmdq_append(NULL, cmdq_get_callback(session_set_started,
 	    (void *)at_programs_start));
 }

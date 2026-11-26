@@ -49,6 +49,8 @@ START="set -g @at-programs-start \"run-shell -b 'echo started >>$M/started'\""
 # The at server's own session set and programs.conf, under the test's folder.
 export LOCALAPPDATA="$(cygpath -w "$OUT")"
 export USERPROFILE="$(cygpath -w "$OUT")"
+# Not the run's own programs.conf, win32-run.sh's (TMUX-254).
+unset TMUX_PROGRAMS_CONF
 
 fail() {
 	echo "FAIL: $1"

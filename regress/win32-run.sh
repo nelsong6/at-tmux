@@ -51,6 +51,15 @@ TMUX_ERROR_LOG_DIR=$(cygpath -m "$records/errors")
 TMUX_EVENT_LOG_DIR=$(cygpath -m "$records/events")
 export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR TMUX_EVENT_LOG_DIR
 
+# Every server sources $LOCALAPPDATA/at-home/programs.conf (at-defaults.c), so a
+# test server read the PC's live one, home-sync's: on upstairspc's runner, with
+# no S: in session 0, its @session-set-ready-file held every server and put the
+# Waiting for the NAS menu in front of the tests' keys (TMUX-254). The servers
+# read one of the run's own that isn't there; a test that needs a programs.conf
+# unsets this and writes its own under a LOCALAPPDATA of its own.
+TMUX_PROGRAMS_CONF=$(cygpath -m "$records/programs.conf")
+export TMUX_PROGRAMS_CONF
+
 timeout --foreground --kill-after=5 "${TEST_TIMEOUT:-300}" bash "$dir/$1"
 status=$?
 if [ $status -eq 124 ] || [ $status -eq 137 ]; then
