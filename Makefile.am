@@ -276,12 +276,17 @@ dist_tmux_SOURCES += image.c image-kitty.c image-placeholder.c image-sixel.c
 endif
 
 # at-protocol (docs/at-protocol.md): tty-at.c, and the package's source as
-# dep/at-protocol.sh fetched it.
+# dep/fetch.sh fetched it.
 if HAVE_AT_PROTOCOL
 dist_tmux_SOURCES += tty-at.c
 nodist_tmux_SOURCES += dep/at-protocol/src/at_protocol.c
 AM_CPPFLAGS += -I$(top_srcdir)/dep/at-protocol/include
 endif
+
+# logline (AHT-204): the estate's one log line, its C source as dep/fetch.sh
+# fetched it.
+nodist_tmux_SOURCES += dep/logline/c/logline.c
+AM_CPPFLAGS += -I$(top_srcdir)/dep/logline/c
 
 if NEED_FUZZING
 check_PROGRAMS = fuzz/input-fuzzer

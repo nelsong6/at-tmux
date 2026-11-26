@@ -741,7 +741,7 @@ server_child_exited(pid_t pid, int status)
 {
 	struct window		*w, *w1;
 	struct window_pane	*wp;
-	char			*message, *tmp;
+	char			*message, *tmp, *pane;
 
 	RB_FOREACH_SAFE(w, windows, &windows, w1) {
 		TAILQ_FOREACH(wp, &w->panes, entry) {
@@ -761,12 +761,18 @@ server_child_exited(pid_t pid, int status)
 					    wp->id, wp->argc > 1 ? wp->argv[0] : wp->shell,
 					    wp->cwd, WTERMSIG(status));
 				if (message != NULL) {
-					if (log_message(message) != 0) {
-						tmp = message;
-						xasprintf(&message, "%s (can't save error log: %s)",
-						    tmp, strerror(errno));
-						free(tmp);
-					}
+					xasprintf(&pane, "%%%u", wp->id);
+					if (WIFEXITED(status))
+						xasprintf(&tmp, "%d", WEXITSTATUS(status));
+					else
+						xasprintf(&tmp, "%d", WTERMSIG(status));
+					log_message(WIFEXITED(status) ? "pane exited" :
+					    "pane ended by signal", "pane", pane, "program",
+					    wp->argc > 1 ? wp->argv[0] : wp->shell, "dir", wp->cwd,
+					    WIFEXITED(status) ? "status" : "signal", tmp,
+					    (char *)NULL);
+					free(tmp);
+					free(pane);
 					server_add_message("%s", message);
 					free(message);
 				}

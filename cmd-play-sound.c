@@ -99,24 +99,23 @@ cmd_play_sound_find_player(void)
 #endif
 
 /*
- * Record a sound played, or why it wasn't, with the window it was for, in the
- * events log: neither is a failure. One that can't play is a command error.
+ * Record a sound played, or why it wasn't, with the window it was for, in
+ * tmux's log at info level: neither is a failure. One that can't play is a command error.
  */
 static void
 cmd_play_sound_record(struct window *w, const char *path, const char *why)
 {
-	char	*line, *window = NULL;
+	char	*window = NULL;
 
 	if (w != NULL)
-		xasprintf(&window, " for window @%u (%s)", w->id, w->name);
+		xasprintf(&window, "@%u", w->id);
 	if (why == NULL)
-		xasprintf(&line, "play-sound played %s%s", path,
-		    window != NULL ? window : "");
+		log_event("sound played", "path", path, "window", window,
+		    "window_name", w != NULL ? w->name : NULL, (char *)NULL);
 	else
-		xasprintf(&line, "play-sound did not play %s%s: %s", path,
-		    window != NULL ? window : "", why);
-	log_event(line);
-	free(line);
+		log_event("sound not played", "path", path, "window", window,
+		    "window_name", w != NULL ? w->name : NULL, "why", why,
+		    (char *)NULL);
 	free(window);
 }
 

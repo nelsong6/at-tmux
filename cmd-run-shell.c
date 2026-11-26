@@ -121,9 +121,9 @@ cmd_run_shell_print(struct job *job, const char *msg, int failed)
 		if (wp == NULL) {
 			if (!failed)
 				xasprintf(&record, "'%s': %s", cdata->cmd, msg);
-			else if (log_message(msg) != 0)
-				xasprintf(&record, "%s (can't save error log: %s)",
-				    msg, strerror(errno));
+			else
+				log_message("background command failed", "command",
+				    cdata->cmd, "error", msg, (char *)NULL);
 			server_add_message("%s", record != NULL ? record : msg);
 			free(record);
 			return;

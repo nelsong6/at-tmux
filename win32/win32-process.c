@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <werapi.h>
 #include "win32-crash.h"
+#include "logline.h"
 
 /* Defined in flight.c. */
 void flight_crashed(const char *);
@@ -481,14 +482,20 @@ win32_crash_log(unsigned long pid, char *path, size_t size)
 }
 
 static void
-win32_crash_emit(const char *line, void *arg)
+win32_crash_emit(int frame, const char *function, const char *at, void *arg)
 {
 	FILE	*f = arg;
+	char	 n[16];
 
-	fprintf(stderr, "%s\n", line);
-	if (f != NULL)
-		fprintf(f, "%s\n", line);
-	log_debug("%s", line);
+	fprintf(stderr, "  #%d %s%s%s\n", frame, function, at != NULL ? " " : "",
+	    at != NULL ? at : "");
+	log_debug("  #%d %s %s", frame, function, at != NULL ? at : "");
+	if (f != NULL) {
+		snprintf(n, sizeof n, "%d", frame);
+		win32_crash_record(f, (long)GetCurrentProcessId(), "stack frame",
+		    "frame", n, "function", function, at != NULL ? "at" : NULL,
+		    at, (char *)NULL);
+	}
 }
 
 static void
@@ -502,7 +509,11 @@ win32_crash_report(const char *what, const CONTEXT *context)
 
 	flight_crashed(what);
 	snprintf(out, sizeof out, "tmux crashed: %s", what);
-	win32_crash_emit(out, f);
+	fprintf(stderr, "%s\n", out);
+	log_debug("%s", out);
+	if (f != NULL)
+		win32_crash_record(f, (long)GetCurrentProcessId(), "tmux crashed",
+		    "what", what, (char *)NULL);
 	win32_crash_stack(GetCurrentProcess(), GetCurrentThread(), context,
 	    win32_crash.symbols, win32_crash_emit, f);
 	if (f != NULL)
@@ -647,10 +658,11 @@ win32_crash_init(void)
 void
 win32_crash_reason(long pid, int64_t started, char *buf, size_t size)
 {
-	static const char	 prefix[] = "tmux crashed: ";
-	char			 path[MAX_PATH], line[256];
+	char			 path[MAX_PATH], line[1024];
 	struct _stat64		 sb;
 	FILE			*f;
+	logline_entry		 entry;
+	size_t			 i;
 
 	/* A log older than the server is an earlier process with this PID. */
 	if (!win32_crash_log(pid, path, sizeof path) ||
@@ -658,10 +670,17 @@ win32_crash_reason(long pid, int64_t started, char *buf, size_t size)
 		return;
 	if ((f = fopen(path, "r")) == NULL)
 		return;
-	if (fgets(line, sizeof line, f) != NULL &&
-	    strncmp(line, prefix, sizeof prefix - 1) == 0) {
+	if (fgets(line, sizeof line, f) != NULL) {
 		line[strcspn(line, "\r\n")] = '\0';
-		snprintf(buf, size, "%s", line + sizeof prefix - 1);
+		if (logline_parse(line, &entry, NULL, 0) == 0) {
+			for (i = 0; i < entry.nfields; i++) {
+				if (strcmp(entry.message, "tmux crashed") == 0 &&
+				    strcmp(entry.fields[i].key, "what") == 0)
+					snprintf(buf, size, "%s",
+					    entry.fields[i].value);
+			}
+			logline_entry_free(&entry);
+		}
 	}
 	fclose(f);
 }

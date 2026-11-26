@@ -7,31 +7,46 @@ it runs inside, when it last did any work, the format it was expanding, and its 
 the process dies, so a kill with no chance to clean up still leaves it. There is no
 timer: the server stamps it while doing its normal work.
 
-A clean end (`kill-server`, the last session closing, `upgrade-server`) writes a line
-to `~/.tmux/errors/tmux-<pid>.log` and removes the record. So a record left by a dead
+A clean end (`kill-server`, the last session closing, `upgrade-server`) writes an
+`info server stopped why=...` line to tmux's log (`%LOCALAPPDATA%\tmux\tmux.log`) and
+removes the record. So a record left by a dead
 server means the server ended without saying so, unless Windows said it for it (see
 Windows ending the session). The system drops a server's hold on its file when the
 process goes, which is how the next server on that socket tells a dead server's record
 from a live one's.
 
 That next server writes `~/.tmux/flight/ended/tmux-<pid>.log`, adds a line to
-`show-messages`, and, unless Windows ended it, shows that line to the first client to
-attach. Reports older than 30 days are removed. `ended:` is one of:
+`show-messages` and an `error last server ended how=... report=...` line to tmux's
+log, and, unless Windows ended it, shows that line to the first client to attach.
+Reports older than 30 days are removed. A report is the estate's standard log lines
+(AHT-204, at-home-tools `docs/app-logs.md`), shipped to the NAS's pile as app `tmux`:
+the dead server's last events, each an `info flight event event=...` line at its own
+time with the dead server's pid, then one `server ended` line from the server that
+found it:
 
-- `crashed: <reason>`: an exception, a bad C runtime argument, `abort()`, tmux's
-  own `fatal`, or a fail-fast. On Windows `%TEMP%\tmux-crash-<pid>.log` holds the
-  stack.
-- `with Windows: Windows ended the session at <time>`: a restart, a shutdown or a
+```text
+2026-11-26T09:14:03-08:00 pid=4120 info flight event event="command set-option -g @flight-test 1"
+2026-11-26T09:15:40.512-08:00 pid=5532 error server ended server=4120 how=killed reason="killed from outside, or a failure nothing in it could catch" socket=//./pipe/tmux-at build=3.6a-win32 started=2026-11-26T09:10:00-08:00 ran_as="no package, no job" last_worked=2026-11-26T09:15:01-08:00 client_lost="not recorded" found_by=5532
+```
+
+`how` is one of:
+
+- `crashed` (`error`), `reason` the crash: an exception, a bad C runtime argument,
+  `abort()`, tmux's own `fatal`, or a fail-fast. On Windows
+  `%TEMP%\tmux-crash-<pid>.log` holds the stack, as standard lines too: `tmux crashed
+  what=...`, then a `stack frame frame=N function=... at=file:line` line per frame.
+- `windows` (`info`), with `windows_ended` the moment: a restart, a shutdown or a
   sign-out. Nothing went wrong, so no client is told.
-- `before this Windows sign-in: no word from Windows`: the server last worked before
+- `signed-in` (`warn`), `reason` `no word from Windows`: the server last worked before
   this sign-in and Windows never told it the session was ending. A power cut, Windows
   failing, or a kill before a later restart read the same.
-- `with no record of why`: killed from outside.
+- `killed` (`error`): killed from outside.
 
-`last worked` is the last second the server's loop ran. `client lost` is the moment an
+`last_worked` is the last second the server's loop ran. `client_lost` is the moment an
 attached client saw the connection drop, which is the time of death, and reads `not
-recorded` if no client was attached. Then only `last worked` and the next server's
-start bound it.
+recorded` if no client was attached. Then only `last_worked` and the next server's
+start bound it. Event text and `expanding` (the format being expanded) are masked with
+logline's redact before they're written, since they hold commands and their arguments.
 
 The record names no killer: a process's exit isn't visible to the process. It may not
 survive a power cut, since the pages may not have reached the disk: then there is no

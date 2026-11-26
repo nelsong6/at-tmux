@@ -1663,20 +1663,27 @@ Messages are stored, up to a maximum of the limit set by the
 .Ar message-limit
 server option.
 Command errors and failed pane exits are saved without enabling debug logging in
-.Pa ~/.tmux/errors/tmux-PID.log ,
-with the server socket and a UTC timestamp on each line.
-Each server process keeps two rolling files of at most 1 MiB each;
-files older than 30 days are removed when a process first records an error.
+tmux's log,
+.Pa %LOCALAPPDATA%\etmux\etmux.log
+on Windows and
+.Pa tmux/tmux.log
+in the user's cache directory elsewhere, one line each in the home estate's
+log line: the local time with its zone, the process id, the level
+.Pq Ql error ,
+a fixed message and
+.Ql key=value
+fields, the server socket among them.
+Every tmux process writes the same file, which moves to
+.Pa tmux.log.old
+past 1 MiB.
 The
-.Ev TMUX_ERROR_LOG_DIR
-environment variable selects another directory.
+.Ev TMUX_LOG
+environment variable names another file.
 Failed pane exits are recorded even when the pane closes.
 Lines that record what the server did but are not failures, such as
 .Ic play-sound
-calls, go to
-.Pa ~/.tmux/events/tmux-PID.log
-in the same format and with the same limits, or to the directory named by
-.Ev TMUX_EVENT_LOG_DIR .
+calls, go to the same log at level
+.Ql info .
 .Fl J
 and
 .Fl T
@@ -7741,7 +7748,7 @@ With
 nothing is played and
 .Ar reason ,
 a format, is recorded as why.
-Each call is recorded in the server's events log, played or not, with why and
+Each call is recorded in tmux's log, played or not, with why and
 the window it was for; a sound that can't be played is a command error.
 .It Ic start-program Op Fl K Ar key Ar program Op Ar argument ...
 Start
@@ -8493,7 +8500,7 @@ that is the pane of the client whose key or mouse press ran the command; run
 any other way (from a configuration file, a hook or the command line), the
 output and exit status go to the message log instead, as shown by
 .Ic show-messages ,
-and a failure also goes to the error log.
+and a failure also goes to tmux's log.
 .Tg wait
 .It Xo Ic wait-for
 .Op Fl L | S | U

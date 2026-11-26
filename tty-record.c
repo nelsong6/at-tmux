@@ -116,7 +116,8 @@ tty_record_fail(const char *what)
 	    tty_record_path != NULL ? tty_record_path : "a recording",
 	    strerror(errno));
 	log_debug("%s", msg);
-	log_message(msg);
+	log_message("record-output failed", "action", what, "path",
+	    tty_record_path, "error", strerror(errno), (char *)NULL);
 	free(msg);
 	tty_record_close();
 	tty_record_failed = 1;

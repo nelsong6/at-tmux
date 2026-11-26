@@ -22,7 +22,8 @@ its zoom, are seen and never read; one alone says nothing, so the server speaks 
 the second.
 
 When keys stop, the server says so without being asked: in `show-messages`, in
-`~/.tmux/errors/tmux-<pid>.log` and in the flight record.
+tmux's log (`%LOCALAPPDATA%\tmux\tmux.log`, an `error` line `key trace trace=...`) and in
+the flight record.
 
 | Message | Where the keys stopped |
 | --- | --- |

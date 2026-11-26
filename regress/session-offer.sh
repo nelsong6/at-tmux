@@ -15,9 +15,8 @@ TMUX="$TEST_TMUX -Lssoffer-$$"
 OUTER="$TEST_TMUX -Lssouter-$$"
 OUT=$(mktemp -d) || exit 1
 TMUX_FLIGHT_DIR=$OUT/flight
-TMUX_ERROR_LOG_DIR=$OUT/errors
-TMUX_EVENT_LOG_DIR=$OUT/events
-export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR TMUX_EVENT_LOG_DIR
+TMUX_LOG=$OUT/tmux.log
+export TMUX_FLIGHT_DIR TMUX_LOG
 trap '$TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null; rm -rf "$OUT"' 0 1 15
 
 cat >"$OUT/test.conf" <<EOF

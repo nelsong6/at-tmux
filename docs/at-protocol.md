@@ -10,7 +10,7 @@ says that commit in its hello. `#{at_protocol_version}` shows it.
 Every build speaks it (`HAVE_AT_PROTOCOL`), since at-terminal is built on Rio for
 Windows, macOS and Linux (ATT-19, TMUX-239). The Windows build gets the package through
 vcpkg from Forgejo (`CMakeLists.txt`). The Mac and Linux builds can't reach Forgejo, so
-`configure` runs `dep/at-protocol.sh`, which reads the same `REF` from the portfile and
+`configure` runs `dep/fetch.sh`, which reads the same `REF` from the portfile and
 fetches that commit from the package's GitHub push mirror
 (https://github.com/romaine-life/at-protocol, private, so git needs a GitHub sign-in) into
 `dep/at-protocol`, again only when the `REF` changes; changing the portfile runs

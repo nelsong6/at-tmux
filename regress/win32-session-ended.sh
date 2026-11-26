@@ -16,8 +16,8 @@ TMUX="$TEST_TMUX -L$TEST_SOCKET"
 OUTER="$TEST_TMUX -L$TEST_SOCKET-outer"
 OUT=$(mktemp -d) || exit 1
 TMUX_FLIGHT_DIR=$(cygpath -m "$OUT/flight")
-TMUX_ERROR_LOG_DIR=$(cygpath -m "$OUT/errors")
-export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR
+TMUX_LOG=$(cygpath -m "$OUT/tmux.log")
+export TMUX_FLIGHT_DIR TMUX_LOG
 system=$(cygpath "$SYSTEMROOT")/System32
 taskkill=$system/taskkill.exe
 powershell=$system/WindowsPowerShell/v1.0/powershell.exe
@@ -158,7 +158,7 @@ shown
 kill_it
 dead=$pid
 started
-sed 's/^ended: .*/ended:        crashed: bad #{pid} #[bold] text/' \
+sed '/ server ended /{s/ how=[a-z-]*/ how=crashed/;s/ reason="[^"]*"/ reason="bad #{pid} #[bold] text"/;}' \
     "$OUT/flight/ended/tmux-$dead.log" >"$OUT/edited"
 cat "$OUT/edited" >"$OUT/flight/ended/tmux-$dead.log"
 offered 'crashed: bad #{pid} #\[bold\] text'

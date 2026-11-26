@@ -728,7 +728,7 @@ enum client_relay_state {
 
 /*
  * The most a string is held for: past this it goes as it is, with a line in
- * the error log, rather than holding output without end.
+ * tmux's log, rather than holding output without end.
  */
 #define CLIENT_RELAY_MAX (64 * 1024 * 1024)
 
@@ -830,17 +830,18 @@ client_relay_write(size_t len)
 	u_char		*data = EVBUFFER_DATA(client_relay_held);
 	size_t		 done = 0;
 	DWORD		 written;
-	char		*msg;
+	char		*msg, refused[32], total[32];
 
 	/* The console may take less than it is given; what is left is lost. */
 	while (done < len) {
 		if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), data + done,
 		    (DWORD)(len - done), &written, NULL) || written == 0) {
 			if (!reported) {
-				xasprintf(&msg, "the console refused %zu of %zu "
-				    "bytes of output (error %lu)", len - done, len,
-				    GetLastError());
-				log_message(msg);
+				xasprintf(&msg, "%lu", GetLastError());
+				snprintf(refused, sizeof refused, "%zu", len - done);
+				snprintf(total, sizeof total, "%zu", len);
+				log_message("the console refused output", "refused",
+				    refused, "of", total, "error", msg, (char *)NULL);
 				free(msg);
 				reported = 1;
 			}
@@ -882,9 +883,9 @@ client_tty_read_cb(int fd, __unused short events, __unused void *arg)
 
 	if (EVBUFFER_LENGTH(client_relay_held) - complete > CLIENT_RELAY_MAX) {
 		if (!reported) {
-			xasprintf(&msg, "a sequence of more than %d bytes went "
-			    "to the console in pieces", CLIENT_RELAY_MAX);
-			log_message(msg);
+			xasprintf(&msg, "%d", CLIENT_RELAY_MAX);
+			log_message("a sequence went to the console in pieces",
+			    "limit", msg, (char *)NULL);
 			free(msg);
 			reported = 1;
 		}

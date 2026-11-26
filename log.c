@@ -32,13 +32,13 @@
 #include <unistd.h>
 #endif
 
+#include "logline.h"
 #include "tmux.h"
 
 static FILE	*log_file;
 static int	 log_level;
 
-/* Each process owns its files, including during upgrade-server handover. */
-#define MESSAGE_LOG_BYTES (1024 * 1024)
+/* Flight reports (flight.c) are kept this long. */
 #define MESSAGE_LOG_DAYS 30
 
 void
@@ -88,117 +88,73 @@ log_prune_messages(const char *dir)
 #endif
 }
 
+/* The most fields a line takes, the socket included. */
+#define LOG_FIELDS 16
+/* The longest value a line keeps whole. */
+#define LOG_VALUE_BYTES 65536
+
 /*
- * Append a line to this process's file in ~/.tmux/<kind> (or the directory
- * named by variable), rolling it at MESSAGE_LOG_BYTES.
+ * Write one line of tmux's log (AHT-204, at-home-tools docs/app-logs.md):
+ * %LOCALAPPDATA%\tmux\tmux.log, or the file TMUX_LOG names, which tests and
+ * throwaway servers set to keep their lines out of the NAS's pile. Every
+ * process of every server writes the same file; each line carries its pid and
+ * socket, and logline opens and closes the file for each line, so lines never
+ * interleave. After the message come key, value string pairs, ended by a NULL
+ * key; a NULL value leaves its field out. A value can hold text from outside
+ * tmux (a command's error, a program's name, a path), so each is masked with
+ * logline_redact.
  */
-static int
-log_record(const char *kind, const char *variable, int *pruned,
-    const char *message)
+static void
+log_record(logline_level level, const char *message, va_list ap)
 {
-	const char	*dir, *home;
-	char		*owned = NULL, *path, *previous;
-	char		*escaped = NULL, *socket = NULL, *record = NULL;
-	char		 stamp[32];
-	struct stat	 sb;
-	time_t		 now = time(NULL);
-	struct tm	*utc = gmtime(&now);
-	FILE		*f = NULL;
-	int		 error = 0;
-	size_t		 length;
+	static logline_logger	*logger;
+	logline_field		 fields[LOG_FIELDS];
+	char			*owned[LOG_FIELDS];
+	const char		*key, *value;
+	size_t			 n = 0, i;
 
-	if (utc == NULL) {
-		errno = EINVAL;
-		return (-1);
+	if (logger == NULL && (logger = logline_open("tmux", "TMUX_LOG")) == NULL)
+		return;
+	while (n < LOG_FIELDS - 1 && (key = va_arg(ap, const char *)) != NULL) {
+		if ((value = va_arg(ap, const char *)) == NULL)
+			continue;
+		if ((owned[n] = logline_redact(value)) != NULL &&
+		    strlen(owned[n]) > LOG_VALUE_BYTES)
+			strlcpy(owned[n] + LOG_VALUE_BYTES - 12, " [truncated]", 13);
+		fields[n].key = key;
+		fields[n].value = owned[n];
+		n++;
 	}
-	strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%SZ", utc);
-
-	dir = getenv(variable);
-	if (dir == NULL || *dir == '\0') {
-		if ((home = find_home()) == NULL) {
-			errno = ENOENT;
-			return (-1);
-		}
-		xasprintf(&owned, "%s/.tmux", home);
-#ifdef _WIN32
-		_mkdir(owned);
-#else
-		mkdir(owned, S_IRWXU);
-#endif
-		free(owned);
-		xasprintf(&owned, "%s/.tmux/%s", home, kind);
-		dir = owned;
-	}
-#ifdef _WIN32
-	if (_mkdir(dir) != 0 && errno != EEXIST)
-#else
-	if (mkdir(dir, S_IRWXU) != 0 && errno != EEXIST)
-#endif
-	{
-		error = errno;
-		free(owned);
-		errno = error;
-		return (-1);
-	}
-	if (!*pruned) {
-		log_prune_messages(dir);
-		*pruned = 1;
-	}
-	xasprintf(&path, "%s/tmux-%ld.log", dir, (long)getpid());
-	xasprintf(&previous, "%s.1", path);
-	free(owned);
-	if (stravis(&escaped, message,
-	    VIS_OCTAL|VIS_CSTYLE|VIS_TAB|VIS_NL) < 0 ||
-	    stravis(&socket, socket_path,
-	    VIS_OCTAL|VIS_CSTYLE|VIS_TAB|VIS_NL) < 0) {
-		error = ENOMEM;
-		goto done;
-	}
-	xasprintf(&record, "%s\t%s\t%.65536s%s\n", stamp, socket,
-	    escaped, strlen(escaped) > 65536 ? " [truncated]" : "");
-	length = strlen(record);
-	if (stat(path, &sb) == 0 && sb.st_size + length > MESSAGE_LOG_BYTES) {
-		remove(previous);
-		if (rename(path, previous) != 0)
-			error = errno;
-	}
-	if (error == 0 && (f = fopen(path, "ab")) == NULL)
-		error = errno;
-	if (f != NULL) {
-		if (fwrite(record, 1, length, f) != length)
-			error = errno != 0 ? errno : EIO;
-		if (fclose(f) != 0 && error == 0)
-			error = errno;
-	}
-done:
-	free(escaped);
-	free(socket);
-	free(record);
-	free(previous);
-	free(path);
-	errno = error;
-	return (error == 0 ? 0 : -1);
+	fields[n].key = "socket";
+	fields[n].value = socket_path;
+	logline_log(logger, level, message, fields, n + 1);
+	for (i = 0; i < n; i++)
+		free(owned[i]);
 }
 
 /*
- * Command errors and failed exits, independent of the verbose debug log.
- * Everything here is a failure: the Switchyard shows each line as one.
+ * Something failed: a command's error, a program's failed exit. at-home-tools'
+ * activity shows each error line of the at server as a terminal failure.
  */
-int
-log_message(const char *message)
+void
+log_message(const char *message, ...)
 {
-	static int	 pruned;
+	va_list	 ap;
 
-	return (log_record("errors", "TMUX_ERROR_LOG_DIR", &pruned, message));
+	va_start(ap, message);
+	log_record(LOGLINE_ERROR, message, ap);
+	va_end(ap);
 }
 
 /* Things the server did that are worth checking later but are not failures. */
-int
-log_event(const char *message)
+void
+log_event(const char *message, ...)
 {
-	static int	 pruned;
+	va_list	 ap;
 
-	return (log_record("events", "TMUX_EVENT_LOG_DIR", &pruned, message));
+	va_start(ap, message);
+	log_record(LOGLINE_INFO, message, ap);
+	va_end(ap);
 }
 
 /* Log callback for libevent. */

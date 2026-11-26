@@ -13,10 +13,20 @@
 
 #define STATUS_FAIL_FAST 0xc0000409
 
+struct wer_log {
+	FILE	*f;
+	long	 pid;
+};
+
 static void
-wer_line(const char *line, void *arg)
+wer_line(int frame, const char *function, const char *at, void *arg)
 {
-	fprintf(arg, "%s\n", line);
+	struct wer_log	*log = arg;
+	char		 n[16];
+
+	snprintf(n, sizeof n, "%d", frame);
+	win32_crash_record(log->f, log->pid, "stack frame", "frame", n,
+	    "function", function, at != NULL ? "at" : NULL, at, (char *)NULL);
 }
 
 __declspec(dllexport) HRESULT WINAPI
@@ -26,8 +36,10 @@ OutOfProcessExceptionEventCallback(void *context,
 {
 	struct win32_crash_context	 c;
 	const EXCEPTION_RECORD		*r = &info->exceptionRecord;
-	FILE				*f;
+	struct wer_log			 log;
+	char				 what[128];
 	SIZE_T				 got;
+	int				 n;
 
 	(void)event;
 	(void)size;
@@ -41,19 +53,22 @@ OutOfProcessExceptionEventCallback(void *context,
 		return (S_OK);
 	c.log[sizeof c.log - 1] = '\0';
 	c.symbols[sizeof c.symbols - 1] = '\0';
-	if (c.log[0] == '\0' || (f = fopen(c.log, "w")) == NULL)
+	if (c.log[0] == '\0' || (log.f = fopen(c.log, "w")) == NULL)
 		return (S_OK);
+	/* The lines are the failed process's, not this one's. */
+	log.pid = (long)GetProcessId(info->hProcess);
 
-	fprintf(f, "tmux crashed: exception 0x%08lx", r->ExceptionCode);
+	n = snprintf(what, sizeof what, "exception 0x%08lx", r->ExceptionCode);
 	if (r->ExceptionCode == STATUS_FAIL_FAST && r->NumberParameters > 0)
-		fprintf(f, " (fail-fast code %llu)",
+		n += snprintf(what + n, sizeof what - n, " (fail-fast code %llu)",
 		    (unsigned long long)r->ExceptionInformation[0]);
-	fprintf(f, " at %p\n", r->ExceptionAddress);
-	fflush(f);
+	snprintf(what + n, sizeof what - n, " at %p", r->ExceptionAddress);
+	win32_crash_record(log.f, log.pid, "tmux crashed", "what", what,
+	    (char *)NULL);
 
 	win32_crash_stack(info->hProcess, info->hThread, &info->context,
-	    c.symbols, wer_line, f);
-	fclose(f);
+	    c.symbols, wer_line, &log);
+	fclose(log.f);
 	return (S_OK);
 }
 

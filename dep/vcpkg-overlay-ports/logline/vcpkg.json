@@ -1,0 +1,9 @@
+{
+  "name": "logline",
+  "version-string": "pinned",
+  "description": "The home estate's one log line (AHT-204)",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

@@ -90,7 +90,7 @@ key_trace_report(const char *fmt, ...)
 
 	server_add_message("key trace: %s", s);
 	flight_note("key trace: %s", s);
-	log_message(s);
+	log_message("key trace", "trace", s, (char *)NULL);
 	free(s);
 }
 

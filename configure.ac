@@ -476,7 +476,7 @@ AM_CONDITIONAL(ENABLE_SIXEL, [test "x$enable_sixel" = xyes])
 
 # at-protocol, the language the server speaks to at-terminal (docs/at-protocol.md,
 # TMUX-239): its source at the commit the Windows build pins, fetched by
-# dep/at-protocol.sh. Changing the pin runs configure again.
+# dep/fetch.sh. Changing the pin runs configure again.
 AC_ARG_ENABLE(
 	at-protocol,
 	AS_HELP_STRING(--disable-at-protocol, build without at-protocol),
@@ -488,18 +488,31 @@ if test "x$enable_at_protocol" = xyes; then
 		AC_MSG_ERROR([at-protocol carries images: drop --disable-sixel or add --disable-at-protocol])
 	fi
 	AC_MSG_CHECKING(for at-protocol)
-	at_protocol_ref=`sh "$srcdir/dep/at-protocol.sh" "$srcdir"`
+	at_protocol_ref=`sh "$srcdir/dep/fetch.sh" "$srcdir" at-protocol \
+	    https://github.com/romaine-life/at-protocol.git \
+	    src/at_protocol.c include/at_protocol.h`
 	if test -z "$at_protocol_ref"; then
 		AC_MSG_RESULT(no)
-		AC_MSG_ERROR([can't fetch at-protocol (dep/at-protocol.sh says why); --disable-at-protocol builds without it])
+		AC_MSG_ERROR([can't fetch at-protocol (dep/fetch.sh says why); --disable-at-protocol builds without it])
 	fi
 	AC_MSG_RESULT($at_protocol_ref)
 	AC_DEFINE(HAVE_AT_PROTOCOL)
 	AC_DEFINE_UNQUOTED(AT_PROTOCOL_VERSION, "$at_protocol_ref")
 fi
 AM_CONDITIONAL(HAVE_AT_PROTOCOL, [test "x$enable_at_protocol" = xyes])
+# logline, the estate's one log line (AHT-204, at-home-tools docs/app-logs.md): its
+# C source at the commit the Windows build pins, fetched by dep/fetch.sh from its
+# public GitHub mirror.
+AC_MSG_CHECKING(for logline)
+logline_ref=`sh "$srcdir/dep/fetch.sh" "$srcdir" logline \
+    https://github.com/romaine-life/logline.git c/logline.c c/logline.h`
+if test -z "$logline_ref"; then
+	AC_MSG_RESULT(no)
+	AC_MSG_ERROR([can't fetch logline (dep/fetch.sh says why)])
+fi
+AC_MSG_RESULT($logline_ref)
 AC_SUBST(CONFIG_STATUS_DEPENDENCIES,
-	['$(top_srcdir)/dep/vcpkg-overlay-ports/at-protocol/portfile.cmake'])
+	['$(top_srcdir)/dep/vcpkg-overlay-ports/at-protocol/portfile.cmake $(top_srcdir)/dep/vcpkg-overlay-ports/logline/portfile.cmake'])
 
 # Check for b64_ntop. If we have b64_ntop, we assume b64_pton as well.
 AC_MSG_CHECKING(for b64_ntop)

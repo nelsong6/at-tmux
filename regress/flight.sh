@@ -10,9 +10,8 @@ TERM=screen
 TMUX="$TEST_TMUX -Lflight-$$"
 OUT=$(mktemp -d) || exit 1
 TMUX_FLIGHT_DIR=$OUT/flight
-TMUX_ERROR_LOG_DIR=$OUT/errors
-TMUX_EVENT_LOG_DIR=$OUT/events
-export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR TMUX_EVENT_LOG_DIR
+TMUX_LOG=$OUT/tmux.log
+export TMUX_FLIGHT_DIR TMUX_LOG
 trap '$TMUX kill-server 2>/dev/null; rm -rf "$OUT"' 0 1 15
 
 fail() {
@@ -47,7 +46,7 @@ wait_for killed || fail 'the server outlived its kill'
 $TMUX -f/dev/null new -d || fail 'new-session'
 report=$OUT/flight/ended/tmux-$pid.log
 [ -f "$report" ] || fail 'a killed server was not reported'
-grep -q '^ended: *with no record of why' "$report" || fail 'the report says nothing of how it ended'
+grep -q ' error server ended server=[0-9]* how=killed ' "$report" || fail 'the report says nothing of how it ended'
 grep -q 'command set-option' "$report" || fail 'the report has no recent events'
 
 echo PASS

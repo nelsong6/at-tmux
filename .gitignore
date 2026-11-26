@@ -61,5 +61,6 @@ winflex.zip
 palette-descriptions
 palette-descriptions.h
 
-# at-protocol source fetched by dep/at-protocol.sh (Mac and Linux builds)
+# at-protocol and logline source fetched by dep/fetch.sh (Mac and Linux builds)
 dep/at-protocol/
+dep/logline/

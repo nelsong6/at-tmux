@@ -36,6 +36,7 @@
 #include <unistd.h>
 #endif
 
+#include "logline.h"
 #include "tmux.h"
 
 /*
@@ -56,15 +57,15 @@
 #define FLIGHT_EVENTS 256
 #define FLIGHT_TEXT 120
 
-/* A report's line saying how its server ended; flight_ended reads it. */
-#define FLIGHT_ENDED "ended:        "
-#define FLIGHT_CRASHED "crashed: "
-#define FLIGHT_WINDOWS "with Windows: "
+/*
+ * A report is standard log lines (AHT-204, at-home-tools docs/app-logs.md): the
+ * dead server's recent events, then a line with this message saying how it
+ * ended, its how= one of flight_how_word, which flight_ended reads.
+ */
+#define FLIGHT_ENDED "server ended"
 #ifdef _WIN32
-#define FLIGHT_SIGNED_IN "before this Windows sign-in: "
 #define FLIGHT_NO_WORD "no word from Windows: a power cut, Windows failing, or a kill"
 #else
-#define FLIGHT_SIGNED_IN "before this sign-in: "
 #define FLIGHT_NO_WORD "a reboot, a sign-out, a power cut, or a kill"
 #endif
 
@@ -106,6 +107,15 @@ static const char *flight_how_text[] = {
 	[FLIGHT_HOW_WINDOWS] = "ended with Windows",
 	[FLIGHT_HOW_SIGNED_IN] = "ended before this Windows sign-in, with no "
 	    "word from Windows",
+};
+
+/* Each way of ending as a report's how= field says it. */
+static const char *flight_how_word[] = {
+	[FLIGHT_HOW_UNKNOWN] = "unknown",
+	[FLIGHT_HOW_KILLED] = "killed",
+	[FLIGHT_HOW_CRASHED] = "crashed",
+	[FLIGHT_HOW_WINDOWS] = "windows",
+	[FLIGHT_HOW_SIGNED_IN] = "signed-in",
 };
 
 static void
@@ -159,15 +169,53 @@ flight_label(void)
 	return (label);
 }
 
+/* A moment in seconds as logline writes it: local time and the zone's offset. */
+static logline_time
+flight_time(int64_t at)
+{
+	logline_time	 lt;
+	time_t		 t = (time_t)at, local;
+	struct tm	 tm, *p;
+
+	memset(&lt, 0, sizeof lt);
+	if ((p = localtime(&t)) == NULL)
+		return (logline_now());
+	tm = *p;
+#ifdef _WIN32
+	local = _mkgmtime(&tm);
+#else
+	local = timegm(&tm);
+#endif
+	lt.year = tm.tm_year + 1900;
+	lt.month = tm.tm_mon + 1;
+	lt.day = tm.tm_mday;
+	lt.hour = tm.tm_hour;
+	lt.minute = tm.tm_min;
+	lt.second = tm.tm_sec;
+	lt.offset_minutes = (int)((local - t) / 60);
+	return (lt);
+}
+
+/* A moment for a report's field: RFC 3339 with the zone, as its lines' times. */
 static void
 flight_stamp(char *buf, size_t size, int64_t at)
 {
-	time_t		 t = (time_t)at;
-	struct tm	*tm = localtime(&t);
+	logline_time	 lt;
+	int		 offset;
 
-	if (at == 0 || tm == NULL ||
-	    strftime(buf, size, "%Y-%m-%d %H:%M:%S", tm) == 0)
+	if (at == 0) {
 		snprintf(buf, size, "not recorded");
+		return;
+	}
+	lt = flight_time(at);
+	offset = lt.offset_minutes < 0 ? -lt.offset_minutes : lt.offset_minutes;
+	if (lt.offset_minutes == 0)
+		snprintf(buf, size, "%04d-%02d-%02dT%02d:%02d:%02dZ", lt.year,
+		    lt.month, lt.day, lt.hour, lt.minute, lt.second);
+	else
+		snprintf(buf, size, "%04d-%02d-%02dT%02d:%02d:%02d%c%02d:%02d",
+		    lt.year, lt.month, lt.day, lt.hour, lt.minute, lt.second,
+		    lt.offset_minutes < 0 ? '-' : '+', offset / 60, offset % 60);
 }
 
 /* Is the server that owns this record gone? */
@@ -282,11 +330,15 @@ flight_report_one(const char *dir, const char *path, const char *lost)
 	struct flight_record	*r;
 	struct flight_event	*e;
 	FILE			*f;
-	char			*ended, *report, *line;
-	char			 started[32], worked[32], at[32], now[32];
+	logline_field		 fields[12];
+	logline_level		 level;
+	char			*ended, *report, *line, *text, *expanding = NULL;
+	char			 pid[32], found[32], started[40], worked[40];
+	char			 at[40], windows[40];
+	const char		*reason;
 	int64_t			 lost_at;
 	uint32_t		 i, n, first;
-	size_t			 got;
+	size_t			 got, nfields = 0;
 	enum flight_how		 how;
 
 	r = xcalloc(1, sizeof *r);
@@ -323,54 +375,87 @@ flight_report_one(const char *dir, const char *path, const char *lost)
 		return;
 	}
 
-	lost_at = flight_lost_at(lost, r->started);
-	flight_stamp(started, sizeof started, r->started);
-	flight_stamp(worked, sizeof worked, r->worked);
-	flight_stamp(at, sizeof at, lost_at);
-	flight_stamp(now, sizeof now, time(NULL));
-
-	fprintf(f, "tmux server %lld on %s\n", (long long)r->pid, r->socket);
-	if (*r->crash != '\0') {
-		how = FLIGHT_HOW_CRASHED;
-		fprintf(f, FLIGHT_ENDED FLIGHT_CRASHED "%s\n", r->crash);
-	} else if (r->windows != 0) {
-		how = FLIGHT_HOW_WINDOWS;
-		flight_stamp(at, sizeof at, r->windows);
-		fprintf(f, FLIGHT_ENDED FLIGHT_WINDOWS "Windows ended the "
-		    "session at %s\n", at);
-	} else if (r->worked < flight_signed_in()) {
-		how = FLIGHT_HOW_SIGNED_IN;
-		fprintf(f, FLIGHT_ENDED FLIGHT_SIGNED_IN FLIGHT_NO_WORD "\n");
-	} else {
-		how = FLIGHT_HOW_KILLED;
-		fprintf(f, FLIGHT_ENDED "with no record of why: killed from "
-		    "outside, or a failure nothing in it could catch\n");
-	}
-	fprintf(f, "build:        %s\n", r->build);
-	fprintf(f, "started:      %s\n", started);
-	fprintf(f, "ran as:       %s\n", r->origin);
-	fprintf(f, "last worked:  %s\n", worked);
-	fprintf(f, "client lost:  %s\n", at);
-	fprintf(f, "found by:     server %ld at %s\n", (long)getpid(), now);
-	if (*r->expanding != '\0')
-		fprintf(f, "expanding:    %s\n", r->expanding);
-	fprintf(f, "recent events, oldest first:\n");
+	/*
+	 * The recent events, oldest first, each a line at its own time with the
+	 * dead server's pid (logline_format writes a line for an event that
+	 * happened earlier). Their text names commands and what they ran on.
+	 */
 	n = r->next < FLIGHT_EVENTS ? r->next : FLIGHT_EVENTS;
 	first = r->next - n;
 	for (i = 0; i < n; i++) {
 		e = &r->events[(first + i) % FLIGHT_EVENTS];
 		e->text[sizeof e->text - 1] = '\0';
-		flight_stamp(at, sizeof at, e->at);
-		fprintf(f, "  %s  %s\n", at, e->text);
+		text = logline_redact(e->text);
+		fields[0].key = "event";
+		fields[0].value = text;
+		line = logline_format(flight_time(e->at), (long)r->pid,
+		    LOGLINE_INFO, "flight event", fields, 1);
+		if (line != NULL)
+			fprintf(f, "%s\n", line);
+		free(line);
+		free(text);
 	}
-	fprintf(f, "\n");
+
+	/* Then how it ended, from the server that found it, now. */
+	lost_at = flight_lost_at(lost, r->started);
+	if (*r->crash != '\0') {
+		how = FLIGHT_HOW_CRASHED;
+		reason = r->crash;
+	} else if (r->windows != 0) {
+		how = FLIGHT_HOW_WINDOWS;
+		reason = "Windows ended the session";
+	} else if (r->worked < flight_signed_in()) {
+		how = FLIGHT_HOW_SIGNED_IN;
+		reason = FLIGHT_NO_WORD;
+	} else {
+		how = FLIGHT_HOW_KILLED;
+		reason = "killed from outside, or a failure nothing in it "
+		    "could catch";
+	}
+	level = how == FLIGHT_HOW_WINDOWS ? LOGLINE_INFO :
+	    how == FLIGHT_HOW_SIGNED_IN ? LOGLINE_WARN : LOGLINE_ERROR;
+	snprintf(pid, sizeof pid, "%lld", (long long)r->pid);
+	snprintf(found, sizeof found, "%ld", (long)getpid());
+	flight_stamp(started, sizeof started, r->started);
+	flight_stamp(worked, sizeof worked, r->worked);
+	flight_stamp(at, sizeof at, lost_at);
+	flight_stamp(windows, sizeof windows, r->windows);
+#define FLIGHT_FIELD(k, v) do {						\
+	fields[nfields].key = (k);					\
+	fields[nfields].value = (v);					\
+	nfields++;							\
+} while (0)
+	FLIGHT_FIELD("server", pid);
+	FLIGHT_FIELD("how", flight_how_word[how]);
+	FLIGHT_FIELD("reason", reason);
+	if (how == FLIGHT_HOW_WINDOWS)
+		FLIGHT_FIELD("windows_ended", windows);
+	FLIGHT_FIELD("socket", r->socket);
+	FLIGHT_FIELD("build", r->build);
+	FLIGHT_FIELD("started", started);
+	FLIGHT_FIELD("ran_as", r->origin);
+	FLIGHT_FIELD("last_worked", worked);
+	FLIGHT_FIELD("client_lost", at);
+	FLIGHT_FIELD("found_by", found);
+	if (*r->expanding != '\0') {
+		expanding = logline_redact(r->expanding);
+		FLIGHT_FIELD("expanding", expanding);
+	}
+#undef FLIGHT_FIELD
+	line = logline_format(logline_now(), (long)getpid(), level,
+	    FLIGHT_ENDED, fields, nfields);
+	if (line != NULL)
+		fprintf(f, "%s\n", line);
+	free(line);
+	free(expanding);
 	fclose(f);
 
 	remove(path);
 
 	xasprintf(&line, "The last tmux server %s. Report: %s",
 	    flight_how_text[how], report);
-	log_message(line);
+	log_message("last server ended", "how", flight_how_word[how],
+	    "server", pid, "report", report, (char *)NULL);
 	server_add_message("%s", line);
 	if (how == FLIGHT_HOW_WINDOWS)
 		free(line);
@@ -599,16 +684,14 @@ void
 flight_end(const char *fmt, ...)
 {
 	va_list	 ap;
-	char	*why, *line;
+	char	*why;
 
 	if (flight == NULL)
 		return;
 	va_start(ap, fmt);
 	xvasprintf(&why, fmt, ap);
 	va_end(ap);
-	xasprintf(&line, "server %ld ended: %s", (long)getpid(), why);
-	log_message(line);
-	free(line);
+	log_event("server stopped", "why", why, (char *)NULL);
 	free(why);
 
 #ifdef _WIN32
@@ -628,6 +711,19 @@ flight_end(const char *fmt, ...)
 	flight_path = NULL;
 }
 
+/* A parsed line's field, NULL if it has none of that name. */
+static const char *
+flight_field(const logline_entry *entry, const char *key)
+{
+	size_t	i;
+
+	for (i = 0; i < entry->nfields; i++) {
+		if (strcmp(entry->fields[i].key, key) == 0)
+			return (entry->fields[i].value);
+	}
+	return (NULL);
+}
+
 /*
  * Read how server pid ended from its report, if one was written at or after
  * since, setting its path and, if the server crashed, the reason (NULL if not),
@@ -639,8 +735,11 @@ flight_ended(long long pid, time_t since, char **report, char **crash)
 {
 	struct stat	 sb;
 	FILE		*f;
-	char		*dir, *path, line[512], *ended;
-	enum flight_how	 how = FLIGHT_HOW_UNKNOWN;
+	logline_entry	 entry;
+	char		*dir, *path, *line = NULL;
+	const char	*word, *reason;
+	size_t		 size = 0;
+	enum flight_how	 how = FLIGHT_HOW_UNKNOWN, i;
 
 	*report = *crash = NULL;
 	if ((dir = flight_dir()) == NULL)
@@ -652,26 +751,26 @@ flight_ended(long long pid, time_t since, char **report, char **crash)
 		free(path);
 		return (FLIGHT_HOW_UNKNOWN);
 	}
-	while (fgets(line, sizeof line, f) != NULL) {
-		if (strncmp(line, FLIGHT_ENDED, strlen(FLIGHT_ENDED)) != 0)
-			continue;
-		free(*crash);
-		*crash = NULL;
+	while (getline(&line, &size, f) != -1) {
 		line[strcspn(line, "\r\n")] = '\0';
-		ended = line + strlen(FLIGHT_ENDED);
-		if (strncmp(ended, FLIGHT_CRASHED,
-		    strlen(FLIGHT_CRASHED)) == 0) {
-			how = FLIGHT_HOW_CRASHED;
-			*crash = xstrdup(ended + strlen(FLIGHT_CRASHED));
-		} else if (strncmp(ended, FLIGHT_WINDOWS,
-		    strlen(FLIGHT_WINDOWS)) == 0)
-			how = FLIGHT_HOW_WINDOWS;
-		else if (strncmp(ended, FLIGHT_SIGNED_IN,
-		    strlen(FLIGHT_SIGNED_IN)) == 0)
-			how = FLIGHT_HOW_SIGNED_IN;
-		else
+		if (logline_parse(line, &entry, NULL, 0) != 0)
+			continue;
+		if (strcmp(entry.message, FLIGHT_ENDED) == 0 &&
+		    (word = flight_field(&entry, "how")) != NULL) {
+			free(*crash);
+			*crash = NULL;
 			how = FLIGHT_HOW_KILLED;
+			for (i = FLIGHT_HOW_KILLED; i <= FLIGHT_HOW_SIGNED_IN; i++) {
+				if (strcmp(word, flight_how_word[i]) == 0)
+					how = i;
+			}
+			reason = flight_field(&entry, "reason");
+			if (how == FLIGHT_HOW_CRASHED)
+				*crash = xstrdup(reason != NULL ? reason : "");
+		}
+		logline_entry_free(&entry);
 	}
+	free(line);
 	fclose(f);
 	if (how != FLIGHT_HOW_UNKNOWN)
 		*report = path;

@@ -91,9 +91,9 @@ log_done() {
 }
 WAIT_TIMEOUT=30 wait_until log_done || fail "no finished crash log"
 
-tr -d '\r' <"$log" | grep -q '^tmux crashed: exception 0xc0000005' ||
+tr -d '\r' <"$log" | grep -q " pid=$server error tmux crashed what=\"exception 0xc0000005" ||
     fail "the log names no access violation"
-tr -d '\r' <"$log" | grep -q '^  #[0-9]* xstrdup .*xmalloc\.c:[0-9]*$' ||
+tr -d '\r' <"$log" | grep -q ' error stack frame frame=[0-9]* function=xstrdup at=.*xmalloc\.c:[0-9]*"\{0,1\}$' ||
     fail "the log names no function, file and line"
 
 # abort() and a bad C runtime argument raise no exception, and each still logs,
@@ -109,7 +109,7 @@ crash_with() {
 	TMP=$winout $TMUX -fNUL new -d </dev/null || fail "new-session"
 	server=$($TMUX display-message -p '#{pid}' | tr -d '\r')
 	[ -n "$server" ] || fail "no server pid"
-	tr -d '\r' <"$OUT/flight/ended/tmux-$last.log" | grep -q "^ended: *crashed: $3" ||
+	tr -d '\r' <"$OUT/flight/ended/tmux-$last.log" | grep -q " server ended .* how=crashed reason=\"\{0,1\}$3" ||
 	    fail "the next server did not report how $last ended"
 	log=$OUT/tmux-crash-$server.log
 	"$powershell" -NoProfile -ExecutionPolicy Bypass \
@@ -117,7 +117,7 @@ crash_with() {
 	    -Exe "$(cygpath -aw "$package/tmux.exe")" -Function "$1" ||
 	    fail "crashing the server with $1"
 	WAIT_TIMEOUT=30 wait_until log_done || fail "no finished crash log for $1"
-	tr -d '\r' <"$log" | grep -q "^tmux crashed: $2" ||
+	tr -d '\r' <"$log" | grep -q " tmux crashed what=\"\{0,1\}$2" ||
 	    fail "the log does not say $2"
 }
 crash_with abort abort 'exception 0xc0000005'
@@ -133,11 +133,11 @@ WAIT_TIMEOUT=30 wait_until gone || fail "the crashed server is still up"
 TMUX="$OUT/current/tmux.exe -L$TEST_SOCKET"
 fail_fast='exception 0xc0000409 (fail-fast code 2)'
 crash_with __report_gsfailure "$fail_fast" 'invalid argument to a C runtime function'
-tr -d '\r' <"$log" | grep -q '^  #[0-9]* __report_gsfailure' ||
+tr -d '\r' <"$log" | grep -q ' error stack frame frame=[0-9]* function=__report_gsfailure' ||
     fail 'the fail-fast log names no function'
 WAIT_TIMEOUT=30 wait_until gone || fail 'the failed server is still up'
 TMP=$winout $TMUX -fNUL new -d </dev/null || fail 'new-session after the fail-fast'
-tr -d '\r' <"$OUT/flight/ended/tmux-$server.log" | grep -q "^ended: *crashed: $fail_fast" ||
+tr -d '\r' <"$OUT/flight/ended/tmux-$server.log" | grep -q " server ended .* how=crashed reason=\"\{0,1\}$fail_fast" ||
     fail 'the next server did not report the fail-fast'
 
 echo PASS

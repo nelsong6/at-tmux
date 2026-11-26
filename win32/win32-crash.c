@@ -1,7 +1,11 @@
 /* Walk a stack for a crash log, in the crashed process or from outside it. */
 
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#include "logline.h"
 
 #include "win32-crash.h"
 #include <dbghelp.h>
@@ -19,8 +23,7 @@ win32_crash_stack(HANDLE proc, HANDLE thread, const CONTEXT *context,
 	IMAGEHLP_LINE64	 line;
 	DWORD64		 disp64;
 	DWORD		 disp;
-	char		 out[1024];
-	size_t		 len;
+	char		 at[1024];
 	int		 i;
 
 	SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
@@ -43,14 +46,33 @@ win32_crash_stack(HANDLE proc, HANDLE thread, const CONTEXT *context,
 		sym->MaxNameLen = 255;
 		memset(&line, 0, sizeof line);
 		line.SizeOfStruct = sizeof line;
-		len = snprintf(out, sizeof out, "  #%d %s", i,
-		    SymFromAddr(proc, frame.AddrPC.Offset, &disp64, sym) ?
-		    sym->Name : "?");
-		if (len < sizeof out &&
-		    SymGetLineFromAddr64(proc, frame.AddrPC.Offset, &disp, &line))
-			snprintf(out + len, sizeof out - len, " %s:%lu",
-			    line.FileName, line.LineNumber);
-		emit(out, arg);
+		if (SymGetLineFromAddr64(proc, frame.AddrPC.Offset, &disp, &line))
+			snprintf(at, sizeof at, "%s:%lu", line.FileName,
+			    line.LineNumber);
+		emit(i, SymFromAddr(proc, frame.AddrPC.Offset, &disp64, sym) ?
+		    sym->Name : "?", line.FileName != NULL ? at : NULL, arg);
 	}
 	SymCleanup(proc);
+}
+
+void
+win32_crash_record(FILE *f, long pid, const char *msg, ...)
+{
+	logline_field	 fields[8];
+	size_t		 n = 0;
+	va_list		 ap;
+	char		*line;
+
+	va_start(ap, msg);
+	while (n < 8 && (fields[n].key = va_arg(ap, const char *)) != NULL) {
+		fields[n].value = va_arg(ap, const char *);
+		n++;
+	}
+	va_end(ap);
+	line = logline_format(logline_now(), pid, LOGLINE_ERROR, msg, fields, n);
+	if (line != NULL) {
+		fprintf(f, "%s\n", line);
+		fflush(f);
+	}
+	free(line);
 }

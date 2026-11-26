@@ -2,7 +2,7 @@
 
 # A background run-shell started by a command-line client, a config file or a
 # hook has nobody watching for it: its output and failed exit go to the message
-# log (the failure to the error log too), never into whichever pane is current,
+# log (the failure to tmux's log too), never into whichever pane is current,
 # even with a client attached (TMUX-101). One started by a key press is shown in
 # that client's pane, and one with -t in its pane, as before. The client runs in
 # a pseudo-console and keys reach it with send-keys -K.
@@ -19,7 +19,7 @@ wait_gone
 
 OUT=$(mktemp -d)
 trap "$TMUX kill-server 2>/dev/null; rm -rf $OUT" 0 1 15
-export TMUX_ERROR_LOG_DIR=$(cygpath -w "$OUT")
+export TMUX_LOG=$(cygpath -w "$OUT/tmux.log")
 fail() { echo "FAIL: $*"; exit 1; }
 
 PS="$(cygpath -m "$POWERSHELL_EXE")"
@@ -33,7 +33,7 @@ EOF
 $TMUX -f "$(cygpath -m "$OUT/test.conf")" new -d -x100 -y30 -s w -n home \
     </dev/null || fail "start server"
 PID=$($TMUX display -p '#{pid}' | tr -d '\r')
-LOG="$OUT/tmux-$PID.log"
+LOG="$OUT/tmux.log"
 
 "$PS" -NoProfile -ExecutionPolicy Bypass \
     -File "$(cygpath -w "$(dirname "$0")/win32-pty.ps1")" \
@@ -65,8 +65,8 @@ logged "'echo tmux101-config& exit 6': tmux101-config" || fail "config job's out
 $TMUX run-shell -b "echo tmux101-cli& exit 3" || fail "run-shell -b"
 wait_until logged "returned 3" || fail "command-line job's exit not in the message log"
 logged "'echo tmux101-cli& exit 3': tmux101-cli" || fail "command-line job's output not in the message log"
-grep -q "returned 3" "$LOG" || fail "command-line job's exit not in the error log"
-grep -q "tmux101-cli\$" "$LOG" && fail "output line in the error log"
+grep -q "returned 3" "$LOG" || fail "command-line job's exit not in tmux's log"
+grep -v ' background command failed ' "$LOG" | grep -q tmux101-cli && fail "output line in tmux's log"
 in_mode && fail "a background job's output took over a pane"
 
 # One that succeeds quietly leaves nothing.

@@ -262,6 +262,10 @@ find_package(utf8proc CONFIG REQUIRED)
 # docs/at-protocol.md), pinned in dep/vcpkg-overlay-ports/at-protocol.
 find_package(at-protocol CONFIG REQUIRED)
 
+# logline: the estate's one log line (AHT-204, at-home-tools docs/app-logs.md), pinned
+# in dep/vcpkg-overlay-ports/logline.
+find_package(logline CONFIG REQUIRED)
+
 # display-palette's command descriptions, from tmux.1
 add_executable(palette-descriptions tools/palette-descriptions.c)
 target_compile_definitions(palette-descriptions PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -331,7 +335,7 @@ target_link_libraries(tmux PRIVATE
     wtsapi32
 )
 
-target_link_libraries(tmux PRIVATE utf8proc::utf8proc at-protocol::at-protocol)
+target_link_libraries(tmux PRIVATE utf8proc::utf8proc at-protocol::at-protocol logline::logline)
 
 # MSVC-specific settings
 if(MSVC)
@@ -370,6 +374,7 @@ endif()
 # failed too abruptly to write its own.
 add_library(tmux-wer SHARED win32/tmux-wer.c win32/win32-crash.c)
 target_compile_definitions(tmux-wer PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_link_libraries(tmux-wer PRIVATE logline::logline)
 add_dependencies(tmux tmux-wer)
 
 add_executable(alt-tab-test regress/alt-tab.c)

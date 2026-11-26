@@ -41,15 +41,14 @@ if [ -n "$left" ]; then
 	exit 1
 fi
 
-# The servers a test starts keep their crash records, error and event logs in a
-# folder of their own, removed after the run. In ~/.tmux they sat beside the
+# The servers a test starts keep their crash records and log in a folder of
+# their own, removed after the run. In ~/.tmux they sat beside the
 # live server's, where a test server's end read as a crash (TMUX-164). A test
 # that checks those records points them somewhere of its own.
 records=$(mktemp -d)
 TMUX_FLIGHT_DIR=$(cygpath -m "$records/flight")
-TMUX_ERROR_LOG_DIR=$(cygpath -m "$records/errors")
-TMUX_EVENT_LOG_DIR=$(cygpath -m "$records/events")
-export TMUX_FLIGHT_DIR TMUX_ERROR_LOG_DIR TMUX_EVENT_LOG_DIR
+TMUX_LOG=$(cygpath -m "$records/tmux.log")
+export TMUX_FLIGHT_DIR TMUX_LOG
 
 # Every server sources $LOCALAPPDATA/at-home/programs.conf (at-defaults.c), so a
 # test server read the PC's live one, home-sync's: on upstairspc's runner, with

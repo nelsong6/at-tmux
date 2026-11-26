@@ -2020,7 +2020,8 @@ ss_job_end(int done)
 		ss_job_last = xstrdup(result);
 		server_add_message("restore-set: %s", result);
 		if (problem)
-			log_message(result);
+			log_message("restore-set had problems", "result", result,
+			    (char *)NULL);
 		ss_job_show(result, -1);
 		if ((dir = ss_dir()) != NULL && !undone) {
 			for (i = 0; i < job->nfiles; i++)
@@ -2089,7 +2090,8 @@ session_set_start_failed(const char *cause)
 	}
 	xasprintf(&message, "reopen-window: a shell in place of: %s", cause);
 	server_add_message("%s", message);
-	log_message(message);
+	log_message("reopen-window started a shell", "cause", cause,
+	    (char *)NULL);
 	ss_job_show(message, -1);
 	free(message);
 }
