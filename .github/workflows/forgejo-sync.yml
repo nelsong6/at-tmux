@@ -1,7 +1,7 @@
 name: Forgejo sync
 
-# A push to master here fast-forwards Forgejo's, which is closed to the internet, so
-# this runs on the NAS's sync runner. The script and its tokens stay on the NAS:
+# A push to master here fast-forwards Forgejo's. This runs on the NAS's sync runner,
+# so the script and its tokens stay on the NAS:
 # shell-config-profile-home nas/repo-sync. The Forgejo side is github-sync.yml.
 on:
   push:
