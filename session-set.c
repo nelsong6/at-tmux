@@ -120,6 +120,8 @@ static int		 ss_programs_pending;
 static int		 ss_stopped;
 static int		 ss_set_aside;
 static int		 ss_new_server;
+static int		 ss_holding;	/* the hold, below */
+static int		 ss_after_hold;	/* released, the restore not yet tried */
 static char		*ss_attached;
 static char		*ss_show;
 static char		*ss_last_sessions;
@@ -2029,7 +2031,8 @@ ss_job_end(int done)
 			    "restore after a reboot failed" :
 			    "restored after a reboot");
 			session_set_offer_soon();
-		}
+		} else if (ss_after_hold)
+			session_set_offer_soon();	/* the restore the hold kept */
 	}
 
 	if (job->item != NULL) {
@@ -2320,6 +2323,10 @@ session_set_restore_status(void)
 {
 	char	*status;
 
+	if (ss_job == NULL && ss_holding)
+		return (xstrdup("waiting for the NAS"));
+	if (ss_job == NULL && ss_after_hold)
+		return (xstrdup("starting"));
 	if (ss_job == NULL)
 		return (xstrdup(""));
 	xasprintf(&status, "restoring %u of %u windows", ss_job->done,
@@ -2680,12 +2687,247 @@ ss_restore_silent(const char *dir, struct ss_snap *snap, struct session *s,
 }
 
 /*
+ * The hold (AHT-206): a new server whose @session-set-ready-file can't be read
+ * holds the restore of its previous set, and what it runs as it starts (the at
+ * server's @at-programs-start, at_programs_start), until it can. The at
+ * server's file is on the NAS its set's programs and home-sync's starts need,
+ * so it can start at sign-in, before the NAS is reachable, and still come back
+ * as it would have once it is. The server checks the file itself, a thread on
+ * Windows (a mapped drive that can't be reached can keep an open waiting for a
+ * long time), every SS_READY_EVERY seconds until it reads; then what was held
+ * runs as it would have at start. #{server_restore} says it waits, so whoever
+ * waits on it for the restore to finish (home-sync's sign-in) waits through
+ * the hold too, until the restore that follows has started or been passed by.
+ * While it waits, a client sees a menu saying so, whose Restore now ends the
+ * hold at once. With no file named, or on an upgraded server, nothing is held.
+ */
+#define SS_READY_EVERY 2
+
+static char		*ss_held_start;
+static char		*ss_ready_path;
+static time_t		 ss_held_since;
+static struct event	 ss_ready_timer;
+static struct client	*ss_wait_client;
+static char		*ss_wait_dismissed;	/* the client that closed it */
+#ifdef _WIN32
+static volatile LONG	 ss_ready_found;
+static volatile LONG	 ss_ready_stop;
+
+/* Open the file until it reads or the hold ends; path is the thread's. */
+static DWORD WINAPI
+ss_ready_thread(LPVOID arg)
+{
+	char	*path = arg;
+	FILE	*f;
+
+	while (!InterlockedCompareExchange(&ss_ready_stop, 0, 0)) {
+		if ((f = fopen(path, "rb")) != NULL) {
+			fclose(f);
+			InterlockedExchange(&ss_ready_found, 1);
+			break;
+		}
+		Sleep(SS_READY_EVERY * 1000);
+	}
+	free(path);
+	return (0);
+}
+#endif
+
+/* Run what the server runs as it starts, after item, or last if item is NULL. */
+static void
+ss_run_start(const char *start, struct cmdq_item *item)
+{
+	enum cmd_parse_status	 status;
+	char			*error = NULL;
+
+	if (item != NULL)
+		status = cmd_parse_and_insert(start, NULL, item, NULL, &error);
+	else
+		status = cmd_parse_and_append(start, NULL, NULL, NULL, &error);
+	if (status == CMD_PARSE_ERROR) {
+		server_add_message("session-set: starts: %s", error);
+		free(error);
+	}
+}
+
+/* End the hold: run what it held, and restore or offer the previous set. */
+static void
+ss_release(const char *why)
+{
+	struct client	*c;
+	char		*start;
+
+	if (!ss_holding)
+		return;
+	ss_holding = 0;
+	ss_after_hold = (ss_dir() != NULL);
+#ifdef _WIN32
+	InterlockedExchange(&ss_ready_stop, 1);
+#endif
+	if (event_initialized(&ss_ready_timer))
+		evtimer_del(&ss_ready_timer);
+	log_debug("session-set: hold ended, %s", why);
+	server_add_message("session-set: %s after %lld s", why,
+	    (long long)(time(NULL) - ss_held_since));
+	if ((c = ss_wait_client) != NULL) {
+		ss_wait_client = NULL;
+		server_client_clear_overlay(c);
+	}
+	free(ss_wait_dismissed);
+	ss_wait_dismissed = NULL;
+	if ((start = ss_held_start) != NULL) {
+		ss_held_start = NULL;
+		ss_run_start(start, NULL);
+		free(start);
+	}
+	session_set_offer_soon();
+}
+
+/* Has the ready file read yet? */
+static void
+ss_ready_check(__unused int fd, __unused short events, __unused void *data)
+{
+	struct timeval	 tv = { 0, 200000 };
+#ifndef _WIN32
+	FILE		*f;
+#endif
+
+#ifdef _WIN32
+	if (InterlockedCompareExchange(&ss_ready_found, 0, 0)) {
+#else
+	tv.tv_sec = SS_READY_EVERY;
+	tv.tv_usec = 0;
+	if ((f = fopen(ss_ready_path, "rb")) != NULL) {
+		fclose(f);
+#endif
+		ss_release("ready file read");
+		return;
+	}
+	evtimer_add(&ss_ready_timer, &tv);
+}
+
+/*
+ * Queued as the server starts, after programs.conf, with the commands it runs
+ * then (data): run them, or hold them and the restore until
+ * @session-set-ready-file reads.
+ */
+enum cmd_retval
+session_set_started(struct cmdq_item *item, void *data)
+{
+	struct timeval	 tv = { 0, 0 };
+	const char	*start = data, *ready = "";
+#ifdef _WIN32
+	HANDLE		 thread;
+#endif
+
+	if (start == NULL)
+		start = "";
+	if (options_get_only(global_s_options,
+	    "@session-set-ready-file") != NULL) {
+		ready = options_get_string(global_s_options,
+		    "@session-set-ready-file");
+	}
+
+	/* An upgraded server took over a running one: nothing to hold. */
+	if (cfg_finished || *ready == '\0') {
+		if (*start != '\0')
+			ss_run_start(start, item);
+		return (CMD_RETURN_NORMAL);
+	}
+
+	ss_holding = 1;
+	ss_held_since = time(NULL);
+	if (*start != '\0')
+		ss_held_start = xstrdup(start);
+	free(ss_ready_path);
+	ss_ready_path = xstrdup(ready);
+	server_add_message("session-set: holding the restore and starts until "
+	    "%s reads", ready);
+#ifdef _WIN32
+	thread = CreateThread(NULL, 0, ss_ready_thread, xstrdup(ready), 0, NULL);
+	if (thread == NULL) {
+		ss_release("ready file not watched");
+		return (CMD_RETURN_NORMAL);
+	}
+	CloseHandle(thread);
+#endif
+	evtimer_set(&ss_ready_timer, ss_ready_check, NULL);
+	evtimer_add(&ss_ready_timer, &tv);
+	return (CMD_RETURN_NORMAL);
+}
+
+/* A client's choice in the wait: Enter ends the hold, Escape keeps it. */
+static void
+ss_wait_choice(__unused struct menu *menu, u_int idx, key_code key,
+    void *data)
+{
+	struct client	*c = data;
+
+	ss_wait_client = NULL;
+	if (idx == UINT_MAX)
+		return;
+	if (key == '\r')
+		ss_release("released by Restore now");
+	else if (key == '\033') {
+		free(ss_wait_dismissed);
+		ss_wait_dismissed = xstrdup(c->name);
+		server_add_message("session-set: waiting closed on %s, still "
+		    "holding", c->name);
+	}
+}
+
+/* Did client c close the wait? */
+static int
+ss_wait_closed(struct client *c)
+{
+	return (ss_wait_dismissed != NULL && c->name != NULL &&
+	    strcmp(c->name, ss_wait_dismissed) == 0);
+}
+
+/* Show the wait on client c. */
+static void
+ss_wait_menu(struct client *c)
+{
+	struct menu		*menu;
+	struct menu_item	 item;
+	u_int			 w, h, px, py;
+
+	if (c == NULL)
+		return;
+	menu = menu_create(" Waiting for the NAS ");
+	memset(&item, 0, sizeof item);
+	item.key = KEYC_NONE;
+	item.name = "-The saved windows come back once it can be reached";
+	menu_add_item(menu, &item, NULL, c, NULL);
+	menu_add_item(menu, NULL, NULL, c, NULL);
+	item.name = "Restore now";
+	item.key = '\r';
+	menu_add_item(menu, &item, NULL, c, NULL);
+	item.name = "Keep waiting";
+	item.key = '\033';
+	menu_add_item(menu, &item, NULL, c, NULL);
+	w = menu->width + 4;
+	h = menu->count + 2;
+	px = (c->tty.sx > w ? (c->tty.sx - w) / 2 : 0);
+	py = (c->tty.sy > h ? (c->tty.sy - h) / 2 : 0);
+	if (menu_display(menu, 0, 0, NULL, px, py, c, BOX_LINES_DEFAULT, NULL,
+	    NULL, NULL, NULL, ss_wait_choice, c) != 0) {
+		menu_free(menu);
+		return;
+	}
+	server_add_message("session-set: waiting shown on %s", c->name);
+	ss_wait_client = c;
+}
+
+/*
  * Rebuild the previous set after a reboot, or offer it on the first client that
  * can show it. Tried when a new server first writes, when a client attaches and
  * when one is resized (a client too small for the menu waits for its terminal's
  * size); a menu closed without a choice, by a detach say, leaves the set to be
  * offered on the next attach. Only a new server's first try restores with no
- * offer: an upgraded one, or one whose session is in use, always asks.
+ * offer: an upgraded one, or one whose session is in use, always asks. While
+ * the hold lasts, that first try waits for its end, and a client is shown the
+ * wait instead.
  */
 static void
 ss_offer(__unused int fd, __unused short events, __unused void *data)
@@ -2700,13 +2942,32 @@ ss_offer(__unused int fd, __unused short events, __unused void *data)
 	u_int		 w, h, px, py;
 	int		 new_server, lost;
 
-	if (ss_stopped || ss_offer_client != NULL || ss_job != NULL ||
-	    (dir = ss_dir()) == NULL || RB_EMPTY(&sessions))
+	if (ss_stopped || ss_offer_client != NULL || ss_wait_client != NULL ||
+	    ss_job != NULL)
+		return;
+	if (ss_holding) {
+		TAILQ_FOREACH(c, &clients, entry) {
+			if (c->session == NULL || c->overlay_draw != NULL ||
+			    ss_wait_closed(c) ||
+			    (c->flags & (CLIENT_CONTROL|CLIENT_DEAD|CLIENT_EXIT|
+			    CLIENT_SUSPENDED)))
+				continue;
+			break;
+		}
+		ss_wait_menu(c);
+		return;
+	}
+	if ((dir = ss_dir()) == NULL) {
+		ss_after_hold = 0;
+		return;
+	}
+	if (RB_EMPTY(&sessions))
 		return;
 	if (!ss_set_aside)
 		ss_take_earlier(dir);
 	new_server = ss_new_server;
 	ss_new_server = 0;
+	ss_after_hold = 0;	/* restored below, or offered, or none */
 
 	TAILQ_FOREACH(c, &clients, entry) {
 		if (c->session == NULL || c->overlay_draw != NULL ||
@@ -2771,7 +3032,8 @@ session_set_offer_soon(void)
 {
 	struct timeval	tv = { 0, 0 };
 
-	if (ss_stopped || ss_offer_client != NULL || ss_dir() == NULL)
+	if (ss_stopped || ss_offer_client != NULL || ss_wait_client != NULL ||
+	    (ss_dir() == NULL && !ss_holding))
 		return;
 	if (!event_initialized(&ss_offer_timer))
 		evtimer_set(&ss_offer_timer, ss_offer, NULL);

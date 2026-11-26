@@ -303,15 +303,19 @@ static const char *const at_commands[] = {
  * copy kept it after both changed. Every run writes them into programs.conf,
  * the system-session alias and @at-programs-start, and sources it into the at
  * server; a server starting before any run reads the last one's. Only the at
- * server runs the starts, once as it starts, so a run sourcing the file again
- * starts nothing. These run after this build's default key bindings are
- * recorded: source-file waits for its file, and queued before that record it
- * left an upgraded server with no defaults to compare against.
+ * server runs the starts, once as it starts (at_programs_start), so a run
+ * sourcing the file again starts nothing. The session set runs them
+ * (session_set_started), holding them with its restore while programs.conf's
+ * @session-set-ready-file can't be read (AHT-206). These run after this
+ * build's default key bindings are recorded: source-file waits for its file,
+ * and queued before that record it left an upgraded server with no defaults
+ * to compare against.
  */
 static const char *const at_late_commands[] = {
 	"source-file -q \"" AT_LOCAL "/at-home/programs.conf\"",
-	"if -F '" AT_SERVER "' { if -F '#{@at-programs-start}' { run-shell -C '#{@at-programs-start}' } }",
 };
+static const char at_programs_start[] =
+	"if -F '" AT_SERVER "' { if -F '#{@at-programs-start}' { run-shell -C '#{@at-programs-start}' } }";
 
 /* Give a new option the at system's default, where it has one. */
 void
@@ -367,5 +371,7 @@ void
 at_defaults_late(void)
 {
 	at_defaults_queue(at_late_commands, nitems(at_late_commands));
+	cmdq_append(NULL, cmdq_get_callback(session_set_started,
+	    (void *)at_programs_start));
 }
 

@@ -531,6 +531,8 @@ endforeach()
 # A crash read with the PDB beside the exe.
 tmux_test(win32-session-ended win32-session-ended.sh pdb TIMEOUT 300)
 tmux_test(win32-global-foreground win32-global-foreground.sh build TIMEOUT 300 LOCK global-keys)
+# An at server, so it binds the desktop's keys until its config unbinds them.
+tmux_test(win32-session-hold win32-session-hold.sh build TIMEOUT 300 LOCK global-keys)
 # Runs alt-tab-test.exe from beside tmux.exe.
 tmux_test(win32-start-program win32-start-program.sh alt-tab TIMEOUT 300 LOCK global-keys)
 

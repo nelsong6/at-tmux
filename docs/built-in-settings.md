@@ -38,6 +38,23 @@ server reads it as it starts (`source-file -q`, so a PC home-sync hasn't run on 
 without it), and the at server alone runs `@at-programs-start` then. Sourcing it again
 starts nothing.
 
+home-sync starts the at server at sign-in, before the NAS is reachable, so at-terminal
+and the Win key work from the start (AHT-206). What needs the NAS waits for it, and
+at-tmux, not home-sync, decides when it runs (AHT-61). When `@session-set-ready-file`
+names a file, which programs.conf sets, a new server that can't read it holds the
+restore of its previous set (or the offer) and, on the at server, `@at-programs-start`.
+The server checks the file itself every two seconds, off its own loop, and once it
+reads runs both as it would have at start. Meanwhile `#{server_restore}` reads
+`waiting for the NAS`, then `starting` until the restore has begun (when it shows the
+restore's progress) or has nothing to do, and is empty once it is over, so whatever
+waits on it for the restore (home-sync's sign-in) waits through the hold. A client that
+attaches meanwhile sees a menu, Waiting for the NAS, saying the saved windows come back
+once it can be reached: Restore now (Enter) ends the hold at once, NAS or not, and Keep
+waiting (Escape) closes it on that client while the hold goes on. A restore that runs
+once the shell in the fresh session has been used is offered, as always, rather than
+run unasked. With no file named, or on an upgraded server, nothing is held
+(`regress/win32-session-hold.sh`).
+
 Alt+Tab and Alt+Shift+Tab anywhere summon at-terminal and open the at menu's
 windows folder. With no client, `start-program -K M-Tab at-terminal.exe` launches
 the terminal and delivers the menu key when it attaches. The launch request

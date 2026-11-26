@@ -3769,6 +3769,7 @@ int	 session_set_hold(struct cmdq_item *, struct cmd *, struct client *);
 /* cmd-run-shell.c */
 int	 cmd_run_shell_holding_queue(void);
 void	 session_set_offer_soon(void);
+enum cmd_retval session_set_started(struct cmdq_item *, void *);
 
 /* key-trace.c */
 void	 key_trace_pressed(uint64_t, pid_t);
