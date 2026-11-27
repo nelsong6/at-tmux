@@ -145,6 +145,7 @@ tty_at_answered(struct tty *tty, const char *version)
 	char		 path[4096], *cause;
 
 	strlcpy(tty->at_version, version, sizeof tty->at_version);
+	tty->at_spare_sent = 0;
 	free(tty->at_images);
 	tty->at_images = NULL;
 	tty->at_nimages = 0;
@@ -282,6 +283,159 @@ tty_at_reset(struct tty *tty)
 	tty->at_nimages = 0;
 	tty->at_speaks = 0;
 	tty->at_version[0] = '\0';
+	tty->at_spare_sent = 0;
+}
+
+/*
+ * Spare space (ATT-37): a fullscreen at-terminal's rows are whole pixels, so
+ * less than a row is left over, which it draws under the last row unless told
+ * to put it above a screen row. A program in a pane asks for it above a row
+ * of its pane; the server keeps that per pane and tells each client that
+ * speaks at-protocol the screen row it comes to, or none, whenever that
+ * changes: after the client is drawn (a window or pane change, a resize, the
+ * status line moving all redraw it) and when a pane's request changes.
+ */
+
+/* Send the terminal a spare-space row, if it isn't the one it has. */
+void
+tty_at_spare_space(struct tty *tty, u_int row)
+{
+	at_proto_msg	msg;
+
+	if (~tty->flags & TTY_OPENED || !tty->at_speaks)
+		return;
+	if (tty->at_spare_sent && tty->at_spare == row)
+		return;
+	memset(&msg, 0, sizeof msg);
+	msg.kind = AT_PROTO_SPARE_SPACE;
+	msg.u.spare_space.row = (row == UINT_MAX) ? AT_PROTO_SPARE_NONE : row;
+	if (tty_at_send(tty, &msg) != 0)
+		return;
+	tty->at_spare = row;
+	tty->at_spare_sent = 1;
+	if (row == UINT_MAX)
+		log_debug("%s: spare space none", tty->client->name);
+	else
+		log_debug("%s: spare space above row %u", tty->client->name, row);
+}
+
+/* A pane with a request whose rows are the whole width of its window. */
+static int
+tty_at_spare_pane(struct window *w, struct window_pane *wp)
+{
+	return (wp != NULL &&
+	    wp->at_spare_row != UINT_MAX &&
+	    wp->at_spare_row < wp->sy &&
+	    wp->xoff == 0 &&
+	    wp->sx == w->sx &&
+	    window_pane_visible(wp));
+}
+
+/*
+ * The screen row a client's spare space goes above: the row a full-width
+ * pane of its window asked for (the active pane's first), below the status
+ * lines drawn above the window, as screen_redraw_set_context places it.
+ */
+static u_int
+tty_at_spare_row(struct client *c)
+{
+	struct window		*w = c->session->curw->window;
+	struct window_pane	*wp = w->active, *loop;
+	u_int			 lines, ox, oy, sx, sy, y;
+
+	if (!tty_at_spare_pane(w, wp)) {
+		wp = NULL;
+		TAILQ_FOREACH(loop, &w->panes, entry) {
+			if (tty_at_spare_pane(w, loop)) {
+				wp = loop;
+				break;
+			}
+		}
+		if (wp == NULL)
+			return (UINT_MAX);
+	}
+	y = wp->yoff + wp->at_spare_row;
+
+	tty_window_offset(&c->tty, &ox, &oy, &sx, &sy);
+	if (y < oy || y - oy >= sy)
+		return (UINT_MAX);
+	y -= oy;
+
+	lines = status_line_size(c);
+	if (c->message_string != NULL || c->prompt_string != NULL)
+		lines = (lines == 0) ? 1 : lines;
+	if (lines != 0 &&
+	    options_get_number(c->session->options, "status-position") == 0)
+		y += lines;
+	return (y);
+}
+
+/* Tell a client where its spare space goes now. */
+void
+tty_at_spare_update(struct client *c)
+{
+	if (c->session == NULL || (c->flags & CLIENT_CONTROL))
+		return;
+	if (~c->tty.flags & TTY_OPENED || !c->tty.at_speaks)
+		return;
+	tty_at_spare_space(&c->tty, tty_at_spare_row(c));
+}
+
+/* A pane's request changed: tell every client showing its window. */
+void
+tty_at_spare_window(struct window *w)
+{
+	struct client	*c;
+
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (c->session != NULL && c->session->curw != NULL &&
+		    c->session->curw->window == w)
+			tty_at_spare_update(c);
+	}
+}
+
+/* A pane's program has gone: its request goes with it. */
+void
+tty_at_pane_reset(struct window_pane *wp)
+{
+	if (wp->at_spare_row == UINT_MAX)
+		return;
+	wp->at_spare_row = UINT_MAX;
+	tty_at_spare_window(wp->window);
+}
+
+/*
+ * An APC string from a program in a pane (input_exit_apc). A spare-space
+ * request is kept for the pane; returns 1 for that, 0 for anything else,
+ * which goes on as any APC string does.
+ */
+int
+tty_at_from_pane(struct window_pane *wp, const char *buf, size_t len)
+{
+	at_proto_msg	msg;
+	u_int		row;
+
+	if (len < 3 || memcmp(buf, "at;", 3) != 0)
+		return (0);
+	if (at_proto_decode(buf, len, &msg) != 1)
+		return (0);
+	if (msg.kind != AT_PROTO_SPARE_SPACE) {
+		at_proto_msg_free(&msg);
+		return (0);
+	}
+	row = msg.u.spare_space.row;
+	at_proto_msg_free(&msg);
+	if (row == AT_PROTO_SPARE_NONE)
+		row = UINT_MAX;
+	if (row == UINT_MAX)
+		log_debug("%%%u: spare space none", wp->id);
+	else
+		log_debug("%%%u: spare space above pane row %u", wp->id, row);
+	if (wp->at_spare_row != row) {
+		wp->at_spare_row = row;
+		tty_at_spare_window(wp->window);
+	}
+	return (1);
 }
 
 /*

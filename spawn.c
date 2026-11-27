@@ -398,6 +398,10 @@ spawn_pane(struct spawn_context *sc, char **cause)
 		sc->wp0->ictx = NULL;
 		new_wp = sc->wp0;
 		new_wp->flags &= ~(PANE_STATUSREADY|PANE_STATUSDRAWN);
+#ifdef HAVE_AT_PROTOCOL
+		/* The old program's spare-space request goes (ATT-37). */
+		tty_at_pane_reset(new_wp);
+#endif
 	} else if (sc->lc == NULL) {
 		new_wp = window_add_pane(w, NULL, hlimit, sc->flags);
 		layout_init(w, new_wp);

@@ -546,7 +546,7 @@ tmux_test(win32-start-program win32-start-program.sh alt-tab TIMEOUT 300 LOCK gl
 foreach(script win32-pty-close win32-pane-clear win32-popup-output win32-sixel
         win32-sixel-cap win32-placed-images win32-option-redraw win32-upgrade
         win32-move-pane win32-close
-        win32-flight win32-whole-sequences)
+        win32-flight win32-whole-sequences win32-spare-space)
     tmux_test(conpty-${script} ${script}.sh conpty)
 endforeach()
 

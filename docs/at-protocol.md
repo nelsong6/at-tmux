@@ -46,12 +46,36 @@ redrawing carry them. When the image goes, every client that has it gets `image-
 A virtual image restored by `upgrade-server` from a build that kept no pixels goes as
 sixel until the program sends it again.
 
+## Spare space
+
+at-terminal is fullscreen and its rows are whole pixels, so less than a row of pixels is
+left over, which it draws under the last row. A program in a pane can ask for it above a
+row of its own instead (ATT-37): at-claude does, so its bottom rows meet the screen's edge
+and the gap sits above its status line. The program prints `spare-space` with a row of its
+pane, counting from 0, as an APC string like any at-protocol message (`input_exit_apc`);
+the server keeps it for the pane, never as the pane's title, and forgets it when the
+pane's program exits or is respawned. Any other at-protocol message from a pane goes on
+as any APC string does.
+
+The server works out, for each client that speaks at-protocol, the screen row that is:
+in the client's current window, a pane with a request whose rows are the window's whole
+width (the active pane's first), its row below the status lines drawn above the window
+(`status-position top`) and the pane's place in the window. A pane beside another, a
+row past the pane's last or off the client's part of the window, or a window with no
+request is none (`AT_PROTO_SPARE_NONE`), and the terminal draws the spare pixels under its
+last row as before. The client is sent `spare-space` with that row only when it differs
+from the last one sent (`tty_at_spare_space`), checked after each redraw of the client
+(a window or pane change, a resize and the status line moving all redraw it) and when a
+pane's request changes; a new hello sends it again. `upgrade-server` carries the request.
+
 ## Testing
 
 `regress/win32-placed-images.sh` plays the terminal: it sends the inner client a hello
 with the wrong version and reads the message, then one with `#{at_protocol_version}` and
 reads the placements where sixel was. `regress/at-protocol.sh` does the same on macOS and
 Linux, and checks the build speaks the version the portfile pins.
+`regress/win32-spare-space.sh` plays the terminal too, with a pane asking for spare space
+and reading the screen rows the client is told.
 
 ## Terminal features
 

@@ -437,6 +437,10 @@ server_destroy_pane(struct window_pane *wp, int notify)
 		close(wp->fd);
 		wp->fd = -1;
 	}
+#ifdef HAVE_AT_PROTOCOL
+	/* Its program's spare-space request ends with it (ATT-37). */
+	tty_at_pane_reset(wp);
+#endif
 
 	if (remain_on_exit != 0 && (~wp->flags & PANE_STATUSREADY))
 		return;

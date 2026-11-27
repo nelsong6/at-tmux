@@ -2789,6 +2789,13 @@ input_exit_apc(struct input_ctx *ictx)
 	}
 #endif
 
+#ifdef HAVE_AT_PROTOCOL
+	/* An at-protocol spare-space request is the pane's, not a title. */
+	if (wp != NULL && tty_at_from_pane(wp, (char *)ictx->input_buf,
+	    ictx->input_len))
+		return;
+#endif
+
 	if (wp != NULL &&
 	    options_get_number(wp->options, "allow-set-title") &&
 	    screen_set_title(sctx->s, ictx->input_buf)) {

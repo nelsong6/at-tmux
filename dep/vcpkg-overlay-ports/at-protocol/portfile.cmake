@@ -1,6 +1,6 @@
 # at-protocol, the language at-tmux and at-terminal speak (ATT-7): REF is the one
 # place its version is chosen, and the build says it in its hello.
-set(REF 1dff9944cdf728cfe514bd41483c81e14186787f)
+set(REF 8de81ed169f1434044313ff6c472b535da3be31a)
 vcpkg_from_git(
     OUT_SOURCE_PATH SOURCE_PATH
     URL https://forgejo.romaine.life/romaine-life/at-protocol.git

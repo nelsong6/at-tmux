@@ -986,6 +986,8 @@ window_pane_create(struct window *w, u_int sx, u_int sy, u_int hlimit)
 	wp->control_bg = -1;
 	wp->control_fg = -1;
 
+	wp->at_spare_row = UINT_MAX;
+
 	style_set_scrollbar_style_from_option(&wp->scrollbar_style,
 	    wp->options);
 

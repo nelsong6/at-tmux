@@ -1,7 +1,7 @@
-# Runs in a pane for win32-placed-images.sh: reads commands appended to a file,
-# one a line, and writes what each says to the pane, so the test drives the
-# pane's program without a shell's prompt in the way. Rows and columns are
-# 1-based.
+# Runs in a pane for win32-placed-images.sh and win32-spare-space.sh: reads
+# commands appended to a file, one a line, and writes what each says to the
+# pane, so the test drives the pane's program without a shell's prompt in the
+# way. Rows and columns are 1-based, except spare's row.
 #
 #   place ID ROW COL COLSxROWS   kitty a=T of a 20x20 red square, C=1
 #   chunked ID ROW COL           the same in three chunks (m=1)
@@ -17,6 +17,8 @@
 #   virtual ID COLSxROWS         kitty a=T with U=1: a virtual placement
 #   holder ID ROW COL IR IC      a placeholder at ROW COL for image cell
 #                                row IR, column IC (0-based) of image ID
+#   spare ROW|none               at-protocol spare-space above pane row
+#                                ROW (0-based), or none (ATT-37)
 param([Parameter(Mandatory)][string]$Commands)
 
 # The first of kitty's row/column diacritics.
@@ -69,6 +71,11 @@ while ($true) {
                 'virtual' {
                     $cells = $a[2].Split('x')
                     Send ("$($e)_Ga=T,U=1,f=32,s=20,v=20,i=$($a[1]),c=$($cells[0]),r=$($cells[1]),q=2;$data$st")
+                }
+                'spare' {
+                    $row = if ($a[1] -eq 'none') { [uint32]::MaxValue } else { [uint32]$a[1] }
+                    $msg = [byte[]](@([byte]5) + [BitConverter]::GetBytes($row))
+                    Send ("$($e)_at;$([Convert]::ToBase64String($msg))$st")
                 }
                 'holder' {
                     $id = [int]$a[1]

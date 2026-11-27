@@ -3469,6 +3469,10 @@ server_client_check_redraw(struct client *c)
 			server_client_set_path(c);
 		}
 		screen_redraw_screen(c);
+#ifdef HAVE_AT_PROTOCOL
+		/* What it shows may have moved its spare space (ATT-37). */
+		tty_at_spare_update(c);
+#endif
 	}
 
 	tty->flags = (tty->flags & ~TTY_NOCURSOR)|(tty_flags & TTY_NOCURSOR);

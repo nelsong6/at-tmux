@@ -1309,6 +1309,12 @@ struct window_pane {
 	struct new_window_draw *draw_wait; /* new-window -W, until it draws */
 	struct window_copy_upgrade *upgrade_copy; /* mode to rebuild after upgrade */
 
+	/*
+	 * The row of this pane its program asked the terminal's spare pixels to
+	 * go above (at-protocol spare-space, ATT-37), or UINT_MAX for none.
+	 */
+	u_int		 at_spare_row;
+
 #ifdef _WIN32
 	void		*win32_pty; /* struct win32_pty * */
 #endif
@@ -1741,6 +1747,9 @@ struct tty {
 	int		 at_speaks;
 	u_int		*at_images;
 	u_int		 at_nimages;
+	/* The spare-space row last sent, once at_spare_sent says one was. */
+	u_int		 at_spare;
+	int		 at_spare_sent;
 
 	u_int		 mouse_last_x;
 	u_int		 mouse_last_y;
@@ -4036,6 +4045,11 @@ void		 tty_at_place(struct tty *, struct image *, u_int, u_int, u_int,
 void		 tty_at_drop(struct image *);
 void		 tty_at_reset(struct tty *);
 int		 tty_keys_at(struct tty *, const char *, size_t, size_t *);
+int		 tty_at_from_pane(struct window_pane *, const char *, size_t);
+void		 tty_at_pane_reset(struct window_pane *);
+void		 tty_at_spare_space(struct tty *, u_int);
+void		 tty_at_spare_update(struct client *);
+void		 tty_at_spare_window(struct window *);
 #endif
 
 /* image-kitty.c */

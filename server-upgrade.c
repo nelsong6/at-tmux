@@ -979,6 +979,8 @@ upgrade_save_pane(struct evbuffer *evb, struct window_pane *wp,
 	if (wp->ictx != NULL)
 		input_upgrade_save(o, wp->ictx, wp->base.hyperlinks);
 	window_copy_upgrade_save(o, wp);
+	/* Last, so a build that doesn't know it ignores it (ATT-37). */
+	upw_u32(o, wp->at_spare_row);
 	upw_obj(evb, o);
 	evbuffer_free(o);
 	return (0);
@@ -1087,6 +1089,11 @@ upgrade_read_pane(struct upgrade_reader *o, struct window_pane *wp, int moved)
 	}
 	if (upgrade_version >= 3)
 		window_copy_upgrade_read(o, wp);
+	/* A spare-space request, which a build before ATT-37 didn't write. */
+	if (upgrade_version >= 3 && o->left >= sizeof (uint32_t))
+		wp->at_spare_row = upr_u32(o);
+	else
+		wp->at_spare_row = UINT_MAX;
 }
 
 static struct window_pane *
