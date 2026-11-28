@@ -2,8 +2,8 @@ name: GitHub sync
 
 # A push to master here fast-forwards GitHub's, so the work machines see it. Nothing is
 # ever forced: master moving on both sides fails the job and shows in Alerts, unless GitHub's
-# commits wait in their pull request. The other direction
-# is .github/workflows/forgejo-sync.yml.
+# commits wait in their pull request. The other direction is romaine-life/forgejo-sync, which
+# GitHub's push webhook reaches (HOMECFG-263).
 on:
   push:
     branches: [master]
@@ -40,7 +40,7 @@ jobs:
           # GitHub is ahead: its own sync carries that.
           git merge-base --is-ancestor "$ours" "$theirs" && exit 0
           if ! git merge-base --is-ancestor "$theirs" "$ours"; then
-            # Both moved: GitHub's commits wait in the pull request repo-sync opened from
+            # Both moved: GitHub's commits wait in the pull request forgejo-sync opened from
             # github/master (HOMECFG-248), and its merge's push brings GitHub here. With no
             # such branch holding them, the fetch or the check fails and Alerts says so.
             git fetch -q https://forgejo.romaine.life/nelsong6/at-tmux.git github/master
