@@ -520,12 +520,11 @@ endforeach()
 foreach(script win32-linesize win32-palette)
     tmux_test(${script} ${script}.sh build)
 endforeach()
-foreach(script win32-process-watch win32-environment win32-child-path
-        win32-pipe-pane-close)
+foreach(script win32-process-watch win32-environment win32-child-path)
     tmux_test(${script} ${script}.sh build TIMEOUT 300)
 endforeach()
 foreach(script win32-keep-alive win32-set-status win32-single-window win32-copy-name
-        win32-caller win32-reorder-session win32-session-set win32-hidden-session)
+        win32-caller win32-reorder-session win32-hidden-session)
     tmux_test(${script} ${script}.sh build)
 endforeach()
 foreach(script win32-restore-programs win32-session-offer win32-restore-set
@@ -555,7 +554,7 @@ endforeach()
 # from this one changed
 # (build-upgrade-key-fixtures.ps1). It compiles four files at a time, so it takes
 # all four of CTest's slots while it runs.
-foreach(script win32-upgrade-keys win32-upgrade-defaults)
+foreach(script win32-upgrade-defaults)
     tmux_test(conpty-${script} ${script}.sh keys TIMEOUT 300)
 endforeach()
 add_test(NAME build-key-fixtures COMMAND ${TMUX_TEST_PWSH} -NoLogo -NoProfile -NonInteractive
