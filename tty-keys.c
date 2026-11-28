@@ -720,10 +720,6 @@ tty_keys_winsz(struct tty *tty, const char *buf, size_t len, size_t *size)
 
 	*size = 0;
 
-	/* If we did not request this, ignore it. */
-	if (!(tty->flags & TTY_WINSIZEQUERY))
-		return (-1);
-
 	/* First two bytes are always \033[. */
 	if (buf[0] != '\033')
 		return (-1);
@@ -752,6 +748,16 @@ tty_keys_winsz(struct tty *tty, const char *buf, size_t len, size_t *size)
 	/* Copy to the buffer. */
 	memcpy(tmp, buf + 2, end - 2);
 	tmp[end - 2] = '\0';
+
+	/*
+	 * No key ends in t, so one not asked for is a report all the same: a
+	 * second answer to the one query (TMUX-258), which goes unread.
+	 */
+	if (!(tty->flags & TTY_WINSIZEQUERY)) {
+		log_debug("%s: discarded window size report: %s", c->name, tmp);
+		*size = end + 1;
+		return (0);
+	}
 
 	/* Try to parse the window size sequence. */
 	if (sscanf(tmp, "8;%u;%u", &sy, &sx) == 2) {
@@ -1494,6 +1500,14 @@ tty_keys_clipboard(struct tty *tty, const char *buf, size_t len, size_t *size)
 }
 
 /*
+ * A device attributes reply that comes after the one tmux used is read and
+ * dropped, not taken as keys: no key is one of these sequences. A pseudo-console
+ * on the far end of SSH can send what a client writes it twice, so the terminal
+ * answers each query twice, and the second answer was typed into the pane
+ * (TMUX-258).
+ */
+
+/*
  * Handle primary device attributes input. Returns 0 for success, -1 for
  * failure, 1 for partial.
  */
@@ -1505,10 +1519,9 @@ tty_keys_device_attributes(struct tty *tty, const char *buf, size_t len,
 	int		*features = &c->term_features;
 	u_int		 i, n = 0;
 	char		 tmp[128], *endptr, p[32] = { 0 }, *cp, *next;
+	int		 late = (tty->flags & TTY_HAVEDA) != 0;
 
 	*size = 0;
-	if (tty->flags & TTY_HAVEDA)
-		return (-1);
 
 	/* First three bytes are always \033[?. */
 	if (buf[0] != '\033')
@@ -1538,6 +1551,11 @@ tty_keys_device_attributes(struct tty *tty, const char *buf, size_t len,
 		return (-1);
 	tmp[i] = '\0';
 	*size = 4 + i;
+	if (late) {
+		log_debug("%s: discarded primary DA %.*s", c->name, (int)*size,
+		    buf);
+		return (0);
+	}
 
 	/* Convert all arguments to numbers. */
 	cp = tmp;
@@ -1590,10 +1608,9 @@ tty_keys_device_attributes2(struct tty *tty, const char *buf, size_t len,
 	int		*features = &c->term_features;
 	u_int		 i, n = 0;
 	char		 tmp[128], *endptr, p[32] = { 0 }, *cp, *next;
+	int		 late = (tty->flags & TTY_HAVEDA2) != 0;
 
 	*size = 0;
-	if (tty->flags & TTY_HAVEDA2)
-		return (-1);
 
 	/* First three bytes are always \033[>. */
 	if (buf[0] != '\033')
@@ -1623,6 +1640,11 @@ tty_keys_device_attributes2(struct tty *tty, const char *buf, size_t len,
 		return (-1);
 	tmp[i] = '\0';
 	*size = 4 + i;
+	if (late) {
+		log_debug("%s: discarded secondary DA %.*s", c->name,
+		    (int)*size, buf);
+		return (0);
+	}
 
 	/* Convert all arguments to numbers. */
 	cp = tmp;
@@ -1677,10 +1699,9 @@ tty_keys_extended_device_attributes(struct tty *tty, const char *buf,
 	int		*features = &c->term_features;
 	u_int		 i;
 	char		 tmp[128];
+	int		 late = (tty->flags & TTY_HAVEXDA) != 0;
 
 	*size = 0;
-	if (tty->flags & TTY_HAVEXDA)
-		return (-1);
 
 	/* First four bytes are always \033P>|. */
 	if (buf[0] != '\033')
@@ -1713,6 +1734,11 @@ tty_keys_extended_device_attributes(struct tty *tty, const char *buf,
 	*size = 5 + i;
 	if (i == 0)
 		return (0);
+	if (late) {
+		log_debug("%s: discarded extended DA %.*s", c->name, (int)*size,
+		    buf);
+		return (0);
+	}
 	tmp[i - 1] = '\0';
 
 	/* Add terminal features. */
